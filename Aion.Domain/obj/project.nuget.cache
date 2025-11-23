@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dgSpecHash": "M4Hu9htbOuA=",
+  "success": true,
+  "projectFilePath": "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Domain\\Aion.Domain.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\jsgalaxy\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\10.0.0\\microsoft.extensions.dependencyinjection.abstractions.10.0.0.nupkg.sha512",
+    "C:\\Users\\jsgalaxy\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\10.0.0\\microsoft.extensions.logging.abstractions.10.0.0.nupkg.sha512",
+    "C:\\Users\\jsgalaxy\\.nuget\\packages\\microsoft.extensions.options\\10.0.0\\microsoft.extensions.options.10.0.0.nupkg.sha512",
+    "C:\\Users\\jsgalaxy\\.nuget\\packages\\microsoft.extensions.primitives\\10.0.0\\microsoft.extensions.primitives.10.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}
