@@ -200,7 +200,7 @@ public sealed class DefaultModuleDesigner : IModuleDesigner
         {
             try
             {
-                var parsedModule = JsonSerializer.Deserialize<S_Module>(LastGeneratedJson, SerializerOptions);
+                var parsedModule = JsonSerializer.Deserialize<S_Module>(LastGeneratedJson, new JsonSerializerOptions(JsonSerializerDefaults.Web));
                 if (parsedModule is not null)
                 {
                     return parsedModule;
