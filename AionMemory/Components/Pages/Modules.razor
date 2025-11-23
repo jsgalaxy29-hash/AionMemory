@@ -1,6 +1,6 @@
 @page "/modules"
 @inject IMetadataService Metadata
-@inject IModuleDesigner ModuleDesigner
+@inject ModuleDesignerService ModuleDesigner
 @inject NavigationManager Navigation
 
 <h3>Modules</h3>
@@ -13,6 +13,7 @@
             <option value="all">Tous</option>
         </select>
         <button class="button" @onclick="GenerateModule">Créer Module par IA</button>
+        <button class="button secondary" @onclick="() => Navigation.NavigateTo(\"/module-builder\")">Ouvrir Module Builder</button>
     </div>
 </div>
 
@@ -75,7 +76,7 @@
 
     private async Task GenerateModule()
     {
-        var module = await ModuleDesigner.DesignModuleAsync("Assistant quotidien");
+        var module = await ModuleDesigner.CreateModuleFromPromptAsync("Assistant quotidien");
         Modules = (Modules ?? Array.Empty<S_Module>()).Append(module).ToArray();
     }
 }
