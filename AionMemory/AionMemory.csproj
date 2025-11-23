@@ -92,4 +92,21 @@
           SkipUnchangedFiles="true" />
   </Target>
 
+  <Target Name="StaticWebAssetsPrepareForPublish" Condition="!Exists('$(StaticWebAssetsTargetsPath)')">
+    <ItemGroup>
+      <_BlazorWebViewStaticAsset Include="wwwroot\**\*" />
+    </ItemGroup>
+
+    <Message Text="Falling back to manual static web asset copy because Microsoft.NET.Sdk.Razor static web assets targets were not found."
+             Importance="High" />
+
+    <Copy SourceFiles="@(_BlazorWebViewStaticAsset)"
+          DestinationFiles="@(_BlazorWebViewStaticAsset->'$(IntermediateOutputPath)blazor\\wwwroot\\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+
+    <Copy SourceFiles="@(_BlazorWebViewStaticAsset)"
+          DestinationFiles="@(_BlazorWebViewStaticAsset->'$(PublishDir)wwwroot\\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>
