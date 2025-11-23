@@ -437,7 +437,7 @@
             },
             "SQLitePCLRaw.bundle_e_sqlcipher": {
               "target": "Package",
-              "version": "[2.1.8, )"
+              "version": "[2.1.11, )"
             }
           },
           "imports": [
