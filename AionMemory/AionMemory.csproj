@@ -92,6 +92,10 @@
           SkipUnchangedFiles="true" />
   </Target>
 
+  <Target Name="LoadStaticWebAssetsRuntimeManifest" Condition="!Exists('$(StaticWebAssetsTargetsPath)')">
+    <CallTarget Targets="StaticWebAssetsPrepareForRun" />
+  </Target>
+
   <Target Name="StaticWebAssetsPrepareForPublish" Condition="!Exists('$(StaticWebAssetsTargetsPath)')">
     <ItemGroup>
       <_BlazorWebViewStaticAsset Include="wwwroot\**\*" />
@@ -107,6 +111,10 @@
     <Copy SourceFiles="@(_BlazorWebViewStaticAsset)"
           DestinationFiles="@(_BlazorWebViewStaticAsset->'$(PublishDir)wwwroot\\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="LoadStaticWebAssetsPublishManifest" Condition="!Exists('$(StaticWebAssetsTargetsPath)')">
+    <CallTarget Targets="StaticWebAssetsPrepareForPublish" />
   </Target>
 
 </Project>
