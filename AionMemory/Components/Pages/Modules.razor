@@ -1,0 +1,81 @@
+@page "/modules"
+@inject IMetadataService Metadata
+@inject IModuleDesigner ModuleDesigner
+@inject NavigationManager Navigation
+
+<h3>Modules</h3>
+<div class="card" style="margin-bottom:12px;">
+    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+        <input class="input" style="flex:1;" placeholder="Rechercher un module" @bind="Search" @bind:event="oninput" />
+        <select class="select" @bind="Filter">
+            <option value="recent">Récents</option>
+            <option value="favorite">Favoris</option>
+            <option value="all">Tous</option>
+        </select>
+        <button class="button" @onclick="GenerateModule">Créer Module par IA</button>
+    </div>
+</div>
+
+<div class="grid columns-3">
+    @if (Modules is null)
+    {
+        <p>Chargement…</p>
+    }
+    else
+    {
+        @foreach (var module in FilteredModules)
+        {
+            <div class="card module-card">
+                <div class="module-header">
+                    <div>
+                        <strong>@module.Name</strong>
+                        <p class="text-muted">@module.Description</p>
+                    </div>
+                    <span class="badge">@module.EntityTypes.Count entités</span>
+                </div>
+                <div class="grid columns-2">
+                    @foreach (var entity in module.EntityTypes)
+                    {
+                        <div class="stat-box">
+                            <div style="font-weight:600">@entity.Name</div>
+                            <small class="text-muted">@entity.Fields.Count champ(s)</small>
+                        </div>
+                    }
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button class="button secondary" @onclick="() => OpenModule(module.Id)">Ouvrir</button>
+                    <button class="button secondary" @onclick="() => OpenDashboard(module)">Dashboard</button>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private IEnumerable<S_Module>? Modules;
+    private string Search { get; set; } = string.Empty;
+    private string Filter { get; set; } = "recent";
+
+    private IEnumerable<S_Module> FilteredModules =>
+        string.IsNullOrWhiteSpace(Search)
+            ? Modules ?? Array.Empty<S_Module>()
+            : Modules?.Where(m => m.Name.Contains(Search, StringComparison.OrdinalIgnoreCase)) ?? Array.Empty<S_Module>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Modules = await Metadata.GetModulesAsync();
+    }
+
+    private void OpenModule(Guid id) => Navigation.NavigateTo($"/module/{id}");
+
+    private void OpenDashboard(S_Module module)
+    {
+        Navigation.NavigateTo($"/dashboard/{module.Name.ToLowerInvariant()}");
+    }
+
+    private async Task GenerateModule()
+    {
+        var module = await ModuleDesigner.DesignModuleAsync("Assistant quotidien");
+        Modules = (Modules ?? Array.Empty<S_Module>()).Append(module).ToArray();
+    }
+}

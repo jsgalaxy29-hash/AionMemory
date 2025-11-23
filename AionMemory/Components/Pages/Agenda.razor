@@ -1,0 +1,49 @@
+@page "/agenda/{entity}"
+@inject IAgendaService AgendaService
+
+<h3>Agenda - @Entity</h3>
+<div class="card">
+    <div class="module-header">
+        <div>
+            <strong>Événements planifiés</strong>
+            <p class="text-muted">Vue synthétique des prochains événements.</p>
+        </div>
+        <button class="button" @onclick="AddEvent">Ajouter</button>
+    </div>
+    <table class="table">
+        <thead>
+            <tr><th>Titre</th><th>Date</th><th>Statut</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var evt in Events)
+            {
+                <tr>
+                    <td>@evt.Title</td>
+                    <td>@evt.Start.ToLocalTime().ToString("g")</td>
+                    <td>@(evt.IsCompleted ? "Terminé" : "Planifié")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public string? Entity { get; set; }
+    private IList<S_Event> Events { get; set; } = new List<S_Event>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var now = DateTimeOffset.Now;
+        Events = (await AgendaService.GetEventsAsync(now.AddDays(-1), now.AddDays(30))).ToList();
+    }
+
+    private async Task AddEvent()
+    {
+        var evt = await AgendaService.AddEventAsync(new S_Event
+        {
+            Title = $"Rappel {Entity}",
+            Start = DateTimeOffset.Now.AddDays(1)
+        });
+        Events.Add(evt);
+    }
+}

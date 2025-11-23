@@ -1,0 +1,9 @@
+@page "/dashboard/{entity}"
+@inject IDashboardService DashboardService
+
+<h3>Dashboard - @Entity</h3>
+<Dashboard DashboardService="DashboardService" />
+
+@code {
+    [Parameter] public string? Entity { get; set; }
+}

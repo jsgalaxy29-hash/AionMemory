@@ -1,0 +1,39 @@
+@page "/potager/dashboard"
+@inject IDashboardService DashboardService
+@inject IAgendaService AgendaService
+@inject NavigationManager Navigation
+
+<h3>Dashboard Potager</h3>
+<div class="grid columns-3">
+    <div class="card">
+        <h4>Statistiques</h4>
+        <div class="stat-box">Cultures en cours: @Stats.InProgress</div>
+        <div class="stat-box">Récoltes à venir: @Stats.Harvest</div>
+        <div class="stat-box">Retards: @Stats.Late</div>
+    </div>
+    <div class="card">
+        <h4>Agenda rapide</h4>
+        <ul>
+            @foreach (var evt in UpcomingEvents)
+            {
+                <li>@evt.Start.ToLocalTime().ToString("g") - @evt.Title</li>
+            }
+        </ul>
+        <button class="button secondary" @onclick="() => Navigation.NavigateTo("/agenda/potager")">Ouvrir l'agenda</button>
+    </div>
+    <div class="card">
+        <h4>Widgets</h4>
+        <Dashboard DashboardService="DashboardService" />
+    </div>
+</div>
+
+@code {
+    private (int InProgress, int Harvest, int Late) Stats = (4, 2, 1);
+    private IEnumerable<S_Event> UpcomingEvents { get; set; } = Array.Empty<S_Event>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var now = DateTimeOffset.Now;
+        UpcomingEvents = await AgendaService.GetEventsAsync(now, now.AddDays(14));
+    }
+}

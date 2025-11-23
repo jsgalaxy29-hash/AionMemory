@@ -1,0 +1,10 @@
+@page "/notes/{entity}/{recordId}"
+@inject INoteService NoteService
+
+<h3>Notes pour @Entity</h3>
+<DynamicTimeline NoteService="NoteService" />
+
+@code {
+    [Parameter] public string? Entity { get; set; }
+    [Parameter] public string? RecordId { get; set; }
+}

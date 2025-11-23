@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="Aion.AI/Aion.AI.csproj" />
+  <Project Path="Aion.Domain/Aion.Domain.csproj" />
+  <Project Path="Aion.Infrastructure/Aion.Infrastructure.csproj" />
+  <Project Path="AionMemory/AionMemory.csproj">
+    <Deploy Solution="Debug|*" />
+  </Project>
+</Solution>

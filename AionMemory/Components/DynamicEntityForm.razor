@@ -1,0 +1,63 @@
+<div class="card">
+    <div class="card-header">Créer un enregistrement pour @EntityType?.Name</div>
+    <div class="card-body">
+        @if (EntityType is null)
+        {
+            <p>Sélectionnez un type d'entité pour commencer.</p>
+        }
+        else
+        {
+            <EditForm Model="FieldValues" OnValidSubmit="HandleValidSubmit">
+                @foreach (var field in EntityType.Fields)
+                {
+                    <div class="mb-3">
+                        <label class="form-label">@field.Label (@field.DataType)</label>
+                        @switch (field.DataType)
+                        {
+                            case FieldDataType.Text or FieldDataType.Lookup or FieldDataType.Tags:
+                                <InputText class="form-control" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
+                                break;
+                            case FieldDataType.Note:
+                                <InputTextArea class="form-control" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
+                                break;
+                            case FieldDataType.Number:
+                                <InputNumber TValue="decimal?" class="form-control" Value="@GetDecimal(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetDecimal(field.Name)" />
+                                break;
+                            case FieldDataType.Date:
+                                <InputDate TValue="DateTime?" class="form-control" Value="@GetDate(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetDate(field.Name)" />
+                                break;
+                            default:
+                                <InputText class="form-control" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
+                                break;
+                        }
+                    </div>
+                }
+                <button class="btn btn-primary" type="submit">Enregistrer</button>
+            </EditForm>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public S_EntityType? EntityType { get; set; }
+    [Parameter] public IDataEngine? DataEngine { get; set; }
+
+    protected Dictionary<string, object?> FieldValues { get; set; } = new();
+
+    private string? GetString(string key) => FieldValues.TryGetValue(key, out var value) ? value?.ToString() : null;
+    private DateTime? GetDate(string key) => FieldValues.TryGetValue(key, out var value) ? value as DateTime? : null;
+    private decimal? GetDecimal(string key) => FieldValues.TryGetValue(key, out var value) ? value as decimal? : null;
+
+    private void SetValue(string key, object? value) => FieldValues[key] = value;
+
+    protected async Task HandleValidSubmit()
+    {
+        if (EntityType is null || DataEngine is null)
+        {
+            return;
+        }
+
+        var payload = System.Text.Json.JsonSerializer.Serialize(FieldValues);
+        await DataEngine.InsertAsync(EntityType.Id, payload);
+    }
+}

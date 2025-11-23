@@ -1,0 +1,33 @@
+<div class="row">
+    @if (Widgets is null)
+    {
+        <p>Loading dashboard…</p>
+    }
+    else
+    {
+        @foreach (var widget in Widgets.OrderBy(w => w.Order))
+        {
+            <div class="col-6 mb-3">
+                <div class="card">
+                    <div class="card-header">@widget.Title</div>
+                    <div class="card-body">
+                        <pre>@widget.ConfigurationJson</pre>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public IDashboardService? DashboardService { get; set; }
+    protected IEnumerable<DashboardWidget>? Widgets { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (DashboardService is not null)
+        {
+            Widgets = await DashboardService.GetWidgetsAsync();
+        }
+    }
+}

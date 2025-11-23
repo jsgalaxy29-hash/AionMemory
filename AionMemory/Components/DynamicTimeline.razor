@@ -1,0 +1,44 @@
+@inherits OwningComponentBase
+
+<div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h5>Timeline</h5>
+        <button class="button secondary" @onclick="Refresh">Rafraîchir</button>
+    </div>
+    <div class="timeline">
+        @if (Notes is null)
+        {
+            <p>Chargement…</p>
+        }
+        else
+        {
+            @foreach (var note in Notes.OrderByDescending(n => n.CreatedAt))
+            {
+                <div class="timeline-item">
+                    <strong>@note.Title</strong>
+                    <div>@note.Content</div>
+                    <small class="text-muted">@note.CreatedAt.ToLocalTime().ToString("g") (@note.Source)</small>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public INoteService? NoteService { get; set; }
+
+    private IEnumerable<S_Note>? Notes { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Refresh();
+    }
+
+    private async Task Refresh()
+    {
+        if (NoteService is not null)
+        {
+            Notes = await NoteService.GetChronologicalAsync();
+        }
+    }
+}

@@ -1,0 +1,49 @@
+@page "/records/{entity}/{recordId}"
+@inject IDataEngine DataEngine
+@inject IAgendaService AgendaService
+@inject INoteService NoteService
+
+<h3>Enregistrement</h3>
+<div class="grid columns-2">
+    <div class="card">
+        <p><strong>Entité :</strong> @Entity</p>
+        <p><strong>Identifiant :</strong> @RecordId</p>
+        <p class="text-muted">Données dynamiques affichées depuis la mémoire AION.</p>
+        <DynamicTimeline NoteService="NoteService" />
+    </div>
+    <div class="card">
+        <h4>Agenda associé</h4>
+        <p>Créez vos rappels ou actions planifiées.</p>
+        <button class="button" @onclick="Schedule">Planifier un rappel</button>
+        <ul>
+            @foreach (var evt in Events)
+            {
+                <li>@evt.Start.ToLocalTime().ToString("g") - @evt.Title</li>
+            }
+        </ul>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Entity { get; set; }
+    [Parameter] public string? RecordId { get; set; }
+
+    private IList<S_Event> Events { get; set; } = new List<S_Event>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var now = DateTimeOffset.Now;
+        Events = (await AgendaService.GetEventsAsync(now.AddDays(-2), now.AddDays(10))).ToList();
+    }
+
+    private async Task Schedule()
+    {
+        var evt = await AgendaService.AddEventAsync(new S_Event
+        {
+            Title = $"Suivi {Entity}",
+            Description = "Action à réaliser",
+            Start = DateTimeOffset.Now.AddHours(4)
+        });
+        Events.Add(evt);
+    }
+}

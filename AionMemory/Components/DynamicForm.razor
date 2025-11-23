@@ -1,0 +1,74 @@
+@inherits OwningComponentBase
+
+<EditForm Model="FieldValues" OnValidSubmit="HandleValidSubmit">
+    <DataAnnotationsValidator />
+    <div class="form-row">
+        @if (EntityType is not null)
+        {
+            @foreach (var field in EntityType.Fields)
+            {
+                <div>
+                    <label>@field.Label</label>
+                    @switch (field.DataType)
+                    {
+                        case FieldDataType.Text or FieldDataType.Lookup or FieldDataType.Tags:
+                            <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
+                            break;
+                        case FieldDataType.Note:
+                            <InputTextArea class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
+                            break;
+                        case FieldDataType.Number or FieldDataType.Decimal:
+                            <InputNumber TValue="decimal?" class="input" Value="@GetDecimal(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetDecimal(field.Name)" />
+                            break;
+                        case FieldDataType.Boolean:
+                            <InputCheckbox class="input" Value="@GetBool(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetBool(field.Name)" />
+                            break;
+                        case FieldDataType.Date or FieldDataType.DateTime:
+                            <InputDate TValue="DateTime?" class="input" Value="@GetDate(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetDate(field.Name)" />
+                            break;
+                        default:
+                            <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
+                            break;
+                    }
+                </div>
+            }
+        }
+    </div>
+    <div style="margin-top:12px; display:flex; gap:8px;">
+        <button type="submit" class="button">Enregistrer</button>
+        <button type="button" class="button secondary" @onclick="Reset">Annuler</button>
+    </div>
+</EditForm>
+
+@code {
+    [Parameter] public S_EntityType? EntityType { get; set; }
+    [Parameter] public IDataEngine? DataEngine { get; set; }
+    [Parameter] public EventCallback<F_Record> OnSaved { get; set; }
+
+    private Dictionary<string, object?> FieldValues { get; set; } = new();
+
+    private string? GetString(string key) => FieldValues.TryGetValue(key, out var value) ? value?.ToString() : null;
+    private DateTime? GetDate(string key) => FieldValues.TryGetValue(key, out var value) ? value as DateTime? : null;
+    private decimal? GetDecimal(string key) => FieldValues.TryGetValue(key, out var value) ? value as decimal? : null;
+    private bool GetBool(string key) => FieldValues.TryGetValue(key, out var value) && value is bool b && b;
+
+    private void SetValue(string key, object? value) => FieldValues[key] = value;
+
+    private async Task HandleValidSubmit()
+    {
+        if (EntityType is null || DataEngine is null)
+        {
+            return;
+        }
+
+        var payload = System.Text.Json.JsonSerializer.Serialize(FieldValues);
+        var record = await DataEngine.InsertAsync(EntityType.Id, payload);
+        await OnSaved.InvokeAsync(record);
+        Reset();
+    }
+
+    private void Reset()
+    {
+        FieldValues = new();
+    }
+}

@@ -1,0 +1,82 @@
+@using System.Text.Json
+@inherits OwningComponentBase
+
+<div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <h5>@EntityType?.PluralName</h5>
+        <button class="button secondary" @onclick="Refresh">Actualiser</button>
+    </div>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Titre</th>
+                @if (EntityType is not null)
+                {
+                    @foreach (var field in EntityType.Fields.Take(3))
+                    {
+                        <th>@field.Label</th>
+                    }
+                }
+                <th>Créé le</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Items is null)
+            {
+                <tr><td colspan="4">Chargement…</td></tr>
+            }
+            else
+            {
+                @foreach (var item in Items)
+                {
+                    var payload = Deserialize(item.DataJson);
+                    <tr @onclick="() => OnSelect.InvokeAsync(item)" style="cursor:pointer;">
+                        <td>@item.Id</td>
+                        @if (EntityType is not null)
+                        {
+                            @foreach (var field in EntityType.Fields.Take(3))
+                            {
+                                <td>@(payload.TryGetValue(field.Name, out var value) ? value : null)</td>
+                            }
+                        }
+                        <td>@item.CreatedAt.ToLocalTime().ToString("g")</td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public S_EntityType? EntityType { get; set; }
+    [Parameter] public IDataEngine? DataEngine { get; set; }
+    [Parameter] public EventCallback<F_Record> OnSelect { get; set; }
+
+    private IEnumerable<F_Record>? Items { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Refresh();
+    }
+
+    private async Task Refresh()
+    {
+        if (DataEngine is not null && EntityType is not null)
+        {
+            Items = await DataEngine.QueryAsync(EntityType.Id);
+            StateHasChanged();
+        }
+    }
+
+    private static Dictionary<string, object?> Deserialize(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, object?>>(json) ?? new();
+        }
+        catch
+        {
+            return new Dictionary<string, object?> { ["raw"] = json };
+        }
+    }
+}
