@@ -147,23 +147,25 @@ public sealed class DefaultModuleDesigner : IModuleDesigner
 
     public async Task<S_Module> GenerateModuleFromPromptAsync(string prompt, CancellationToken cancellationToken = default)
     {
-        var schema = @"{
-  \"Name\": \"Nom du module\",
-  \"Description\": \"Description détaillée\",
-  \"EntityTypes\": [
+        var schema = """
+{
+  "Name": "Nom du module",
+  "Description": "Description détaillée",
+  "EntityTypes": [
     {
-      \"Name\": \"NomEntite\",
-      \"PluralName\": \"NomsEntites\",
-      \"Fields\": [
+      "Name": "NomEntite",
+      "PluralName": "NomsEntites",
+      "Fields": [
         {
-          \"Name\": \"NomChamp\",
-          \"Label\": \"Label Champ\",
-          \"DataType\": \"Text|Number|Decimal|Date|DateTime|Boolean|Lookup|Tags|File|Note\"
+          "Name": "NomChamp",
+          "Label": "Label Champ",
+          "DataType": "Text|Number|Decimal|Date|DateTime|Boolean|Lookup|Tags|File|Note"
         }
       ]
     }
   ]
-}";
+}
+""";
 
         var generationPrompt = $"Propose un module AION (entités/champs) pour: {prompt}. La réponse doit être un JSON valide suivant ce schéma: {schema}";
         LastGeneratedJson = (await _provider.GenerateAsync(generationPrompt, cancellationToken).ConfigureAwait(false))?.Trim();
