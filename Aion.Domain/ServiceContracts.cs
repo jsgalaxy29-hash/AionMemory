@@ -120,7 +120,8 @@ public interface IIntentDetector
 
 public interface IModuleDesigner
 {
-    Task<S_Module> DesignModuleAsync(string description, CancellationToken cancellationToken = default);
+    Task<S_Module> GenerateModuleFromPromptAsync(string prompt, CancellationToken cancellationToken = default);
+    string? LastGeneratedJson { get; }
 }
 
 public interface ICrudInterpreter

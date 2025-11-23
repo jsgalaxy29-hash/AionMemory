@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Linq;
 using Aion.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -311,6 +312,13 @@ Message: "{input}"
 
 public sealed class ModuleDesigner : IModuleDesigner
 {
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true
+    };
+
     private readonly ITextGenerationProvider _provider;
     private readonly ILogger<ModuleDesigner> _logger;
 
@@ -320,79 +328,287 @@ public sealed class ModuleDesigner : IModuleDesigner
         _logger = logger;
     }
 
-    public async Task<S_Module> DesignModuleAsync(string description, CancellationToken cancellationToken = default)
+    public string? LastGeneratedJson { get; private set; }
+
+    public async Task<S_Module> GenerateModuleFromPromptAsync(string prompt, CancellationToken cancellationToken = default)
     {
-        var prompt = $$"""
-Propose une structure de module AION (entité principale avec 3-5 champs) en JSON :
-{{"name":"<module>","entity":"<entity>","fields":[{{"name":"","label":"","type":"text|number|date|bool"}}]}}
-Description: {description}
+        var generationPrompt = $$"""
+Tu es l'orchestrateur AION. Génère STRICTEMENT du JSON compact sans texte additionnel avec ce schéma :
+{{
+  "module": {{ "name": "", "pluralName": "", "icon": "" }},
+  "entities": [
+    {{
+      "name": "",
+      "pluralName": "",
+      "icon": "",
+      "fields": [ {{ "name": "", "label": "", "type": "Text|Number|Decimal|Boolean|Date|DateTime|Lookup|File|Note|Json|Tags|Calculated" }} ]
+    }}
+  ],
+  "relations": [ {{ "fromEntity": "", "toEntity": "", "fromField": "", "kind": "OneToMany|ManyToOne|ManyToMany", "isBidirectional": false }} ]
+}}
+
+Description utilisateur: {prompt}
+Ne réponds que par du JSON valide.
 """;
 
-        var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
-        var fields = new List<S_Field>
-        {
-            new() { Name = "Title", Label = "Titre", DataType = FieldDataType.Text, IsRequired = true },
-            new() { Name = "CreatedAt", Label = "Créé le", DataType = FieldDataType.DateTime }
-        };
+        var response = await _provider.GenerateAsync(generationPrompt, cancellationToken).ConfigureAwait(false);
+        LastGeneratedJson = response;
 
         try
         {
-            var design = JsonSerializer.Deserialize<ModuleDesignResponse>(response, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-            if (design?.Fields?.Count > 0)
+            var design = JsonSerializer.Deserialize<ModuleDesignSchema>(response, SerializerOptions);
+            if (design is not null)
             {
-                fields.AddRange(design.Fields.Select(f => new S_Field
-                {
-                    Name = f.Name ?? "Field",
-                    Label = f.Label ?? f.Name ?? "Champ",
-                    DataType = MapFieldType(f.Type),
-                    IsRequired = f.Required ?? false
-                }));
+                return BuildModule(design, prompt);
             }
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Failed to parse module design response, using default fields");
+            _logger.LogWarning(ex, "Failed to parse module design JSON, returning fallback module");
         }
 
-        return new S_Module
+        return BuildFallbackModule(prompt);
+    }
+
+    private S_Module BuildModule(ModuleDesignSchema design, string prompt)
+    {
+        var moduleName = NormalizeName(design.Module?.Name) ?? NormalizeName(prompt) ?? "Module IA";
+        var module = new S_Module
         {
-            Name = string.IsNullOrWhiteSpace(description) ? "Nouveau module" : description,
-            Description = "Généré par Intent Designer",
-            EntityTypes = new List<S_EntityType>
-            {
-                new()
-                {
-                    Name = "Item",
-                    PluralName = "Items",
-                    Fields = fields
-                }
-            }
+            Name = moduleName,
+            Description = design.Module?.PluralName ?? $"Généré depuis: {prompt}",
+            EntityTypes = new List<S_EntityType>()
         };
+
+        foreach (var entity in design.Entities ?? Enumerable.Empty<DesignEntity>())
+        {
+            var entityName = NormalizeName(entity.Name) ?? "Entité";
+            var pluralName = NormalizeName(entity.PluralName) ?? EnsurePlural(entityName);
+            var entityType = new S_EntityType
+            {
+                ModuleId = module.Id,
+                Name = entityName,
+                PluralName = pluralName,
+                Icon = entity.Icon,
+                Fields = new List<S_Field>(),
+                Relations = new List<S_Relation>()
+            };
+
+            var fields = entity.Fields?.Count > 0 ? BuildFields(entityType, entity.Fields) : BuildDefaultFields(entityType);
+            foreach (var field in fields)
+            {
+                entityType.Fields.Add(field);
+            }
+
+            module.EntityTypes.Add(entityType);
+        }
+
+        if (!module.EntityTypes.Any())
+        {
+            var fallbackEntity = new S_EntityType
+            {
+                ModuleId = module.Id,
+                Name = "Item",
+                PluralName = "Items",
+                Fields = BuildDefaultFields(null)
+            };
+
+            foreach (var field in fallbackEntity.Fields)
+            {
+                field.EntityTypeId = fallbackEntity.Id;
+            }
+
+            module.EntityTypes.Add(fallbackEntity);
+        }
+
+        AppendRelations(module, design.Relations);
+        return module;
+    }
+
+    private void AppendRelations(S_Module module, IEnumerable<DesignRelation>? relations)
+    {
+        if (relations is null)
+        {
+            return;
+        }
+
+        foreach (var relation in relations)
+        {
+            var source = module.EntityTypes.FirstOrDefault(e => IsSameName(e.Name, relation.FromEntity) || IsSameName(e.PluralName, relation.FromEntity));
+            if (source is null)
+            {
+                continue;
+            }
+
+            var toEntity = NormalizeName(relation.ToEntity) ?? relation.ToEntity ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(toEntity))
+            {
+                continue;
+            }
+
+            var kind = Enum.TryParse<RelationKind>(relation.Kind, true, out var parsedKind)
+                ? parsedKind
+                : RelationKind.OneToMany;
+
+            source.Relations.Add(new S_Relation
+            {
+                EntityTypeId = source.Id,
+                FromField = NormalizeName(relation.FromField) ?? "Relation",
+                ToEntity = toEntity,
+                Kind = kind,
+                IsBidirectional = relation.IsBidirectional ?? false
+            });
+        }
+    }
+
+    private static IEnumerable<S_Field> BuildFields(S_EntityType entityType, IEnumerable<DesignField> fields)
+    {
+        foreach (var field in fields)
+        {
+            if (string.IsNullOrWhiteSpace(field.Name))
+            {
+                continue;
+            }
+
+            yield return new S_Field
+            {
+                EntityTypeId = entityType?.Id ?? Guid.Empty,
+                Name = NormalizeName(field.Name) ?? field.Name!,
+                Label = field.Label ?? field.Name ?? string.Empty,
+                DataType = MapFieldType(field.Type),
+                IsRequired = field.Required ?? false,
+                DefaultValue = field.DefaultValue,
+                LookupTarget = field.LookupTarget,
+                OptionsJson = field.OptionsJson
+            };
+        }
+    }
+
+    private static List<S_Field> BuildDefaultFields(S_EntityType? entityType)
+        =>
+        [
+            new()
+            {
+                EntityTypeId = entityType?.Id ?? Guid.Empty,
+                Name = "Titre",
+                Label = "Titre",
+                DataType = FieldDataType.Text,
+                IsRequired = true
+            },
+            new()
+            {
+                EntityTypeId = entityType?.Id ?? Guid.Empty,
+                Name = "Créé le",
+                Label = "Créé le",
+                DataType = FieldDataType.DateTime,
+                IsRequired = false
+            }
+        ];
+
+    private static S_Module BuildFallbackModule(string prompt)
+    {
+        var name = NormalizeName(prompt) ?? "Module IA";
+        var module = new S_Module
+        {
+            Name = name,
+            Description = "Généré automatiquement"
+        };
+
+        var entity = new S_EntityType
+        {
+            ModuleId = module.Id,
+            Name = "Item",
+            PluralName = "Items",
+            Fields = BuildDefaultFields(null)
+        };
+
+        foreach (var field in entity.Fields)
+        {
+            field.EntityTypeId = entity.Id;
+        }
+
+        module.EntityTypes.Add(entity);
+        return module;
     }
 
     private static FieldDataType MapFieldType(string? type) => type?.ToLowerInvariant() switch
     {
         "number" or "int" or "integer" => FieldDataType.Number,
-        "decimal" or "float" => FieldDataType.Decimal,
-        "date" => FieldDataType.Date,
-        "datetime" => FieldDataType.DateTime,
+        "decimal" or "float" or "double" => FieldDataType.Decimal,
         "bool" or "boolean" => FieldDataType.Boolean,
+        "date" => FieldDataType.Date,
+        "datetime" or "timestamp" => FieldDataType.DateTime,
+        "lookup" => FieldDataType.Lookup,
+        "file" or "image" or "photo" => FieldDataType.File,
+        "note" => FieldDataType.Note,
+        "json" => FieldDataType.Json,
+        "tags" or "tag" or "list" => FieldDataType.Tags,
+        "calculated" or "formula" => FieldDataType.Calculated,
         _ => FieldDataType.Text
     };
 
-    private sealed class ModuleDesignResponse
+    private static string? NormalizeName(string? value)
     {
-        public string? Name { get; set; }
-        public string? Entity { get; set; }
-        public List<ModuleDesignField> Fields { get; set; } = new();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length == 0)
+        {
+            return null;
+        }
+
+        return char.ToUpperInvariant(trimmed[0]) + trimmed[1..];
     }
 
-    private sealed class ModuleDesignField
+    private static string EnsurePlural(string singular)
+        => singular.EndsWith("s", StringComparison.OrdinalIgnoreCase) ? singular : $"{singular}s";
+
+    private static bool IsSameName(string left, string? right)
+        => right is not null && left.Equals(NormalizeName(right), StringComparison.OrdinalIgnoreCase);
+
+    private sealed class ModuleDesignSchema
+    {
+        public ModuleDefinition? Module { get; set; }
+        public List<DesignEntity> Entities { get; set; } = new();
+        public List<DesignRelation> Relations { get; set; } = new();
+    }
+
+    private sealed class ModuleDefinition
+    {
+        public string? Name { get; set; }
+        public string? PluralName { get; set; }
+        public string? Icon { get; set; }
+    }
+
+    private sealed class DesignEntity
+    {
+        public string? Name { get; set; }
+        public string? PluralName { get; set; }
+        public string? Icon { get; set; }
+        public List<DesignField> Fields { get; set; } = new();
+    }
+
+    private sealed class DesignField
     {
         public string? Name { get; set; }
         public string? Label { get; set; }
         public string? Type { get; set; }
         public bool? Required { get; set; }
+        public string? DefaultValue { get; set; }
+        public string? LookupTarget { get; set; }
+        public string? OptionsJson { get; set; }
+    }
+
+    private sealed class DesignRelation
+    {
+        public string? FromEntity { get; set; }
+        public string? ToEntity { get; set; }
+        public string? FromField { get; set; }
+        public string? Kind { get; set; }
+        public bool? IsBidirectional { get; set; }
     }
 }
 

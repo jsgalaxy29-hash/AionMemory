@@ -138,18 +138,20 @@ public sealed class DefaultModuleDesigner : IModuleDesigner
 {
     private readonly ITextGenerationProvider _provider;
 
+    public string? LastGeneratedJson { get; private set; }
+
     public DefaultModuleDesigner(ITextGenerationProvider provider)
     {
         _provider = provider;
     }
 
-    public async Task<S_Module> DesignModuleAsync(string description, CancellationToken cancellationToken = default)
+    public async Task<S_Module> GenerateModuleFromPromptAsync(string prompt, CancellationToken cancellationToken = default)
     {
-        var prompt = $"Propose un module AION (entités/champs) pour: {description}";
-        _ = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
+        var generationPrompt = $"Propose un module AION (entités/champs) pour: {prompt}";
+        LastGeneratedJson = await _provider.GenerateAsync(generationPrompt, cancellationToken).ConfigureAwait(false);
         return new S_Module
         {
-            Name = description,
+            Name = string.IsNullOrWhiteSpace(prompt) ? "Module IA" : prompt,
             Description = "Module généré automatiquement",
             EntityTypes = new List<S_EntityType>()
             {
