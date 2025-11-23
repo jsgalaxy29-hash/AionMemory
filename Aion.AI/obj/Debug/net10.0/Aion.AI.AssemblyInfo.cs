@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Aion.AI")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+970b836389dbdf47404517d280c1662c7e7cceb7")]
 [assembly: System.Reflection.AssemblyProductAttribute("Aion.AI")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Aion.AI")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
