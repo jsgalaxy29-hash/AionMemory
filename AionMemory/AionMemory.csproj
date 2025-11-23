@@ -69,11 +69,11 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <StaticWebAssetsTargetsPath>$(MSBuildSDKsPath)/Microsoft.NET.Sdk.Razor/build/staticwebassets/Microsoft.NET.Sdk.Razor.StaticWebAssets.targets</StaticWebAssetsTargetsPath>
+    <StaticWebAssetsPropsPath>$(MSBuildSDKsPath)/Microsoft.NET.Sdk.Razor/build/net$(TargetFrameworkVersion)/Microsoft.NET.Sdk.Razor.StaticWebAssets.props</StaticWebAssetsPropsPath>
+    <StaticWebAssetsTargetsPath>$(MSBuildSDKsPath)/Microsoft.NET.Sdk.Razor/build/net$(TargetFrameworkVersion)/Microsoft.NET.Sdk.Razor.StaticWebAssets.targets</StaticWebAssetsTargetsPath>
   </PropertyGroup>
 
-  <Import Project="$(MSBuildSDKsPath)/Microsoft.NET.Sdk.Razor/build/staticwebassets/Microsoft.NET.Sdk.Razor.StaticWebAssets.props"
-          Condition="Exists('$(MSBuildSDKsPath)/Microsoft.NET.Sdk.Razor/build/staticwebassets/Microsoft.NET.Sdk.Razor.StaticWebAssets.props')" />
+  <Import Project="$(StaticWebAssetsPropsPath)" Condition="Exists('$(StaticWebAssetsPropsPath)')" />
   <Import Project="$(StaticWebAssetsTargetsPath)" Condition="Exists('$(StaticWebAssetsTargetsPath)')" />
 
   <Target Name="StaticWebAssetsPrepareForRun" Condition="!Exists('$(StaticWebAssetsTargetsPath)')">
