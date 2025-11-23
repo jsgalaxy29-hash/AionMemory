@@ -147,8 +147,43 @@ public sealed class DefaultModuleDesigner : IModuleDesigner
 
     public async Task<S_Module> GenerateModuleFromPromptAsync(string prompt, CancellationToken cancellationToken = default)
     {
-        var generationPrompt = $"Propose un module AION (entités/champs) pour: {prompt}";
-        LastGeneratedJson = await _provider.GenerateAsync(generationPrompt, cancellationToken).ConfigureAwait(false);
+        var schema = @"{
+  \"Name\": \"Nom du module\",
+  \"Description\": \"Description détaillée\",
+  \"EntityTypes\": [
+    {
+      \"Name\": \"NomEntite\",
+      \"PluralName\": \"NomsEntites\",
+      \"Fields\": [
+        {
+          \"Name\": \"NomChamp\",
+          \"Label\": \"Label Champ\",
+          \"DataType\": \"Text|Number|Decimal|Date|DateTime|Boolean|Lookup|Tags|File|Note\"
+        }
+      ]
+    }
+  ]
+}";
+
+        var generationPrompt = $"Propose un module AION (entités/champs) pour: {prompt}. La réponse doit être un JSON valide suivant ce schéma: {schema}";
+        LastGeneratedJson = (await _provider.GenerateAsync(generationPrompt, cancellationToken).ConfigureAwait(false))?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(LastGeneratedJson))
+        {
+            try
+            {
+                var parsedModule = JsonSerializer.Deserialize<S_Module>(LastGeneratedJson, SerializerOptions);
+                if (parsedModule is not null)
+                {
+                    return parsedModule;
+                }
+            }
+            catch (JsonException)
+            {
+                // Ignored: we fallback to a minimal module below.
+            }
+        }
+
         return new S_Module
         {
             Name = string.IsNullOrWhiteSpace(prompt) ? "Module IA" : prompt,
