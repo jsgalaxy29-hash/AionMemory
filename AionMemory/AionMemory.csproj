@@ -1,14 +1,7 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
   <PropertyGroup>
     <TargetFrameworks>net10.0-android;net10.0-ios;net10.0-maccatalyst</TargetFrameworks>
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
-
-    <!-- Note for MacCatalyst:
-            The default runtime is maccatalyst-x64, except in Release config, in which case the default is maccatalyst-x64;maccatalyst-arm64.
-            When specifying both architectures, use the plural <RuntimeIdentifiers> instead of the singular <RuntimeIdentifier>.
-            The Mac App Store will NOT accept apps with ONLY maccatalyst-arm64 indicated;
-            either BOTH runtimes must be indicated or ONLY macatalyst-x64. -->
-    <!-- For example: <RuntimeIdentifiers>maccatalyst-x64;maccatalyst-arm64</RuntimeIdentifiers> -->
 
     <OutputType>Exe</OutputType>
     <RootNamespace>AionMemory</RootNamespace>
@@ -28,7 +21,6 @@
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
 
-    <!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
     <WindowsPackageType>None</WindowsPackageType>
 
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
@@ -56,65 +48,17 @@
     <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.10" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
-  </ItemGroup>
+<ItemGroup>
+  <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.10" />
+  <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="10.0.10" />
+  <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
+  <PackageReference Include="CommunityToolkit.Maui" Version="13.0.0" />
+</ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Aion.AI\Aion.AI.csproj" />
     <ProjectReference Include="..\Aion.Domain\Aion.Domain.csproj" />
     <ProjectReference Include="..\Aion.Infrastructure\Aion.Infrastructure.csproj" />
   </ItemGroup>
-
-  <PropertyGroup>
-    <StaticWebAssetsPropsPath>$(MSBuildSDKsPath)/Microsoft.NET.Sdk.Razor/build/net$(TargetFrameworkVersion)/Microsoft.NET.Sdk.Razor.StaticWebAssets.props</StaticWebAssetsPropsPath>
-    <StaticWebAssetsTargetsPath>$(MSBuildSDKsPath)/Microsoft.NET.Sdk.Razor/build/net$(TargetFrameworkVersion)/Microsoft.NET.Sdk.Razor.StaticWebAssets.targets</StaticWebAssetsTargetsPath>
-  </PropertyGroup>
-
-  <Import Project="$(StaticWebAssetsPropsPath)" Condition="Exists('$(StaticWebAssetsPropsPath)')" />
-  <Import Project="$(StaticWebAssetsTargetsPath)" Condition="Exists('$(StaticWebAssetsTargetsPath)')" />
-
-  <Target Name="StaticWebAssetsPrepareForRun" Condition="!Exists('$(StaticWebAssetsTargetsPath)')">
-    <ItemGroup>
-      <_BlazorWebViewStaticAsset Include="wwwroot\**\*" />
-    </ItemGroup>
-
-    <Message Text="Falling back to manual static web asset copy because Microsoft.NET.Sdk.Razor static web assets targets were not found." Importance="High" />
-
-    <Copy SourceFiles="@(_BlazorWebViewStaticAsset)"
-          DestinationFiles="@(_BlazorWebViewStaticAsset->'$(IntermediateOutputPath)blazor\wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-
-    <Copy SourceFiles="@(_BlazorWebViewStaticAsset)"
-          DestinationFiles="@(_BlazorWebViewStaticAsset->'$(OutDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
-
-  <Target Name="LoadStaticWebAssetsRuntimeManifest" Condition="!Exists('$(StaticWebAssetsTargetsPath)')">
-    <CallTarget Targets="StaticWebAssetsPrepareForRun" />
-  </Target>
-
-  <Target Name="StaticWebAssetsPrepareForPublish" Condition="!Exists('$(StaticWebAssetsTargetsPath)')">
-    <ItemGroup>
-      <_BlazorWebViewStaticAsset Include="wwwroot\**\*" />
-    </ItemGroup>
-
-    <Message Text="Falling back to manual static web asset copy because Microsoft.NET.Sdk.Razor static web assets targets were not found."
-             Importance="High" />
-
-    <Copy SourceFiles="@(_BlazorWebViewStaticAsset)"
-          DestinationFiles="@(_BlazorWebViewStaticAsset->'$(IntermediateOutputPath)blazor\\wwwroot\\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-
-    <Copy SourceFiles="@(_BlazorWebViewStaticAsset)"
-          DestinationFiles="@(_BlazorWebViewStaticAsset->'$(PublishDir)wwwroot\\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
-
-  <Target Name="LoadStaticWebAssetsPublishManifest" Condition="!Exists('$(StaticWebAssetsTargetsPath)')">
-    <CallTarget Targets="StaticWebAssetsPrepareForPublish" />
-  </Target>
 
 </Project>
