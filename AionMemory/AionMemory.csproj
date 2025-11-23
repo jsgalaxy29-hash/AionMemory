@@ -68,4 +68,28 @@
     <ProjectReference Include="..\Aion.Infrastructure\Aion.Infrastructure.csproj" />
   </ItemGroup>
 
+  <PropertyGroup>
+    <StaticWebAssetsTargetsPath>$(MSBuildSDKsPath)/Microsoft.NET.Sdk.Razor/build/staticwebassets/Microsoft.NET.Sdk.Razor.StaticWebAssets.targets</StaticWebAssetsTargetsPath>
+  </PropertyGroup>
+
+  <Import Project="$(MSBuildSDKsPath)/Microsoft.NET.Sdk.Razor/build/staticwebassets/Microsoft.NET.Sdk.Razor.StaticWebAssets.props"
+          Condition="Exists('$(MSBuildSDKsPath)/Microsoft.NET.Sdk.Razor/build/staticwebassets/Microsoft.NET.Sdk.Razor.StaticWebAssets.props')" />
+  <Import Project="$(StaticWebAssetsTargetsPath)" Condition="Exists('$(StaticWebAssetsTargetsPath)')" />
+
+  <Target Name="StaticWebAssetsPrepareForRun" Condition="!Exists('$(StaticWebAssetsTargetsPath)')">
+    <ItemGroup>
+      <_BlazorWebViewStaticAsset Include="wwwroot\**\*" />
+    </ItemGroup>
+
+    <Message Text="Falling back to manual static web asset copy because Microsoft.NET.Sdk.Razor static web assets targets were not found." Importance="High" />
+
+    <Copy SourceFiles="@(_BlazorWebViewStaticAsset)"
+          DestinationFiles="@(_BlazorWebViewStaticAsset->'$(IntermediateOutputPath)blazor\wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+
+    <Copy SourceFiles="@(_BlazorWebViewStaticAsset)"
+          DestinationFiles="@(_BlazorWebViewStaticAsset->'$(OutDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>
