@@ -28,14 +28,21 @@ public sealed class DefaultAionAiProvider : ITextGenerationProvider, IEmbeddingP
 
     public async Task<string> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_options.Endpoint))
+        var endpoint = _options.LlmEndpoint ?? _options.BaseEndpoint;
+
+        if (string.IsNullOrWhiteSpace(endpoint))
         {
             _logger.LogWarning("Endpoint IA non configuré, retour d'une réponse stub.");
-            return $"[stub] {_options.Model ?? "model"}: {prompt}";
+            return $"[stub] {_options.LlmModel ?? "model"}: {prompt}";
         }
 
         var client = CreateClient();
-        var payload = new { model = _options.Model ?? "generic-llm", messages = new[] { new { role = "user", content = prompt } } };
+        if (client.BaseAddress is null && Uri.TryCreate(endpoint, UriKind.Absolute, out var llmUri))
+        {
+            client.BaseAddress = llmUri;
+        }
+
+        var payload = new { model = _options.LlmModel ?? "generic-llm", messages = new[] { new { role = "user", content = prompt } } };
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildUri(client, "chat/completions"))
         {
             Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
@@ -56,13 +63,20 @@ public sealed class DefaultAionAiProvider : ITextGenerationProvider, IEmbeddingP
 
     public async Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_options.Endpoint))
+        var endpoint = _options.EmbeddingsEndpoint ?? _options.BaseEndpoint;
+
+        if (string.IsNullOrWhiteSpace(endpoint))
         {
             return Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
         }
 
         var client = CreateClient();
-        var payload = new { model = _options.Model ?? "generic-embedding", input = text };
+        if (client.BaseAddress is null && Uri.TryCreate(endpoint, UriKind.Absolute, out var embeddingUri))
+        {
+            client.BaseAddress = embeddingUri;
+        }
+
+        var payload = new { model = _options.EmbeddingModel ?? _options.LlmModel ?? "generic-embedding", input = text };
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildUri(client, "embeddings"))
         {
             Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
@@ -78,27 +92,39 @@ public sealed class DefaultAionAiProvider : ITextGenerationProvider, IEmbeddingP
 
     public async Task<TranscriptionResult> TranscribeAsync(Stream audioStream, string fileName, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_options.Endpoint))
+        var endpoint = _options.TranscriptionEndpoint ?? _options.BaseEndpoint;
+
+        if (string.IsNullOrWhiteSpace(endpoint))
         {
-            return new TranscriptionResult("Transcription stub", TimeSpan.Zero, _options.Model);
+            return new TranscriptionResult("Transcription stub", TimeSpan.Zero, _options.TranscriptionModel ?? _options.LlmModel);
         }
 
         var client = CreateClient();
+        if (client.BaseAddress is null && Uri.TryCreate(endpoint, UriKind.Absolute, out var transcriptionUri))
+        {
+            client.BaseAddress = transcriptionUri;
+        }
+
         using var content = new MultipartFormDataContent();
         content.Add(new StreamContent(audioStream), "file", fileName);
-        content.Add(new StringContent(_options.Model ?? "generic-transcription"), "model");
+        content.Add(new StringContent(_options.TranscriptionModel ?? _options.LlmModel ?? "generic-transcription"), "model");
 
         var response = await client.PostAsync(BuildUri(client, "audio/transcriptions"), content, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
         var text = doc.RootElement.GetProperty("text").GetString() ?? string.Empty;
-        return new TranscriptionResult(text, TimeSpan.Zero, _options.Model);
+        return new TranscriptionResult(text, TimeSpan.Zero, _options.TranscriptionModel ?? _options.LlmModel);
     }
 
     private HttpClient CreateClient()
     {
         var client = _httpClientFactory.CreateClient("aion-ai");
+        if (client.BaseAddress is null && Uri.TryCreate(_options.LlmEndpoint ?? _options.BaseEndpoint ?? string.Empty, UriKind.Absolute, out var uri))
+        {
+            client.BaseAddress = uri;
+        }
+
         if (!string.IsNullOrWhiteSpace(_options.ApiKey) && client.DefaultRequestHeaders.Authorization is null)
         {
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
