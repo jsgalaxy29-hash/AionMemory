@@ -280,9 +280,9 @@ public sealed class IntentRecognizer : IIntentDetector
     {
         var prompt = $$"""
 Analyse l'intention utilisateur pour l'entrée suivante et réponds uniquement en JSON compact :
-{{"intent":"<type>","parameters":{{...}},"confidence":0.0}}
+{"intent":"<type>","parameters":{...},"confidence":0.0}
 
-Message: "{input}"
+Message: "{{input}}"
 """;
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
 
@@ -334,20 +334,20 @@ public sealed class ModuleDesigner : IModuleDesigner
     {
         var generationPrompt = $$"""
 Tu es l'orchestrateur AION. Génère STRICTEMENT du JSON compact sans texte additionnel avec ce schéma :
-{{
-  "module": {{ "name": "", "pluralName": "", "icon": "" }},
+{
+  "module": { "name": "", "pluralName": "", "icon": "" },
   "entities": [
-    {{
+    {
       "name": "",
       "pluralName": "",
       "icon": "",
-      "fields": [ {{ "name": "", "label": "", "type": "Text|Number|Decimal|Boolean|Date|DateTime|Lookup|File|Note|Json|Tags|Calculated" }} ]
-    }}
+      "fields": [ { "name": "", "label": "", "type": "Text|Number|Decimal|Boolean|Date|DateTime|Lookup|File|Note|Json|Tags|Calculated" } ]
+    }
   ],
-  "relations": [ {{ "fromEntity": "", "toEntity": "", "fromField": "", "kind": "OneToMany|ManyToOne|ManyToMany", "isBidirectional": false }} ]
-}}
+  "relations": [ { "fromEntity": "", "toEntity": "", "fromField": "", "kind": "OneToMany|ManyToOne|ManyToMany", "isBidirectional": false } ]
+}
 
-Description utilisateur: {prompt}
+Description utilisateur: {{prompt}}
 Ne réponds que par du JSON valide.
 """;
 
@@ -625,12 +625,13 @@ public sealed class CrudInterpreter : ICrudInterpreter
 
     public async Task<string> GenerateQueryAsync(string intent, S_Module module, CancellationToken cancellationToken = default)
     {
-        var prompt = $$"""
+        var fieldNames = string.Join(", ", module.EntityTypes.SelectMany(e => e.Fields.Select(f => f.Name)));
+        var prompt = $$$"""
 Tu es un assistant qui traduit les requêtes utilisateur en opérations CRUD pour le module suivant:
-Module: {module.Name}
-Champs: {string.Join(", ", module.EntityTypes.SelectMany(e => e.Fields.Select(f => f.Name)))}
+Module: {{module.Name}}
+Champs: {{fieldNames}}
 
-Réponds par une instruction JSON avec {{"action":"create|update|delete|query","filters":{{}},"payload":{{}}}} pour: {intent}
+Réponds par une instruction JSON avec {"action":"create|update|delete|query","filters":{},"payload":{}} pour: {{intent}}
 """;
 
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
@@ -656,7 +657,7 @@ public sealed class AgendaInterpreter : IAgendaInterpreter
     public async Task<S_Event> CreateEventAsync(string input, CancellationToken cancellationToken = default)
     {
         var prompt = $$"""
-Génère un événement JSON {{"title":"","start":"ISO","end":"ISO|null","reminder":"ISO|null"}} pour: {input}
+Génère un événement JSON {"title":"","start":"ISO","end":"ISO|null","reminder":"ISO|null"} pour: {{input}}
 """;
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
         try
@@ -706,9 +707,9 @@ public sealed class NoteInterpreter : INoteInterpreter
     {
         var prompt = $$"""
 Nettoie et synthétise la note suivante. Réponds uniquement avec le texte amélioré.
-Titre: {title}
+Titre: {{title}}
 Contenu:
-{content}
+{{content}}
 """;
 
         var refined = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
@@ -728,7 +729,7 @@ public sealed class ReportInterpreter : IReportInterpreter
     public async Task<S_ReportDefinition> BuildReportAsync(string description, Guid moduleId, CancellationToken cancellationToken = default)
     {
         var prompt = $$"""
-Construis une requête JSON {{"query":"...","visualization":"table|chart"}} pour un rapport: {description}
+Construis une requête JSON {"query":"...","visualization":"table|chart"} pour un rapport: {{description}}
 """;
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
 
