@@ -11,7 +11,7 @@
                     <label>@field.Label</label>
                     @switch (field.DataType)
                     {
-                        case FieldDataType.Text or FieldDataType.Lookup or FieldDataType.Tags:
+                        case FieldDataType.Text or FieldDataType.Lookup or FieldDataType.Tags or FieldDataType.File:
                             <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
                             break;
                         case FieldDataType.Note:
@@ -24,7 +24,7 @@
                             <InputCheckbox class="input" Value="@GetBool(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetBool(field.Name)" />
                             break;
                         case FieldDataType.Date or FieldDataType.DateTime:
-                            <InputDate TValue="DateTime?" class="input" Value="@GetDate(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetDate(field.Name)" />
+                            <InputDate<DateTime?> class="input" Value="@GetDateTime(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetDateTime(field.Name)" />
                             break;
                         default:
                             <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
@@ -48,7 +48,33 @@
     private Dictionary<string, object?> FieldValues { get; set; } = new();
 
     private string? GetString(string key) => FieldValues.TryGetValue(key, out var value) ? value?.ToString() : null;
-    private DateTime? GetDate(string key) => FieldValues.TryGetValue(key, out var value) ? value as DateTime? : null;
+
+    private DateTime? GetDateTime(string key)
+    {
+        if (FieldValues.TryGetValue(key, out var value))
+        {
+            if (value is System.Text.Json.JsonElement element)
+            {
+                if (element.ValueKind == System.Text.Json.JsonValueKind.String && DateTime.TryParse(element.GetString(), out var parsed))
+                {
+                    return parsed;
+                }
+
+                if (element.ValueKind == System.Text.Json.JsonValueKind.Number && element.TryGetInt64(out var timestamp))
+                {
+                    return DateTimeOffset.FromUnixTimeSeconds(timestamp).DateTime;
+                }
+            }
+
+            if (value is DateTime dateTime)
+            {
+                return dateTime;
+            }
+        }
+
+        return null;
+    }
+
     private decimal? GetDecimal(string key) => FieldValues.TryGetValue(key, out var value) ? value as decimal? : null;
     private bool GetBool(string key) => FieldValues.TryGetValue(key, out var value) && value is bool b && b;
 
