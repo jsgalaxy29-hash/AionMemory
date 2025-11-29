@@ -330,9 +330,11 @@ namespace Aion.Infrastructure.Migrations
                     Label = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
                     DataType = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
                     IsRequired = table.Column<bool>(type: "INTEGER", nullable: false),
+                    IsSearchable = table.Column<bool>(type: "INTEGER", nullable: false, defaultValue: false),
+                    IsListVisible = table.Column<bool>(type: "INTEGER", nullable: false, defaultValue: false),
                     DefaultValue = table.Column<string>(type: "TEXT", maxLength: 1024, nullable: true),
-                    LookupTarget = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
-                    OptionsJson = table.Column<string>(type: "TEXT", maxLength: 4000, nullable: true)
+                    EnumValues = table.Column<string>(type: "TEXT", maxLength: 4000, nullable: true),
+                    RelationTargetEntityTypeId = table.Column<Guid>(type: "TEXT", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -365,18 +367,17 @@ namespace Aion.Infrastructure.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    EntityTypeId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    FromField = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
-                    ToEntity = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
+                    FromEntityTypeId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    ToEntityTypeId = table.Column<Guid>(type: "TEXT", nullable: false),
                     Kind = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
-                    IsBidirectional = table.Column<bool>(type: "INTEGER", nullable: false)
+                    RoleName = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Relations", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_Relations_EntityTypes_EntityTypeId",
-                        column: x => x.EntityTypeId,
+                        name: "FK_Relations_EntityTypes_FromEntityTypeId",
+                        column: x => x.FromEntityTypeId,
                         principalTable: "EntityTypes",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -392,8 +393,11 @@ namespace Aion.Infrastructure.Migrations
                     Label = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
                     DataType = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
                     IsRequired = table.Column<bool>(type: "INTEGER", nullable: false),
+                    IsSearchable = table.Column<bool>(type: "INTEGER", nullable: false, defaultValue: false),
+                    IsListVisible = table.Column<bool>(type: "INTEGER", nullable: false, defaultValue: false),
                     DefaultValue = table.Column<string>(type: "TEXT", maxLength: 1024, nullable: true),
-                    LookupTarget = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true)
+                    EnumValues = table.Column<string>(type: "TEXT", maxLength: 4000, nullable: true),
+                    RelationTargetEntityTypeId = table.Column<Guid>(type: "TEXT", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -571,9 +575,9 @@ namespace Aion.Infrastructure.Migrations
                 columns: new[] { "EntityTypeId", "CreatedAt" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_Relations_EntityTypeId",
+                name: "IX_Relations_FromEntityTypeId",
                 table: "Relations",
-                column: "EntityTypeId");
+                column: "FromEntityTypeId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Reports_ModuleId",

@@ -44,8 +44,11 @@ public sealed class TableDefinitionService : ITableDefinitionService
                     Label = f.Label,
                     DataType = f.DataType,
                     IsRequired = f.IsRequired,
+                    IsSearchable = f.IsSearchable,
+                    IsListVisible = f.IsListVisible,
                     DefaultValue = f.DefaultValue,
-                    LookupTarget = f.LookupTarget
+                    EnumValues = f.EnumValues,
+                    RelationTargetEntityTypeId = f.RelationTargetEntityTypeId
                 })
                 .ToList(),
             Views = new List<SViewDefinition>()

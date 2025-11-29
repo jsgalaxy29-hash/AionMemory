@@ -12,7 +12,7 @@ public class TableDefinitionTests
 
         Assert.Equal("Name", field.Name);
         Assert.Equal("Nom", field.Label);
-        Assert.Equal(FieldDataType.Text, field.DataType);
+        Assert.Equal(EnumSFieldType.String, field.DataType);
         Assert.True(field.IsRequired);
         Assert.Equal("John", field.DefaultValue);
     }
@@ -22,8 +22,8 @@ public class TableDefinitionTests
     {
         var fields = new[]
         {
-            new SFieldDefinition { Name = "Title", Label = "Titre", DataType = FieldDataType.Text },
-            new SFieldDefinition { Name = "Done", Label = "Terminée", DataType = FieldDataType.Boolean }
+            new SFieldDefinition { Name = "Title", Label = "Titre", DataType = EnumSFieldType.String },
+            new SFieldDefinition { Name = "Done", Label = "Terminée", DataType = EnumSFieldType.Bool }
         };
 
         var table = STable.Create("tasks", "Tâches", fields);

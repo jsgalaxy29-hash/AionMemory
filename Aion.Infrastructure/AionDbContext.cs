@@ -62,7 +62,7 @@ public class AionDbContext : DbContext
             builder.Property(e => e.PluralName).IsRequired().HasMaxLength(128);
             builder.Property(e => e.Icon).HasMaxLength(64);
             builder.HasMany(e => e.Fields).WithOne().HasForeignKey(f => f.EntityTypeId);
-            builder.HasMany(e => e.Relations).WithOne().HasForeignKey(r => r.EntityTypeId);
+            builder.HasMany(e => e.Relations).WithOne().HasForeignKey(r => r.FromEntityTypeId);
         });
 
         modelBuilder.Entity<S_Field>(builder =>
@@ -70,15 +70,15 @@ public class AionDbContext : DbContext
             builder.Property(f => f.Name).IsRequired().HasMaxLength(128);
             builder.Property(f => f.Label).IsRequired().HasMaxLength(128);
             builder.Property(f => f.DataType).HasConversion<string>().HasMaxLength(32);
-            builder.Property(f => f.LookupTarget).HasMaxLength(128);
-            builder.Property(f => f.OptionsJson).HasMaxLength(4000);
             builder.Property(f => f.DefaultValue).HasMaxLength(1024);
+            builder.Property(f => f.EnumValues).HasMaxLength(4000);
+            builder.Property(f => f.IsSearchable).HasDefaultValue(false);
+            builder.Property(f => f.IsListVisible).HasDefaultValue(false);
         });
 
         modelBuilder.Entity<S_Relation>(builder =>
         {
-            builder.Property(r => r.FromField).IsRequired().HasMaxLength(128);
-            builder.Property(r => r.ToEntity).IsRequired().HasMaxLength(128);
+            builder.Property(r => r.RoleName).IsRequired().HasMaxLength(128);
             builder.Property(r => r.Kind).HasConversion<string>().HasMaxLength(32);
         });
 
@@ -236,7 +236,9 @@ public class AionDbContext : DbContext
             builder.Property(f => f.Label).IsRequired().HasMaxLength(128);
             builder.Property(f => f.DataType).HasConversion<string>().HasMaxLength(32);
             builder.Property(f => f.DefaultValue).HasMaxLength(1024);
-            builder.Property(f => f.LookupTarget).HasMaxLength(128);
+            builder.Property(f => f.EnumValues).HasMaxLength(4000);
+            builder.Property(f => f.IsSearchable).HasDefaultValue(false);
+            builder.Property(f => f.IsListVisible).HasDefaultValue(false);
             builder.HasIndex(f => new { f.TableId, f.Name }).IsUnique();
         });
 
