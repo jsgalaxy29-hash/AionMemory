@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Aion.AI;
 using Aion.Domain;
 using Aion.Infrastructure;
+using AionMemory.Services;
 using CommunityToolkit.Maui;
 using Microsoft.AspNetCore.Components.WebView.Maui;
 using Microsoft.Data.Sqlite;
@@ -101,6 +102,7 @@ public static class MauiProgram
     {
         services.AddAionInfrastructure(configuration);
         services.AddAionAi(configuration);
+        services.AddScoped<ITableDefinitionService, TableDefinitionService>();
     }
 
     private static void RestoreFromBackupIfRequested(IServiceProvider serviceProvider)

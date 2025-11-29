@@ -1,19 +1,20 @@
 @using System.Text.Json
+@using Aion.Domain
 @using AionMemory.Logic
 @inherits OwningComponentBase
 
 <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <h5>@EntityType?.PluralName</h5>
+        <h5>@Table?.DisplayName</h5>
         <button class="button secondary" @onclick="Refresh">Actualiser</button>
     </div>
     <table class="table">
         <thead>
             <tr>
                 <th>Titre</th>
-                @if (EntityType is not null)
+                @if (Table is not null)
                 {
-                    @foreach (var field in EntityType.Fields.Take(3))
+                    @foreach (var field in Table.Fields.Take(3))
                     {
                         <th>@field.Label</th>
                     }
@@ -33,9 +34,9 @@
                     var payload = DynamicListLogic.DeserializePayload(item.DataJson);
                     <tr @onclick="() => OnSelect.InvokeAsync(item)" style="cursor:pointer;">
                         <td>@item.Id</td>
-                        @if (EntityType is not null)
+                        @if (Table is not null)
                         {
-                            @foreach (var field in EntityType.Fields.Take(3))
+                            @foreach (var field in Table.Fields.Take(3))
                             {
                                 <td>@(payload.TryGetValue(field.Name, out var value) ? value : null)</td>
                             }
@@ -49,7 +50,7 @@
 </div>
 
 @code {
-    [Parameter] public S_EntityType? EntityType { get; set; }
+    [Parameter] public STable? Table { get; set; }
     [Parameter] public IDataEngine? DataEngine { get; set; }
     [Parameter] public string? Filter { get; set; }
     [Parameter] public EventCallback<F_Record> OnSelect { get; set; }
@@ -63,9 +64,9 @@
 
     private async Task Refresh()
     {
-        if (DataEngine is not null && EntityType is not null)
+        if (DataEngine is not null && Table is not null)
         {
-            Items = await DataEngine.QueryAsync(EntityType.Id, Filter);
+            Items = await DataEngine.QueryAsync(Table.Id, Filter);
             StateHasChanged();
         }
     }

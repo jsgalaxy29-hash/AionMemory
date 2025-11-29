@@ -1,6 +1,8 @@
 @page "/potager"
+@using Aion.Domain
 @inject IMetadataService Metadata
 @inject IDataEngine DataEngine
+@inject AionMemory.Services.ITableDefinitionService Tables
 @inject INoteService NoteService
 @inject NavigationManager Navigation
 
@@ -14,13 +16,13 @@
             </div>
             <button class="button" @onclick="NewCulture">Ajouter</button>
         </div>
-        @if (PotagerEntity is null)
+        @if (PotagerTable is null)
         {
             <p>Le module Potager n'est pas disponible.</p>
         }
         else
         {
-            <DynamicList EntityType="PotagerEntity" DataEngine="DataEngine" OnSelect="OpenRecord" />
+            <DynamicList Table="PotagerTable" DataEngine="DataEngine" OnSelect="OpenRecord" />
         }
     </div>
     <div class="card">
@@ -31,11 +33,16 @@
 
 @code {
     private S_EntityType? PotagerEntity { get; set; }
+    private STable? PotagerTable { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
         var modules = await Metadata.GetModulesAsync();
         PotagerEntity = modules.FirstOrDefault(m => m.Name.Contains("Potager", StringComparison.OrdinalIgnoreCase))?.EntityTypes.FirstOrDefault();
+        if (PotagerEntity is not null)
+        {
+            PotagerTable = await Tables.EnsureTableAsync(PotagerEntity);
+        }
     }
 
     private void OpenRecord(F_Record record)

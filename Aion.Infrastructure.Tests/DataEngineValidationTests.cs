@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Aion.Domain;
 using Aion.Infrastructure;
 using Aion.Infrastructure.Services;
@@ -31,7 +35,7 @@ public class DataEngineValidationTests
             }
         };
 
-        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance);
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService());
         await engine.CreateTableAsync(table);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => engine.InsertAsync(table.Id, "{}"));
@@ -71,7 +75,7 @@ public class DataEngineValidationTests
             }
         };
 
-        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance);
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService());
         await engine.CreateTableAsync(table);
 
         await engine.InsertAsync(table.Id, "{ \"Title\": \"A\", \"Category\": \"work\" }");
@@ -83,4 +87,18 @@ public class DataEngineValidationTests
         var combined = await engine.QueryAsync(table.Id, equals: new Dictionary<string, string?> { ["Category"] = "home" });
         Assert.Single(combined);
     }
+}
+
+file sealed class NullSearchService : ISearchService
+{
+    public Task<IEnumerable<SearchHit>> SearchAsync(string query, CancellationToken cancellationToken = default)
+        => Task.FromResult<IEnumerable<SearchHit>>(Array.Empty<SearchHit>());
+
+    public Task IndexNoteAsync(S_Note note, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task IndexRecordAsync(F_Record record, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task IndexFileAsync(F_File file, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task RemoveAsync(string targetType, Guid targetId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
