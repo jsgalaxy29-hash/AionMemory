@@ -14,7 +14,7 @@ public class OrchestratorTests
         var provider = new StubLlmProvider("{\"intent\":\"create_note\",\"parameters\":{\"title\":\"Hello\"},\"confidence\":0.82}");
         var recognizer = new IntentRecognizer(provider, NullLogger<IntentRecognizer>.Instance);
 
-        var result = await recognizer.DetectAsync("ajoute une note");
+        var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "ajoute une note" });
 
         Assert.Equal("create_note", result.Intent);
         Assert.Equal(0.82, result.Confidence, 2);
@@ -42,7 +42,7 @@ public class OrchestratorTests
         var provider = new StubLlmProvider(payload);
         var interpreter = new CrudInterpreter(provider, NullLogger<CrudInterpreter>.Instance);
 
-        var result = await interpreter.GenerateQueryAsync("ajoute", module);
+        var result = await interpreter.GenerateQueryAsync(new CrudQueryRequest { Intent = "ajoute", Module = module });
 
         Assert.Equal("create", result.Action);
         Assert.Equal("Test", result.Filters["module"]);

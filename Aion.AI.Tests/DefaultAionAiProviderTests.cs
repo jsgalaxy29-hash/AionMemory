@@ -64,10 +64,10 @@ public class DefaultAionAiProviderTests
         var provider = new StubTextGenerationProvider(moduleJson);
         var designer = new DefaultModuleDesigner(provider);
 
-        var module = await designer.GenerateModuleFromPromptAsync("Cuisine");
+        var result = await designer.GenerateModuleAsync(new ModuleDesignRequest { Prompt = "Cuisine" });
 
-        Assert.Equal("Recettes", module.Name);
-        Assert.Single(module.EntityTypes);
+        Assert.Equal("Recettes", result.Module.Name);
+        Assert.Single(result.Module.EntityTypes);
         Assert.Equal(moduleJson.Trim(), designer.LastGeneratedJson);
     }
 

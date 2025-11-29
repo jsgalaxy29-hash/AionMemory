@@ -147,8 +147,8 @@
             CurrentInput = "Module personnel pour suivre mes projets";
         }
 
-        var module = await ModuleDesigner.GenerateModuleFromPromptAsync(CurrentInput);
-        Messages.Add(new ChatMessage("AION", $"Module généré: {module.Name} avec {module.EntityTypes.Count} entité(s).", false));
+        var moduleResult = await ModuleDesigner.GenerateModuleAsync(new ModuleDesignRequest { Prompt = CurrentInput });
+        Messages.Add(new ChatMessage("AION", $"Module généré: {moduleResult.Module.Name} avec {moduleResult.Module.EntityTypes.Count} entité(s).", false));
     }
 
     private void NavigateToModules() => Navigation.NavigateTo("/modules");

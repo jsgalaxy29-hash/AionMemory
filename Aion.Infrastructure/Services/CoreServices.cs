@@ -1375,12 +1375,12 @@ public sealed class VisionService : IAionVisionService, IVisionService
         _db = db;
     }
 
-    public async Task<S_VisionAnalysis> AnalyzeAsync(Guid fileId, VisionAnalysisType analysisType, CancellationToken cancellationToken = default)
+    public async Task<S_VisionAnalysis> AnalyzeAsync(VisionAnalysisRequest request, CancellationToken cancellationToken = default)
     {
         var analysis = new S_VisionAnalysis
         {
-            FileId = fileId,
-            AnalysisType = analysisType,
+            FileId = request.FileId,
+            AnalysisType = request.AnalysisType,
             ResultJson = JsonSerializer.Serialize(new { summary = "Vision analysis placeholder" })
         };
 
