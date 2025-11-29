@@ -62,9 +62,15 @@ public interface ICloudBackupService
     Task RestoreAsync(string destinationPath, CancellationToken cancellationToken = default);
 }
 
+public readonly record struct SearchHit(string TargetType, Guid TargetId, string Title, string Snippet, double Score);
+
 public interface ISearchService
 {
-    Task<IEnumerable<string>> SearchAsync(string query, CancellationToken cancellationToken = default);
+    Task<IEnumerable<SearchHit>> SearchAsync(string query, CancellationToken cancellationToken = default);
+    Task IndexNoteAsync(S_Note note, CancellationToken cancellationToken = default);
+    Task IndexRecordAsync(F_Record record, CancellationToken cancellationToken = default);
+    Task IndexFileAsync(F_File file, CancellationToken cancellationToken = default);
+    Task RemoveAsync(string targetType, Guid targetId, CancellationToken cancellationToken = default);
 }
 
 public interface IAutomationService
