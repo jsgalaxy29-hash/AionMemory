@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Aion.Domain;
@@ -58,6 +60,9 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
     public async Task<STable> CreateTableAsync(STable table, CancellationToken cancellationToken = default)
     {
+        NormalizeTableDefinition(table);
+        ValidateTableDefinition(table);
+
         await _db.Tables.AddAsync(table, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Table {Table} created with {FieldCount} fields", table.Name, table.Fields.Count);
@@ -84,10 +89,12 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
     public async Task<F_Record> InsertAsync(Guid entityTypeId, string dataJson, CancellationToken cancellationToken = default)
     {
+        var validatedJson = await ValidateRecordAsync(entityTypeId, dataJson, cancellationToken).ConfigureAwait(false);
+
         var record = new F_Record
         {
             EntityTypeId = entityTypeId,
-            DataJson = dataJson,
+            DataJson = validatedJson,
             CreatedAt = DateTimeOffset.UtcNow
         };
         await _db.Records.AddAsync(record, cancellationToken).ConfigureAwait(false);
@@ -101,7 +108,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         var record = await _db.Records.FirstOrDefaultAsync(r => r.EntityTypeId == entityTypeId && r.Id == id, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Record {id} not found for entity {entityTypeId}");
 
-        record.DataJson = dataJson;
+        record.DataJson = await ValidateRecordAsync(entityTypeId, dataJson, cancellationToken).ConfigureAwait(false);
         record.UpdatedAt = DateTimeOffset.UtcNow;
         _db.Records.Update(record);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -125,6 +132,14 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
     public async Task<IEnumerable<F_Record>> QueryAsync(Guid entityTypeId, string? filter = null, IDictionary<string, string?>? equals = null, CancellationToken cancellationToken = default)
     {
         var query = _db.Records.AsQueryable().Where(r => r.EntityTypeId == entityTypeId);
+        var table = await GetTableAsync(entityTypeId, cancellationToken).ConfigureAwait(false);
+
+        if (table is not null)
+        {
+            var viewFilter = ResolveViewFilter(filter, table);
+            equals = MergeEqualsFilters(equals, viewFilter);
+        }
+
         if (!string.IsNullOrWhiteSpace(filter))
         {
             query = query.Where(r => _db.RecordSearch
@@ -137,12 +152,240 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         {
             foreach (var clause in equals.Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value)))
             {
+                EnsureFieldExists(table, clause.Key);
                 var searchText = $"\"{clause.Key}\":\"{clause.Value}\"";
                 query = query.Where(r => r.DataJson != null && r.DataJson.Contains(searchText));
             }
         }
 
         return await query.OrderByDescending(r => r.CreatedAt).ToListAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void NormalizeTableDefinition(STable table)
+    {
+        foreach (var field in table.Fields)
+        {
+            field.TableId = table.Id;
+        }
+
+        foreach (var view in table.Views)
+        {
+            view.TableId = table.Id;
+        }
+    }
+
+    private static void ValidateTableDefinition(STable table)
+    {
+        if (string.IsNullOrWhiteSpace(table.Name))
+        {
+            throw new InvalidOperationException("Table name is required");
+        }
+
+        var duplicate = table.Fields
+            .GroupBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(g => g.Count() > 1);
+
+        if (duplicate is not null)
+        {
+            throw new InvalidOperationException($"Field name '{duplicate.Key}' is duplicated in table {table.Name}");
+        }
+
+        foreach (var view in table.Views)
+        {
+            ValidateViewDefinition(view, table);
+        }
+    }
+
+    private static void ValidateViewDefinition(SViewDefinition view, STable table)
+    {
+        if (string.IsNullOrWhiteSpace(view.QueryDefinition))
+        {
+            return;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(view.QueryDefinition);
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in document.RootElement.EnumerateObject())
+                {
+                    EnsureFieldExists(table, property.Name);
+                }
+            }
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException($"Invalid view definition for view {view.Name}", ex);
+        }
+    }
+
+    private static void EnsureFieldExists(STable? table, string fieldName)
+    {
+        if (table is null)
+        {
+            return;
+        }
+
+        if (!table.Fields.Any(f => string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException($"Field '{fieldName}' is not defined for table {table.Name}");
+        }
+    }
+
+    private async Task<string> ValidateRecordAsync(Guid tableId, string dataJson, CancellationToken cancellationToken)
+    {
+        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
+
+        using var payload = JsonDocument.Parse(string.IsNullOrWhiteSpace(dataJson) ? "{}" : dataJson);
+        var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        if (payload.RootElement.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in payload.RootElement.EnumerateObject())
+            {
+                EnsureFieldExists(table, property.Name);
+                values[property.Name] = ExtractValue(property.Value);
+            }
+        }
+
+        foreach (var field in table.Fields)
+        {
+            if (!values.ContainsKey(field.Name))
+            {
+                if (field.DefaultValue is not null)
+                {
+                    values[field.Name] = field.DefaultValue;
+                }
+                else if (field.IsRequired)
+                {
+                    throw new InvalidOperationException($"Field '{field.Name}' is required for table {table.Name}");
+                }
+            }
+
+            if (values.TryGetValue(field.Name, out var value))
+            {
+                ValidateFieldValue(field, value);
+            }
+        }
+
+        return JsonSerializer.Serialize(values, new JsonSerializerOptions { WriteIndented = false });
+    }
+
+    private static object? ExtractValue(JsonElement element)
+        => element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number when element.TryGetInt64(out var l) => l,
+            JsonValueKind.Number when element.TryGetDouble(out var d) => d,
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            _ => element.ToString()
+        };
+
+    private static void ValidateFieldValue(SFieldDefinition field, object? value)
+    {
+        if (value is null)
+        {
+            if (field.IsRequired)
+            {
+                throw new InvalidOperationException($"Field '{field.Name}' is required");
+            }
+            return;
+        }
+
+        switch (field.DataType)
+        {
+            case FieldDataType.Text:
+            case FieldDataType.Note:
+            case FieldDataType.Lookup:
+            case FieldDataType.Tags:
+            case FieldDataType.Json:
+            case FieldDataType.File:
+                if (value is not string)
+                {
+                    throw new InvalidOperationException($"Field '{field.Name}' expects text content");
+                }
+                break;
+            case FieldDataType.Number:
+                if (value is not long && value is not int)
+                {
+                    throw new InvalidOperationException($"Field '{field.Name}' expects an integer number");
+                }
+                break;
+            case FieldDataType.Decimal:
+                if (value is not double && value is not decimal && value is not float)
+                {
+                    throw new InvalidOperationException($"Field '{field.Name}' expects a decimal number");
+                }
+                break;
+            case FieldDataType.Boolean:
+                if (value is not bool)
+                {
+                    throw new InvalidOperationException($"Field '{field.Name}' expects a boolean value");
+                }
+                break;
+            case FieldDataType.Date:
+            case FieldDataType.DateTime:
+                if (value is not string dateString || !DateTimeOffset.TryParse(dateString, out _))
+                {
+                    throw new InvalidOperationException($"Field '{field.Name}' expects an ISO-8601 date/time string");
+                }
+                break;
+            case FieldDataType.Calculated:
+                // Calculated fields are validated by automation layer; accept any value but presence is optional.
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(field.DataType), $"Unsupported data type {field.DataType}");
+        }
+    }
+
+    private static IDictionary<string, string?>? ResolveViewFilter(string? filter, STable table)
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+        {
+            return null;
+        }
+
+        var view = table.Views.FirstOrDefault(v => string.Equals(v.Name, filter, StringComparison.OrdinalIgnoreCase));
+        if (view is null || string.IsNullOrWhiteSpace(view.QueryDefinition))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string?>>(view.QueryDefinition);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static IDictionary<string, string?>? MergeEqualsFilters(IDictionary<string, string?>? original, IDictionary<string, string?>? viewFilter)
+    {
+        if (viewFilter is null || viewFilter.Count == 0)
+        {
+            return original;
+        }
+
+        if (original is null)
+        {
+            return new Dictionary<string, string?>(viewFilter, StringComparer.OrdinalIgnoreCase);
+        }
+
+        foreach (var kv in viewFilter)
+        {
+            if (!original.ContainsKey(kv.Key))
+            {
+                original[kv.Key] = kv.Value;
+            }
+        }
+
+        return original;
     }
 }
 
