@@ -28,13 +28,13 @@
 @if (Module is not null)
 {
     <div class="card" style="margin-top:12px; display:flex; flex-direction:column; gap:8px;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-                <h4>@Module.Name</h4>
-                <p class="text-muted">@Module.Description</p>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <h4>@Module.Name</h4>
+                    <p class="text-muted">@Module.Description</p>
+                </div>
+                <button class="button secondary" @onclick="OpenModules">Ouvrir dans Modules</button>
             </div>
-            <button class="button secondary" @onclick="() => Navigation.NavigateTo(\"/modules\")">Ouvrir dans Modules</button>
-        </div>
 
         @foreach (var entity in Module.EntityTypes)
         {
@@ -102,4 +102,6 @@
             IsLoading = false;
         }
     }
+
+    private void OpenModules() => Navigation.NavigateTo("/modules");
 }

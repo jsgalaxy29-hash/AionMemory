@@ -13,7 +13,7 @@
             <option value="all">Tous</option>
         </select>
         <button class="button" @onclick="GenerateModule">Créer Module par IA</button>
-        <button class="button secondary" @onclick="() => Navigation.NavigateTo(\"/module-builder\")">Ouvrir Module Builder</button>
+        <button class="button secondary" @onclick="NavigateToBuilder">Ouvrir Module Builder</button>
     </div>
 </div>
 
@@ -53,18 +53,18 @@
 </div>
 
 @code {
-    private IEnumerable<S_Module>? Modules;
+    private IEnumerable<S_Module>? ModuleList;
     private string Search { get; set; } = string.Empty;
     private string Filter { get; set; } = "recent";
 
     private IEnumerable<S_Module> FilteredModules =>
         string.IsNullOrWhiteSpace(Search)
-            ? Modules ?? Array.Empty<S_Module>()
-            : Modules?.Where(m => m.Name.Contains(Search, StringComparison.OrdinalIgnoreCase)) ?? Array.Empty<S_Module>();
+            ? ModuleList ?? Array.Empty<S_Module>()
+            : ModuleList?.Where(m => m.Name.Contains(Search, StringComparison.OrdinalIgnoreCase)) ?? Array.Empty<S_Module>();
 
     protected override async Task OnInitializedAsync()
     {
-        Modules = await Metadata.GetModulesAsync();
+        ModuleList = await Metadata.GetModulesAsync();
     }
 
     private void OpenModule(Guid id) => Navigation.NavigateTo($"/module/{id}");
@@ -77,6 +77,8 @@
     private async Task GenerateModule()
     {
         var module = await ModuleDesigner.CreateModuleFromPromptAsync("Assistant quotidien");
-        Modules = (Modules ?? Array.Empty<S_Module>()).Append(module).ToArray();
+        ModuleList = (ModuleList ?? Array.Empty<S_Module>()).Append(module).ToArray();
     }
+
+    private void NavigateToBuilder() => Navigation.NavigateTo("/module-builder");
 }
