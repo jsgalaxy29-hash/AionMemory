@@ -30,10 +30,15 @@ public static class DependencyInjectionExtensions
         storageOptions.PostConfigure(options =>
         {
             options.RootPath = ChooseValue(options.RootPath, configuration["Aion:Storage:RootPath"]);
+            options.EncryptionKey = ChooseValue(options.EncryptionKey, configuration["Aion:Storage:EncryptionKey"], configuration["Aion:Database:EncryptionKey"], configuration["AION_DB_KEY"]);
             EnsureDirectoryExists(options.RootPath);
         });
         storageOptions.Validate(o => !string.IsNullOrWhiteSpace(o.RootPath), "A storage root path is required.");
         storageOptions.Validate(o => Directory.Exists(o.RootPath), "The configured storage root path must exist.");
+        storageOptions.Validate(o => !string.IsNullOrWhiteSpace(o.EncryptionKey), "The file storage encryption key cannot be empty.");
+        storageOptions.Validate(o => o.EncryptionKey?.Length >= 32, "The file storage encryption key must contain at least 32 characters.");
+        storageOptions.Validate(o => o.MaxFileSizeBytes > 0, "The maximum file size must be greater than zero.");
+        storageOptions.Validate(o => o.MaxTotalBytes > 0, "The storage quota must be greater than zero.");
         storageOptions.ValidateOnStart();
 
         var marketplaceOptions = services.AddOptions<MarketplaceOptions>();
@@ -54,6 +59,7 @@ public static class DependencyInjectionExtensions
         });
         backupOptions.Validate(o => !string.IsNullOrWhiteSpace(o.BackupFolder), "The backup folder cannot be empty.");
         backupOptions.Validate(o => Directory.Exists(o.BackupFolder), "The configured backup folder must exist.");
+        backupOptions.Validate(o => o.MaxDatabaseSizeBytes > 0, "The maximum database backup size must be greater than zero.");
         backupOptions.ValidateOnStart();
 
         services.AddDbContext<AionDbContext>((serviceProvider, dbOptions) =>

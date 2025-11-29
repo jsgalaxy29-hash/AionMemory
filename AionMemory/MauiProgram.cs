@@ -8,6 +8,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Maui.Storage;
 
 namespace AionMemory;
@@ -38,6 +39,7 @@ public static class MauiProgram
         ConfigureServices(builder.Services, builder.Configuration);
 
         var app = builder.Build();
+        RestoreFromBackupIfRequested(app.Services);
         app.Services.EnsureAionDatabaseAsync().GetAwaiter().GetResult();
 
         return app;
@@ -99,5 +101,25 @@ public static class MauiProgram
     {
         services.AddAionInfrastructure(configuration);
         services.AddAionAi(configuration);
+    }
+
+    private static void RestoreFromBackupIfRequested(IServiceProvider serviceProvider)
+    {
+        using var scope = serviceProvider.CreateScope();
+        var options = scope.ServiceProvider.GetRequiredService<IOptions<BackupOptions>>().Value;
+        if (!options.AutoRestoreLatest)
+        {
+            return;
+        }
+
+        var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger(typeof(MauiProgram));
+        var databaseOptions = scope.ServiceProvider.GetRequiredService<IOptions<AionDatabaseOptions>>().Value;
+        var connectionBuilder = new SqliteConnectionStringBuilder(databaseOptions.ConnectionString);
+        var destination = Path.GetFullPath(connectionBuilder.DataSource);
+
+        var backupService = scope.ServiceProvider.GetRequiredService<ICloudBackupService>();
+        backupService.RestoreAsync(destination).GetAwaiter().GetResult();
+        logger.LogInformation("Latest backup restored to {Destination}", destination);
     }
 }

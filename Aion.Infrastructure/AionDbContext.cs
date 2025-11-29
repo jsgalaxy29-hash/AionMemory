@@ -146,6 +146,7 @@ public class AionDbContext : DbContext
             builder.Property(f => f.MimeType).IsRequired().HasMaxLength(128);
             builder.Property(f => f.StoragePath).IsRequired().HasMaxLength(512);
             builder.Property(f => f.ThumbnailPath).HasMaxLength(512);
+            builder.Property(f => f.Sha256).IsRequired().HasMaxLength(128);
             builder.HasMany<F_FileLink>().WithOne().HasForeignKey(l => l.FileId);
         });
 

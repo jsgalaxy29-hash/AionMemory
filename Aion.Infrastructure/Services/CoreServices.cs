@@ -537,15 +537,19 @@ public sealed class AgendaService : IAionAgendaService, IAgendaService
 public sealed class FileStorageService : IFileStorageService
 {
     private readonly string _storageRoot;
+    private readonly StorageOptions _options;
     private readonly AionDbContext _db;
     private readonly ILogger<FileStorageService> _logger;
+    private readonly byte[] _encryptionKey;
 
     public FileStorageService(IOptions<StorageOptions> options, AionDbContext db, ILogger<FileStorageService> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
-        _storageRoot = options.Value.RootPath ?? throw new InvalidOperationException("Storage root path must be provided");
+        _options = options.Value;
+        _storageRoot = _options.RootPath ?? throw new InvalidOperationException("Storage root path must be provided");
         _db = db;
         _logger = logger;
+        _encryptionKey = DeriveKey(_options.EncryptionKey ?? throw new InvalidOperationException("Storage encryption key missing"));
         Directory.CreateDirectory(_storageRoot);
     }
 
@@ -553,8 +557,22 @@ public sealed class FileStorageService : IFileStorageService
     {
         var id = Guid.NewGuid();
         var path = Path.Combine(_storageRoot, id.ToString());
-        await using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        await content.CopyToAsync(fs, cancellationToken).ConfigureAwait(false);
+        await using var buffer = new MemoryStream();
+        await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+
+        if (buffer.Length > _options.MaxFileSizeBytes)
+        {
+            throw new InvalidOperationException($"File {fileName} exceeds the configured limit of {_options.MaxFileSizeBytes / (1024 * 1024)} MB");
+        }
+
+        await EnsureStorageQuotaAsync(buffer.Length, cancellationToken).ConfigureAwait(false);
+
+        buffer.Position = 0;
+        var hash = ComputeHash(buffer);
+        buffer.Position = 0;
+
+        var encryptedPayload = Encrypt(buffer.ToArray());
+        await File.WriteAllBytesAsync(path, encryptedPayload, cancellationToken).ConfigureAwait(false);
 
         var file = new F_File
         {
@@ -562,7 +580,8 @@ public sealed class FileStorageService : IFileStorageService
             FileName = fileName,
             MimeType = mimeType,
             StoragePath = path,
-            Size = fs.Length,
+            Size = buffer.Length,
+            Sha256 = hash,
             UploadedAt = DateTimeOffset.UtcNow
         };
 
@@ -575,8 +594,19 @@ public sealed class FileStorageService : IFileStorageService
     public async Task<Stream> OpenAsync(Guid fileId, CancellationToken cancellationToken = default)
     {
         var file = await _db.Files.FirstAsync(f => f.Id == fileId, cancellationToken).ConfigureAwait(false);
-        Stream stream = new FileStream(file.StoragePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        return stream;
+        var encryptedBytes = await File.ReadAllBytesAsync(file.StoragePath, cancellationToken).ConfigureAwait(false);
+        var decrypted = Decrypt(encryptedBytes);
+
+        if (_options.RequireIntegrityCheck && !string.IsNullOrWhiteSpace(file.Sha256))
+        {
+            var computedHash = ComputeHash(new MemoryStream(decrypted));
+            if (!string.Equals(computedHash, file.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("File integrity validation failed");
+            }
+        }
+
+        return new MemoryStream(decrypted, writable: false);
     }
 
     public async Task<F_FileLink> LinkAsync(Guid fileId, string targetType, Guid targetId, string? relation = null, CancellationToken cancellationToken = default)
@@ -604,6 +634,72 @@ public sealed class FileStorageService : IFileStorageService
 
         return await _db.Files.Where(f => fileIds.Contains(f.Id)).ToListAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    private async Task EnsureStorageQuotaAsync(long incomingFileSize, CancellationToken cancellationToken)
+    {
+        var usedBytes = await _db.Files.SumAsync(f => f.Size, cancellationToken).ConfigureAwait(false);
+        if (usedBytes + incomingFileSize > _options.MaxTotalBytes)
+        {
+            throw new InvalidOperationException("Storage quota exceeded; delete files before uploading new content.");
+        }
+    }
+
+    private static byte[] DeriveKey(string material)
+    {
+        try
+        {
+            return Convert.FromBase64String(material);
+        }
+        catch (FormatException)
+        {
+            return SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material));
+        }
+    }
+
+    private byte[] Encrypt(ReadOnlySpan<byte> plaintext)
+    {
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var ciphertext = new byte[plaintext.Length];
+        var tag = new byte[16];
+
+        using var aes = new AesGcm(_encryptionKey);
+        aes.Encrypt(nonce, plaintext, ciphertext, tag);
+
+        var payload = new byte[nonce.Length + tag.Length + ciphertext.Length];
+        Buffer.BlockCopy(nonce, 0, payload, 0, nonce.Length);
+        Buffer.BlockCopy(tag, 0, payload, nonce.Length, tag.Length);
+        Buffer.BlockCopy(ciphertext, 0, payload, nonce.Length + tag.Length, ciphertext.Length);
+        return payload;
+    }
+
+    private byte[] Decrypt(ReadOnlySpan<byte> payload)
+    {
+        var nonce = payload[..12];
+        var tag = payload[12..28];
+        var cipher = payload[28..];
+        var plaintext = new byte[cipher.Length];
+
+        using var aes = new AesGcm(_encryptionKey);
+        aes.Decrypt(nonce, cipher, tag, plaintext);
+        return plaintext;
+    }
+
+    private static string ComputeHash(Stream stream)
+    {
+        if (stream.CanSeek)
+        {
+            stream.Position = 0;
+        }
+
+        using var sha = SHA256.Create();
+        var hash = sha.ComputeHash(stream);
+        if (stream.CanSeek)
+        {
+            stream.Position = 0;
+        }
+
+        return Convert.ToHexString(hash);
+    }
 }
 
 public sealed class CloudBackupService : ICloudBackupService
@@ -614,12 +710,14 @@ public sealed class CloudBackupService : ICloudBackupService
     };
 
     private readonly string _backupFolder;
+    private readonly BackupOptions _options;
     private readonly ILogger<CloudBackupService> _logger;
 
     public CloudBackupService(IOptions<BackupOptions> options, ILogger<CloudBackupService> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
-        _backupFolder = options.Value.BackupFolder ?? throw new InvalidOperationException("Backup folder must be configured");
+        _options = options.Value;
+        _backupFolder = _options.BackupFolder ?? throw new InvalidOperationException("Backup folder must be configured");
         _logger = logger;
         Directory.CreateDirectory(_backupFolder);
     }
@@ -629,6 +727,12 @@ public sealed class CloudBackupService : ICloudBackupService
         if (!File.Exists(encryptedDatabasePath))
         {
             throw new FileNotFoundException("Database file not found", encryptedDatabasePath);
+        }
+
+        var databaseInfo = new FileInfo(encryptedDatabasePath);
+        if (databaseInfo.Length > _options.MaxDatabaseSizeBytes)
+        {
+            throw new InvalidOperationException($"Database exceeds the maximum backup size of {_options.MaxDatabaseSizeBytes / (1024 * 1024)} MB");
         }
 
         var timestamp = DateTimeOffset.UtcNow;
@@ -675,7 +779,7 @@ public sealed class CloudBackupService : ICloudBackupService
         }
 
         var computedHash = await ComputeHashAsync(tempPath, cancellationToken).ConfigureAwait(false);
-        if (!string.Equals(computedHash, manifest.Sha256, StringComparison.OrdinalIgnoreCase))
+        if (_options.RequireIntegrityCheck && !string.Equals(computedHash, manifest.Sha256, StringComparison.OrdinalIgnoreCase))
         {
             File.Delete(tempPath);
             throw new InvalidOperationException("Backup integrity check failed: hash mismatch");
