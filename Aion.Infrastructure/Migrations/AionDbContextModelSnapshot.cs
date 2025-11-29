@@ -153,6 +153,11 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("StoragePath")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -354,6 +359,57 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable((string)null);
 
                     b.ToView("RecordSearch");
+                });
+
+            modelBuilder.Entity("Aion.Domain.FileSearchEntry", b =>
+                {
+                    b.Property<string>("Content");
+
+                    b.Property<Guid>("FileId");
+
+                    b.ToTable((string)null);
+
+                    b.ToView("FileSearch");
+                });
+
+            modelBuilder.Entity("Aion.Infrastructure.SemanticSearchEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EmbeddingJson")
+                        .HasMaxLength(16000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("IndexedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TargetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IndexedAt");
+
+                    b.HasIndex("TargetType", "TargetId")
+                        .IsUnique();
+
+                    b.ToTable("SemanticSearchEntries");
                 });
 
             modelBuilder.Entity("Aion.Domain.S_AutomationRule", b =>

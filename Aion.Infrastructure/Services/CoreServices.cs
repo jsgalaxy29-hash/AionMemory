@@ -2,8 +2,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Aion.AI;
 using Aion.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -51,11 +53,13 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 {
     private readonly AionDbContext _db;
     private readonly ILogger<AionDataEngine> _logger;
+    private readonly ISearchService _search;
 
-    public AionDataEngine(AionDbContext db, ILogger<AionDataEngine> logger)
+    public AionDataEngine(AionDbContext db, ILogger<AionDataEngine> logger, ISearchService search)
     {
         _db = db;
         _logger = logger;
+        _search = search;
     }
 
     public async Task<STable> CreateTableAsync(STable table, CancellationToken cancellationToken = default)
@@ -100,6 +104,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         await _db.Records.AddAsync(record, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} inserted for entity {EntityTypeId}", record.Id, entityTypeId);
+        await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
         return record;
     }
 
@@ -113,6 +118,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         _db.Records.Update(record);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} updated for entity {EntityTypeId}", id, entityTypeId);
+        await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
         return record;
     }
 
@@ -127,6 +133,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         _db.Records.Remove(record);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} deleted for entity {EntityTypeId}", id, entityTypeId);
+        await _search.RemoveAsync("Record", id, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IEnumerable<F_Record>> QueryAsync(Guid entityTypeId, string? filter = null, IDictionary<string, string?>? equals = null, CancellationToken cancellationToken = default)
@@ -394,13 +401,15 @@ public sealed class NoteService : IAionNoteService, INoteService
     private readonly AionDbContext _db;
     private readonly IFileStorageService _fileStorage;
     private readonly IAudioTranscriptionProvider _transcriptionProvider;
+    private readonly ISearchService _search;
     private readonly ILogger<NoteService> _logger;
 
-    public NoteService(AionDbContext db, IFileStorageService fileStorage, IAudioTranscriptionProvider transcriptionProvider, ILogger<NoteService> logger)
+    public NoteService(AionDbContext db, IFileStorageService fileStorage, IAudioTranscriptionProvider transcriptionProvider, ISearchService search, ILogger<NoteService> logger)
     {
         _db = db;
         _fileStorage = fileStorage;
         _transcriptionProvider = transcriptionProvider;
+        _search = search;
         _logger = logger;
     }
 
@@ -474,6 +483,7 @@ public sealed class NoteService : IAionNoteService, INoteService
 
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Note {NoteId} persisted (source={Source})", note.Id, note.Source);
+        await _search.IndexNoteAsync(note, cancellationToken).ConfigureAwait(false);
     }
 }
 
@@ -537,15 +547,21 @@ public sealed class AgendaService : IAionAgendaService, IAgendaService
 public sealed class FileStorageService : IFileStorageService
 {
     private readonly string _storageRoot;
+    private readonly StorageOptions _options;
     private readonly AionDbContext _db;
+    private readonly ISearchService _search;
     private readonly ILogger<FileStorageService> _logger;
+    private readonly byte[] _encryptionKey;
 
-    public FileStorageService(IOptions<StorageOptions> options, AionDbContext db, ILogger<FileStorageService> logger)
+    public FileStorageService(IOptions<StorageOptions> options, AionDbContext db, ISearchService search, ILogger<FileStorageService> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
-        _storageRoot = options.Value.RootPath ?? throw new InvalidOperationException("Storage root path must be provided");
+        _options = options.Value;
+        _storageRoot = _options.RootPath ?? throw new InvalidOperationException("Storage root path must be provided");
         _db = db;
+        _search = search;
         _logger = logger;
+        _encryptionKey = DeriveKey(_options.EncryptionKey ?? throw new InvalidOperationException("Storage encryption key missing"));
         Directory.CreateDirectory(_storageRoot);
     }
 
@@ -553,8 +569,22 @@ public sealed class FileStorageService : IFileStorageService
     {
         var id = Guid.NewGuid();
         var path = Path.Combine(_storageRoot, id.ToString());
-        await using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        await content.CopyToAsync(fs, cancellationToken).ConfigureAwait(false);
+        await using var buffer = new MemoryStream();
+        await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+
+        if (buffer.Length > _options.MaxFileSizeBytes)
+        {
+            throw new InvalidOperationException($"File {fileName} exceeds the configured limit of {_options.MaxFileSizeBytes / (1024 * 1024)} MB");
+        }
+
+        await EnsureStorageQuotaAsync(buffer.Length, cancellationToken).ConfigureAwait(false);
+
+        buffer.Position = 0;
+        var hash = ComputeHash(buffer);
+        buffer.Position = 0;
+
+        var encryptedPayload = Encrypt(buffer.ToArray());
+        await File.WriteAllBytesAsync(path, encryptedPayload, cancellationToken).ConfigureAwait(false);
 
         var file = new F_File
         {
@@ -562,21 +592,34 @@ public sealed class FileStorageService : IFileStorageService
             FileName = fileName,
             MimeType = mimeType,
             StoragePath = path,
-            Size = fs.Length,
+            Size = buffer.Length,
+            Sha256 = hash,
             UploadedAt = DateTimeOffset.UtcNow
         };
 
         await _db.Files.AddAsync(file, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("File {FileId} stored at {Path}", id, path);
+        await _search.IndexFileAsync(file, cancellationToken).ConfigureAwait(false);
         return file;
     }
 
     public async Task<Stream> OpenAsync(Guid fileId, CancellationToken cancellationToken = default)
     {
         var file = await _db.Files.FirstAsync(f => f.Id == fileId, cancellationToken).ConfigureAwait(false);
-        Stream stream = new FileStream(file.StoragePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        return stream;
+        var encryptedBytes = await File.ReadAllBytesAsync(file.StoragePath, cancellationToken).ConfigureAwait(false);
+        var decrypted = Decrypt(encryptedBytes);
+
+        if (_options.RequireIntegrityCheck && !string.IsNullOrWhiteSpace(file.Sha256))
+        {
+            var computedHash = ComputeHash(new MemoryStream(decrypted));
+            if (!string.Equals(computedHash, file.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("File integrity validation failed");
+            }
+        }
+
+        return new MemoryStream(decrypted, writable: false);
     }
 
     public async Task<F_FileLink> LinkAsync(Guid fileId, string targetType, Guid targetId, string? relation = null, CancellationToken cancellationToken = default)
@@ -604,6 +647,72 @@ public sealed class FileStorageService : IFileStorageService
 
         return await _db.Files.Where(f => fileIds.Contains(f.Id)).ToListAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    private async Task EnsureStorageQuotaAsync(long incomingFileSize, CancellationToken cancellationToken)
+    {
+        var usedBytes = await _db.Files.SumAsync(f => f.Size, cancellationToken).ConfigureAwait(false);
+        if (usedBytes + incomingFileSize > _options.MaxTotalBytes)
+        {
+            throw new InvalidOperationException("Storage quota exceeded; delete files before uploading new content.");
+        }
+    }
+
+    private static byte[] DeriveKey(string material)
+    {
+        try
+        {
+            return Convert.FromBase64String(material);
+        }
+        catch (FormatException)
+        {
+            return SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material));
+        }
+    }
+
+    private byte[] Encrypt(ReadOnlySpan<byte> plaintext)
+    {
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var ciphertext = new byte[plaintext.Length];
+        var tag = new byte[16];
+
+        using var aes = new AesGcm(_encryptionKey);
+        aes.Encrypt(nonce, plaintext, ciphertext, tag);
+
+        var payload = new byte[nonce.Length + tag.Length + ciphertext.Length];
+        Buffer.BlockCopy(nonce, 0, payload, 0, nonce.Length);
+        Buffer.BlockCopy(tag, 0, payload, nonce.Length, tag.Length);
+        Buffer.BlockCopy(ciphertext, 0, payload, nonce.Length + tag.Length, ciphertext.Length);
+        return payload;
+    }
+
+    private byte[] Decrypt(ReadOnlySpan<byte> payload)
+    {
+        var nonce = payload[..12];
+        var tag = payload[12..28];
+        var cipher = payload[28..];
+        var plaintext = new byte[cipher.Length];
+
+        using var aes = new AesGcm(_encryptionKey);
+        aes.Decrypt(nonce, cipher, tag, plaintext);
+        return plaintext;
+    }
+
+    private static string ComputeHash(Stream stream)
+    {
+        if (stream.CanSeek)
+        {
+            stream.Position = 0;
+        }
+
+        using var sha = SHA256.Create();
+        var hash = sha.ComputeHash(stream);
+        if (stream.CanSeek)
+        {
+            stream.Position = 0;
+        }
+
+        return Convert.ToHexString(hash);
+    }
 }
 
 public sealed class CloudBackupService : ICloudBackupService
@@ -614,12 +723,14 @@ public sealed class CloudBackupService : ICloudBackupService
     };
 
     private readonly string _backupFolder;
+    private readonly BackupOptions _options;
     private readonly ILogger<CloudBackupService> _logger;
 
     public CloudBackupService(IOptions<BackupOptions> options, ILogger<CloudBackupService> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
-        _backupFolder = options.Value.BackupFolder ?? throw new InvalidOperationException("Backup folder must be configured");
+        _options = options.Value;
+        _backupFolder = _options.BackupFolder ?? throw new InvalidOperationException("Backup folder must be configured");
         _logger = logger;
         Directory.CreateDirectory(_backupFolder);
     }
@@ -629,6 +740,12 @@ public sealed class CloudBackupService : ICloudBackupService
         if (!File.Exists(encryptedDatabasePath))
         {
             throw new FileNotFoundException("Database file not found", encryptedDatabasePath);
+        }
+
+        var databaseInfo = new FileInfo(encryptedDatabasePath);
+        if (databaseInfo.Length > _options.MaxDatabaseSizeBytes)
+        {
+            throw new InvalidOperationException($"Database exceeds the maximum backup size of {_options.MaxDatabaseSizeBytes / (1024 * 1024)} MB");
         }
 
         var timestamp = DateTimeOffset.UtcNow;
@@ -675,7 +792,7 @@ public sealed class CloudBackupService : ICloudBackupService
         }
 
         var computedHash = await ComputeHashAsync(tempPath, cancellationToken).ConfigureAwait(false);
-        if (!string.Equals(computedHash, manifest.Sha256, StringComparison.OrdinalIgnoreCase))
+        if (_options.RequireIntegrityCheck && !string.Equals(computedHash, manifest.Sha256, StringComparison.OrdinalIgnoreCase))
         {
             File.Delete(tempPath);
             throw new InvalidOperationException("Backup integrity check failed: hash mismatch");
@@ -725,28 +842,267 @@ public sealed class CloudBackupService : ICloudBackupService
 
 public sealed class SearchService : ISearchService
 {
-    private readonly AionDbContext _db;
+    private static readonly JsonSerializerOptions EmbeddingSerializerOptions = new(JsonSerializerDefaults.Web);
 
-    public SearchService(AionDbContext db)
+    private readonly AionDbContext _db;
+    private readonly IEmbeddingProvider? _embeddingProvider;
+    private readonly ILogger<SearchService> _logger;
+
+    public SearchService(AionDbContext db, ILogger<SearchService> logger, IServiceProvider serviceProvider)
     {
         _db = db;
+        _logger = logger;
+        _embeddingProvider = serviceProvider.GetService<IEmbeddingProvider>();
     }
 
-    public async Task<IEnumerable<string>> SearchAsync(string query, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<SearchHit>> SearchAsync(string query, CancellationToken cancellationToken = default)
     {
+        var results = new Dictionary<string, SearchHit>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return results.Values;
+        }
+
+        await AddOrUpdateAsync(results, await FetchKeywordMatchesAsync(query, cancellationToken).ConfigureAwait(false));
+        await AddOrUpdateAsync(results, await RunSemanticSearchAsync(query, cancellationToken).ConfigureAwait(false));
+
+        return results
+            .Values
+            .OrderByDescending(r => r.Score)
+            .ThenBy(r => r.Title)
+            .Take(20)
+            .ToList();
+    }
+
+    public Task IndexNoteAsync(S_Note note, CancellationToken cancellationToken = default)
+        => UpsertSemanticEntryAsync("Note", note.Id, note.Title, note.Content, cancellationToken);
+
+    public async Task IndexRecordAsync(F_Record record, CancellationToken cancellationToken = default)
+    {
+        var entity = await _db.EntityTypes
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == record.EntityTypeId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var title = entity?.Name ?? $"Enregistrement {record.Id}";
+        await UpsertSemanticEntryAsync("Record", record.Id, title, record.DataJson ?? string.Empty, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public Task IndexFileAsync(F_File file, CancellationToken cancellationToken = default)
+    {
+        var content = string.Join(" ", new[] { file.FileName, file.MimeType, file.ThumbnailPath })
+            .Trim();
+        return UpsertSemanticEntryAsync("File", file.Id, file.FileName, content, cancellationToken);
+    }
+
+    public async Task RemoveAsync(string targetType, Guid targetId, CancellationToken cancellationToken = default)
+    {
+        var entry = await _db.SemanticSearch
+            .FirstOrDefaultAsync(e => e.TargetType == targetType && e.TargetId == targetId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (entry is null)
+        {
+            return;
+        }
+
+        _db.SemanticSearch.Remove(entry);
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IEnumerable<SearchHit>> FetchKeywordMatchesAsync(string query, CancellationToken cancellationToken)
+    {
+        var hits = new List<SearchHit>();
+
         var notes = await _db.NoteSearch
             .Where(n => n.Content.Contains(query))
-            .Select(n => $"Note:{n.NoteId}")
+            .Select(n => new { n.NoteId, n.Content })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        hits.AddRange(notes.Select(n => new SearchHit("Note", n.NoteId, $"Note {n.NoteId:N}", BuildSnippet(n.Content), 0.6)));
 
         var records = await _db.RecordSearch
             .Where(r => r.Content.Contains(query))
-            .Select(r => $"Record:{r.RecordId}")
+            .Select(r => new { r.RecordId, r.EntityTypeId, r.Content })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return notes.Concat(records);
+        foreach (var record in records)
+        {
+            hits.Add(new SearchHit("Record", record.RecordId, $"Enregistrement {record.EntityTypeId:N}", BuildSnippet(record.Content), 0.5));
+        }
+
+        var files = await _db.FileSearch
+            .Where(f => f.Content.Contains(query))
+            .Select(f => new { f.FileId, f.Content })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        hits.AddRange(files.Select(f => new SearchHit("File", f.FileId, $"Fichier {f.FileId:N}", BuildSnippet(f.Content), 0.4)));
+
+        return hits;
+    }
+
+    private async Task<IEnumerable<SearchHit>> RunSemanticSearchAsync(string query, CancellationToken cancellationToken)
+    {
+        if (_embeddingProvider is null)
+        {
+            return Array.Empty<SearchHit>();
+        }
+
+        float[] embedding;
+        try
+        {
+            embedding = await _embeddingProvider.EmbedAsync(query, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Semantic search fallback to keyword only");
+            return Array.Empty<SearchHit>();
+        }
+
+        var candidates = await _db.SemanticSearch
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var hits = new List<SearchHit>();
+        foreach (var entry in candidates)
+        {
+            var vector = ParseEmbedding(entry.EmbeddingJson);
+            if (vector is null)
+            {
+                continue;
+            }
+
+            var score = ComputeCosineSimilarity(embedding, vector);
+            hits.Add(new SearchHit(entry.TargetType, entry.TargetId, entry.Title, BuildSnippet(entry.Content), score));
+        }
+
+        return hits
+            .OrderByDescending(h => h.Score)
+            .Take(10)
+            .ToList();
+    }
+
+    private async Task UpsertSemanticEntryAsync(string targetType, Guid targetId, string title, string content, CancellationToken cancellationToken)
+    {
+        var entry = await _db.SemanticSearch
+            .FirstOrDefaultAsync(e => e.TargetType == targetType && e.TargetId == targetId, cancellationToken)
+            .ConfigureAwait(false);
+
+        entry ??= new SemanticSearchEntry { TargetType = targetType, TargetId = targetId };
+        entry.Title = title;
+        entry.Content = content;
+        entry.IndexedAt = DateTimeOffset.UtcNow;
+        entry.EmbeddingJson = await TryEmbedAsync(title, content, cancellationToken).ConfigureAwait(false);
+
+        if (_db.Entry(entry).State == EntityState.Detached)
+        {
+            await _db.SemanticSearch.AddAsync(entry, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            _db.SemanticSearch.Update(entry);
+        }
+
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<string?> TryEmbedAsync(string title, string content, CancellationToken cancellationToken)
+    {
+        if (_embeddingProvider is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var embedding = await _embeddingProvider
+                .EmbedAsync($"{title}\n{content}", cancellationToken)
+                .ConfigureAwait(false);
+            return JsonSerializer.Serialize(embedding, EmbeddingSerializerOptions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Unable to generate embedding for {Target}", title);
+            return null;
+        }
+    }
+
+    private static float[]? ParseEmbedding(string? serialized)
+    {
+        if (string.IsNullOrWhiteSpace(serialized))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<float[]>(serialized, EmbeddingSerializerOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static double ComputeCosineSimilarity(IReadOnlyList<float> left, IReadOnlyList<float> right)
+    {
+        if (left.Count == 0 || right.Count == 0 || left.Count != right.Count)
+        {
+            return 0;
+        }
+
+        double dot = 0, leftMagnitude = 0, rightMagnitude = 0;
+        for (var i = 0; i < left.Count; i++)
+        {
+            dot += left[i] * right[i];
+            leftMagnitude += left[i] * left[i];
+            rightMagnitude += right[i] * right[i];
+        }
+
+        if (leftMagnitude == 0 || rightMagnitude == 0)
+        {
+            return 0;
+        }
+
+        return dot / (Math.Sqrt(leftMagnitude) * Math.Sqrt(rightMagnitude));
+    }
+
+    private static async Task AddOrUpdateAsync(IDictionary<string, SearchHit> registry, IEnumerable<SearchHit> hits)
+    {
+        foreach (var hit in hits)
+        {
+            var key = $"{hit.TargetType}:{hit.TargetId}";
+            if (registry.TryGetValue(key, out var existing))
+            {
+                if (hit.Score > existing.Score)
+                {
+                    registry[key] = hit;
+                }
+            }
+            else
+            {
+                registry[key] = hit;
+            }
+        }
+
+        await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    private static string BuildSnippet(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return string.Empty;
+        }
+
+        const int limit = 180;
+        var trimmed = content.Replace("\n", " ").Replace("\r", " ").Trim();
+        return trimmed.Length <= limit ? trimmed : trimmed[..limit] + "…";
     }
 }
 

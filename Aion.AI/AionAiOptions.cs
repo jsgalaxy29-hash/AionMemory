@@ -9,13 +9,13 @@ public sealed record AionAiOptions
     public string? BaseEndpoint
     {
         get => _baseEndpoint;
-        init => _baseEndpoint = value;
+        init => _baseEndpoint = Normalize(value);
     }
 
     public string? Endpoint
     {
         get => _baseEndpoint;
-        init => _baseEndpoint = value;
+        init => _baseEndpoint = Normalize(value);
     }
 
     public string? ApiKey { get; init; }
@@ -25,19 +25,19 @@ public sealed record AionAiOptions
     public string? LlmModel
     {
         get => _llmModel;
-        init => _llmModel = value;
+        init => _llmModel = Normalize(value);
     }
 
     public string? Model
     {
         get => _llmModel;
-        init => _llmModel = value;
+        init => _llmModel = Normalize(value);
     }
 
     public string Provider
     {
         get => _provider ?? "http";
-        init => _provider = value;
+        init => _provider = Normalize(value);
     }
 
     public string? Organization { get; init; }
@@ -55,4 +55,33 @@ public sealed record AionAiOptions
 
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
     public IDictionary<string, string> DefaultHeaders { get; init; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    public void Normalize()
+    {
+        _baseEndpoint = FirstNonEmpty(_baseEndpoint, LlmEndpoint, EmbeddingsEndpoint, TranscriptionEndpoint, VisionEndpoint);
+        _provider ??= "http";
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return Normalize(value);
+            }
+        }
+
+        return null;
+    }
+
+    private static string? Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim();
+    }
 }

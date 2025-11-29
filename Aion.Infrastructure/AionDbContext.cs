@@ -31,6 +31,8 @@ public class AionDbContext : DbContext
     public DbSet<F_Record> Records => Set<F_Record>();
     public DbSet<NoteSearchEntry> NoteSearch => Set<NoteSearchEntry>();
     public DbSet<RecordSearchEntry> RecordSearch => Set<RecordSearchEntry>();
+    public DbSet<FileSearchEntry> FileSearch => Set<FileSearchEntry>();
+    public DbSet<SemanticSearchEntry> SemanticSearch => Set<SemanticSearchEntry>();
     public DbSet<STable> Tables => Set<STable>();
     public DbSet<SFieldDefinition> TableFields => Set<SFieldDefinition>();
     public DbSet<SViewDefinition> TableViews => Set<SViewDefinition>();
@@ -146,6 +148,7 @@ public class AionDbContext : DbContext
             builder.Property(f => f.MimeType).IsRequired().HasMaxLength(128);
             builder.Property(f => f.StoragePath).IsRequired().HasMaxLength(512);
             builder.Property(f => f.ThumbnailPath).HasMaxLength(512);
+            builder.Property(f => f.Sha256).IsRequired().HasMaxLength(128);
             builder.HasMany<F_FileLink>().WithOne().HasForeignKey(l => l.FileId);
         });
 
@@ -249,6 +252,20 @@ public class AionDbContext : DbContext
         modelBuilder.Entity<RecordSearchEntry>()
             .HasNoKey()
             .ToView("RecordSearch");
+
+        modelBuilder.Entity<FileSearchEntry>()
+            .HasNoKey()
+            .ToView("FileSearch");
+
+        modelBuilder.Entity<SemanticSearchEntry>(builder =>
+        {
+            builder.Property(e => e.TargetType).IsRequired().HasMaxLength(64);
+            builder.Property(e => e.Title).IsRequired().HasMaxLength(256);
+            builder.Property(e => e.Content).IsRequired();
+            builder.Property(e => e.EmbeddingJson).HasMaxLength(16000);
+            builder.HasIndex(e => new { e.TargetType, e.TargetId }).IsUnique();
+            builder.HasIndex(e => e.IndexedAt);
+        });
 
         base.OnModelCreating(modelBuilder);
     }
