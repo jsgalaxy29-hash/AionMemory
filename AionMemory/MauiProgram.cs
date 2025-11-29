@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
-using Aion.AI;
 using Aion.Domain;
 using Aion.Infrastructure;
+using Aion.Infrastructure.Adapters;
 using AionMemory.Services;
 using CommunityToolkit.Maui;
 using Microsoft.AspNetCore.Components.WebView.Maui;
@@ -101,7 +101,7 @@ public static class MauiProgram
     private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddAionInfrastructure(configuration);
-        services.AddAionAi(configuration);
+        services.AddAiAdapters();
         services.AddScoped<ITableDefinitionService, TableDefinitionService>();
     }
 

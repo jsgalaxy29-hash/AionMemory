@@ -20,6 +20,5 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Aion.Domain\Aion.Domain.csproj" />
-    <ProjectReference Include="..\Aion.AI\Aion.AI.csproj" />
   </ItemGroup>
 </Project>
