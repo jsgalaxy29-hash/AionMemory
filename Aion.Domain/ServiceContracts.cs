@@ -62,6 +62,23 @@ public interface ICloudBackupService
     Task RestoreAsync(string destinationPath, CancellationToken cancellationToken = default);
 }
 
+public interface IBackupService
+{
+    Task<BackupManifest> CreateBackupAsync(bool encrypt = false, CancellationToken cancellationToken = default);
+}
+
+public interface IRestoreService
+{
+    Task RestoreLatestAsync(string? destinationPath = null, CancellationToken cancellationToken = default);
+}
+
+public interface ILogService
+{
+    void LogInformation(string message, IDictionary<string, object?>? properties = null);
+    void LogWarning(string message, IDictionary<string, object?>? properties = null);
+    void LogError(Exception exception, string message, IDictionary<string, object?>? properties = null);
+}
+
 public readonly record struct SearchHit(string TargetType, Guid TargetId, string Title, string Snippet, double Score);
 
 public interface ISearchService

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Aion.Domain;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

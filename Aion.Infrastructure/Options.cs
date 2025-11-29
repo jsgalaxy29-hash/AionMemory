@@ -28,4 +28,5 @@ public sealed record BackupOptions
     public long MaxDatabaseSizeBytes { get; set; } = 1024L * 1024 * 1024;
     public bool AutoRestoreLatest { get; set; }
     public bool RequireIntegrityCheck { get; set; } = true;
+    public int BackupIntervalMinutes { get; set; } = 24 * 60;
 }

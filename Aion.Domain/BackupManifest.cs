@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Aion.Infrastructure;
+namespace Aion.Domain;
 
 public sealed record BackupManifest
 {
@@ -9,6 +9,9 @@ public sealed record BackupManifest
 
     [JsonPropertyName("size")]
     public long Size { get; set; }
+
+    [JsonPropertyName("encrypted")]
+    public bool IsEncrypted { get; set; }
 
     [JsonPropertyName("sha256")]
     public string Sha256 { get; set; } = string.Empty;
