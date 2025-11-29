@@ -158,11 +158,11 @@ public sealed class DefaultIntentRecognizer : IIntentDetector
         _provider = provider;
     }
 
-    public async Task<IntentDetectionResult> DetectAsync(string input, CancellationToken cancellationToken = default)
+    public async Task<IntentDetectionResult> DetectAsync(IntentDetectionRequest request, CancellationToken cancellationToken = default)
     {
-        var prompt = $"Analyse l'intention utilisateur pour: {input}";
+        var prompt = $"Analyse l'intention utilisateur pour: {request.Input}";
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
-        return new IntentDetectionResult("analysis", new Dictionary<string, string> { ["prompt"] = input }, 0.5, response.RawResponse ?? response.Content);
+        return new IntentDetectionResult("analysis", new Dictionary<string, string> { ["prompt"] = request.Input }, 0.5, response.RawResponse ?? response.Content);
     }
 }
 
@@ -177,7 +177,7 @@ public sealed class DefaultModuleDesigner : IModuleDesigner
         _provider = provider;
     }
 
-    public async Task<S_Module> GenerateModuleFromPromptAsync(string prompt, CancellationToken cancellationToken = default)
+    public async Task<ModuleDesignResult> GenerateModuleAsync(ModuleDesignRequest request, CancellationToken cancellationToken = default)
     {
         var schema = """
 {
@@ -199,7 +199,7 @@ public sealed class DefaultModuleDesigner : IModuleDesigner
 }
 """;
 
-        var generationPrompt = $"Propose un module AION (entités/champs) pour: {prompt}. La réponse doit être un JSON valide suivant ce schéma: {schema}";
+        var generationPrompt = $"Propose un module AION (entités/champs) pour: {request.Prompt}. La réponse doit être un JSON valide suivant ce schéma: {schema}";
         LastGeneratedJson = (await _provider.GenerateAsync(generationPrompt, cancellationToken).ConfigureAwait(false)).Content.Trim();
 
         if (!string.IsNullOrWhiteSpace(LastGeneratedJson))
@@ -209,7 +209,7 @@ public sealed class DefaultModuleDesigner : IModuleDesigner
                 var parsedModule = JsonSerializer.Deserialize<S_Module>(LastGeneratedJson, new JsonSerializerOptions(JsonSerializerDefaults.Web));
                 if (parsedModule is not null)
                 {
-                    return parsedModule;
+                    return new ModuleDesignResult(parsedModule, LastGeneratedJson);
                 }
             }
             catch (JsonException)
@@ -218,9 +218,9 @@ public sealed class DefaultModuleDesigner : IModuleDesigner
             }
         }
 
-        return new S_Module
+        var fallback = new S_Module
         {
-            Name = string.IsNullOrWhiteSpace(prompt) ? "Module IA" : prompt,
+            Name = string.IsNullOrWhiteSpace(request.ModuleNameHint) ? (string.IsNullOrWhiteSpace(request.Prompt) ? "Module IA" : request.Prompt) : request.ModuleNameHint,
             Description = "Module généré automatiquement",
             EntityTypes = new List<S_EntityType>()
             {
@@ -230,10 +230,11 @@ public sealed class DefaultModuleDesigner : IModuleDesigner
                     PluralName = "Items",
                     Fields = new List<S_Field>
                     {
-                        new() { Name = "Titre", Label = "Titre", DataType = EnumSFieldType.String, IsRequired = true, IsSearchable = true, IsListVisible = true }
+                        new() { Name = "Titre", Label = "Titre", DataType = FieldDataType.Text, IsRequired = true }
                     }
                 }
             }
         };
+        return new ModuleDesignResult(fallback, LastGeneratedJson ?? string.Empty);
     }
 }

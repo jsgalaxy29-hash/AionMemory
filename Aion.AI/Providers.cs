@@ -229,7 +229,7 @@ public sealed class HttpVisionProvider : IVisionService
         _options = options;
         _logger = logger;
     }
-    public async Task<S_VisionAnalysis> AnalyzeAsync(Guid fileId, VisionAnalysisType analysisType, CancellationToken cancellationToken = default)
+    public async Task<S_VisionAnalysis> AnalyzeAsync(VisionAnalysisRequest request, CancellationToken cancellationToken = default)
     {
         var opts = _options.CurrentValue;
         var client = _httpClientFactory.CreateClient(HttpClientNames.Vision);
@@ -237,24 +237,24 @@ public sealed class HttpVisionProvider : IVisionService
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("Vision endpoint not configured; returning stub analysis");
-            return BuildStub(fileId, analysisType, "Unconfigured vision endpoint");
+            return BuildStub(request.FileId, request.AnalysisType, "Unconfigured vision endpoint");
         }
-        var payload = new { fileId, analysisType = analysisType.ToString(), model = opts.VisionModel ?? "vision-generic" };
-        using var request = new HttpRequestMessage(HttpMethod.Post, "vision/analyze")
+        var payload = new { fileId = request.FileId, analysisType = request.AnalysisType.ToString(), model = request.Model ?? opts.VisionModel ?? "vision-generic" };
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "vision/analyze")
         {
             Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
         };
-        var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var response = await client.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("Vision call failed with status {Status}; returning stub", response.StatusCode);
-            return BuildStub(fileId, analysisType, "Vision call failed");
+            return BuildStub(request.FileId, request.AnalysisType, "Vision call failed");
         }
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         return new S_VisionAnalysis
         {
-            FileId = fileId,
-            AnalysisType = analysisType,
+            FileId = request.FileId,
+            AnalysisType = request.AnalysisType,
             ResultJson = json
         };
     }
@@ -277,12 +277,12 @@ public sealed class IntentRecognizer : IIntentDetector
         _logger = logger;
     }
 
-    public async Task<IntentDetectionResult> DetectAsync(string input, CancellationToken cancellationToken = default)
+    public async Task<IntentDetectionResult> DetectAsync(IntentDetectionRequest request, CancellationToken cancellationToken = default)
     {
         var prompt = $$"""
 Analyse l'intention utilisateur pour l'entrée suivante et réponds uniquement en JSON compact :
 {"intent":"<type>","parameters":{...},"confidence":0.0}
-Message: "{{input}}"
+Message: "{{request.Input}}"
 """;
 
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
@@ -297,7 +297,7 @@ Message: "{{input}}"
                     result.Intent ?? "unknown",
                     result.Parameters ?? new Dictionary<string, string>(),
                     result.Confidence ?? 0.5,
-                    response.RawResponse);
+                    response.RawResponse ?? json);
             }
         }
         catch (JsonException ex)
@@ -305,7 +305,7 @@ Message: "{{input}}"
             _logger.LogWarning(ex, "Failed to parse intent response, returning fallback structure");
         }
 
-        return new IntentDetectionResult("unknown", new Dictionary<string, string> { ["raw"] = input }, 0.1, response.RawResponse);
+        return new IntentDetectionResult("unknown", new Dictionary<string, string> { ["raw"] = request.Input }, 0.1, response.RawResponse ?? json);
     }
     private sealed class IntentRecognitionResultInternal
     {
@@ -330,7 +330,7 @@ public sealed class ModuleDesigner : IModuleDesigner
         _logger = logger;
     }
     public string? LastGeneratedJson { get; private set; }
-    public async Task<S_Module> GenerateModuleFromPromptAsync(string prompt, CancellationToken cancellationToken = default)
+    public async Task<ModuleDesignResult> GenerateModuleAsync(ModuleDesignRequest request, CancellationToken cancellationToken = default)
     {
         var generationPrompt = $$"""
 Tu es l'orchestrateur AION. Génère STRICTEMENT du JSON compact sans texte additionnel avec ce schéma :
@@ -346,7 +346,7 @@ Tu es l'orchestrateur AION. Génère STRICTEMENT du JSON compact sans texte addi
   ],
   "relations": [ { "fromEntity": "", "toEntity": "", "fromField": "", "kind": "OneToMany|ManyToMany", "isBidirectional": false } ]
 }
-Description utilisateur: {{prompt}}
+Description utilisateur: {{request.Prompt}}
 Ne réponds que par du JSON valide.
 """;
         var response = await _provider.GenerateAsync(generationPrompt, cancellationToken).ConfigureAwait(false);
@@ -356,22 +356,26 @@ Ne réponds que par du JSON valide.
             var design = JsonSerializer.Deserialize<ModuleDesignSchema>(LastGeneratedJson, SerializerOptions);
             if (design is not null)
             {
-                return BuildModule(design, prompt);
+                return new ModuleDesignResult(BuildModule(design, request), LastGeneratedJson ?? string.Empty);
             }
         }
         catch (JsonException ex)
         {
             _logger.LogWarning(ex, "Failed to parse module design JSON, returning fallback module");
         }
-        return BuildFallbackModule(prompt);
+        var fallback = BuildFallbackModule(request.Prompt, request.ModuleNameHint);
+        return new ModuleDesignResult(fallback, LastGeneratedJson ?? string.Empty);
     }
-    private S_Module BuildModule(ModuleDesignSchema design, string prompt)
+    private S_Module BuildModule(ModuleDesignSchema design, ModuleDesignRequest request)
     {
-        var moduleName = NormalizeName(design.Module?.Name) ?? NormalizeName(prompt) ?? "Module IA";
+        var moduleName = NormalizeName(design.Module?.Name)
+            ?? NormalizeName(request.ModuleNameHint)
+            ?? NormalizeName(request.Prompt)
+            ?? "Module IA";
         var module = new S_Module
         {
             Name = moduleName,
-            Description = design.Module?.PluralName ?? $"Généré depuis: {prompt}",
+            Description = design.Module?.PluralName ?? $"Généré depuis: {request.Prompt}",
             EntityTypes = new List<S_EntityType>()
         };
         foreach (var entity in design.Entities ?? Enumerable.Empty<DesignEntity>())
@@ -409,7 +413,10 @@ Ne réponds que par du JSON valide.
             }
             module.EntityTypes.Add(fallbackEntity);
         }
-        AppendRelations(module, design.Relations);
+        if (request.IncludeRelations)
+        {
+            AppendRelations(module, design.Relations);
+        }
         return module;
     }
     private void AppendRelations(S_Module module, IEnumerable<DesignRelation>? relations)
@@ -485,9 +492,9 @@ Ne réponds que par du JSON valide.
                 DataType = EnumSFieldType.Date
             }
         ];
-    private static S_Module BuildFallbackModule(string prompt)
+    private static S_Module BuildFallbackModule(string prompt, string? moduleNameHint)
     {
-        var name = NormalizeName(prompt) ?? "Module IA";
+        var name = NormalizeName(moduleNameHint) ?? NormalizeName(prompt) ?? "Module IA";
         var module = new S_Module
         {
             Name = name,
@@ -584,14 +591,14 @@ public sealed class CrudInterpreter : ICrudInterpreter
         _logger = logger;
     }
 
-    public async Task<CrudInterpretation> GenerateQueryAsync(string intent, S_Module module, CancellationToken cancellationToken = default)
+    public async Task<CrudInterpretation> GenerateQueryAsync(CrudQueryRequest request, CancellationToken cancellationToken = default)
     {
-        var fieldNames = string.Join(", ", module.EntityTypes.SelectMany(e => e.Fields.Select(f => f.Name)));
+        var fieldNames = string.Join(", ", request.Module.EntityTypes.SelectMany(e => e.Fields.Select(f => f.Name)));
         var prompt = $$$"""
 Tu es un assistant qui traduit les requêtes utilisateur en opérations CRUD pour le module suivant:
-Module: {{module.Name}}
+Module: {{request.Module.Name}}
 Champs: {{fieldNames}}
-Réponds par une instruction JSON avec {"action":"create|update|delete|query","filters":{},"payload":{}} pour: {{intent}}
+Réponds par une instruction JSON avec {"action":"create|update|delete|query","filters":{},"payload":{}} pour: {{request.Intent}}
 """;
 
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
@@ -600,7 +607,7 @@ Réponds par une instruction JSON avec {"action":"create|update|delete|query","f
         if (string.IsNullOrWhiteSpace(cleaned))
         {
             _logger.LogWarning("Empty CRUD interpretation, returning stub query");
-            return new CrudInterpretation("query", new Dictionary<string, string?> { ["raw"] = intent }, new Dictionary<string, string?>(), response.RawResponse);
+            return new CrudInterpretation("query", new Dictionary<string, string?> { ["raw"] = request.Intent }, new Dictionary<string, string?>(), response.RawResponse ?? string.Empty);
         }
 
         try
@@ -615,7 +622,7 @@ Réponds par une instruction JSON avec {"action":"create|update|delete|query","f
         catch (JsonException ex)
         {
             _logger.LogWarning(ex, "Unable to parse CRUD interpretation, returning fallback");
-            return new CrudInterpretation("query", new Dictionary<string, string?> { ["raw"] = intent }, new Dictionary<string, string?>(), response.RawResponse ?? cleaned);
+            return new CrudInterpretation("query", new Dictionary<string, string?> { ["raw"] = request.Intent }, new Dictionary<string, string?>(), response.RawResponse ?? cleaned);
         }
     }
 
@@ -714,7 +721,7 @@ public sealed class ReportInterpreter : IReportInterpreter
     {
         _provider = provider;
     }
-    public async Task<S_ReportDefinition> BuildReportAsync(string description, Guid moduleId, CancellationToken cancellationToken = default)
+    public async Task<ReportBuildResult> BuildReportAsync(ReportBuildRequest request, CancellationToken cancellationToken = default)
     {
         var prompt = $$"""
 Construis une requête JSON {"query":"...","visualization":"table|chart"} pour un rapport: {{description}}
@@ -725,19 +732,21 @@ Construis une requête JSON {"query":"...","visualization":"table|chart"} pour u
             var report = JsonSerializer.Deserialize<ReportResponse>(JsonHelper.ExtractJson(response.Content), new JsonSerializerOptions(JsonSerializerDefaults.Web));
             if (report is not null)
             {
-                return new S_ReportDefinition
-                {
-                    ModuleId = moduleId,
-                    Name = description,
-                    QueryDefinition = report.Query ?? "select *",
-                    Visualization = report.Visualization
-                };
+                return new ReportBuildResult(
+                    new S_ReportDefinition
+                    {
+                        ModuleId = request.ModuleId,
+                        Name = request.Description,
+                        QueryDefinition = report.Query ?? "select *",
+                        Visualization = report.Visualization ?? request.PreferredVisualization
+                    },
+                    response.RawResponse ?? response.Content);
             }
         }
         catch (JsonException)
         {
         }
-        return new S_ReportDefinition { ModuleId = moduleId, Name = description, QueryDefinition = "select *" };
+        return new ReportBuildResult(new S_ReportDefinition { ModuleId = request.ModuleId, Name = request.Description, QueryDefinition = "select *", Visualization = request.PreferredVisualization }, response.RawResponse ?? response.Content);
     }
     private sealed class ReportResponse
     {
@@ -756,20 +765,20 @@ public sealed class VisionEngine : IAionVisionService
         _fileStorage = fileStorage;
         _logger = logger;
     }
-    public async Task<S_VisionAnalysis> AnalyzeAsync(Guid fileId, VisionAnalysisType analysisType, CancellationToken cancellationToken = default)
+    public async Task<S_VisionAnalysis> AnalyzeAsync(VisionAnalysisRequest request, CancellationToken cancellationToken = default)
     {
         try
         {
-            await using var stream = await _fileStorage.OpenAsync(fileId, cancellationToken).ConfigureAwait(false);
+            await using var stream = await _fileStorage.OpenAsync(request.FileId, cancellationToken).ConfigureAwait(false);
             if (stream is null)
             {
-                _logger.LogWarning("Unable to open file {FileId} for vision analysis", fileId);
+                _logger.LogWarning("Unable to open file {FileId} for vision analysis", request.FileId);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to open file {FileId}; continuing with remote call", fileId);
+            _logger.LogWarning(ex, "Failed to open file {FileId}; continuing with remote call", request.FileId);
         }
-        return await _visionProvider.AnalyzeAsync(fileId, analysisType, cancellationToken).ConfigureAwait(false);
+        return await _visionProvider.AnalyzeAsync(request, cancellationToken).ConfigureAwait(false);
     }
 }

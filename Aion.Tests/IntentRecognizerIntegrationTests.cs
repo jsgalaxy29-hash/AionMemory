@@ -14,7 +14,7 @@ public class IntentRecognizerIntegrationTests
         var provider = new StubLlmProvider(payload);
         var recognizer = new BasicIntentDetector(provider, NullLogger<BasicIntentDetector>.Instance);
 
-        var result = await recognizer.DetectAsync("ajoute une tâche");
+        var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "ajoute une tâche" });
 
         Assert.Equal("create_task", result.Intent);
         Assert.Equal(0.73, result.Confidence, 2);
