@@ -392,8 +392,11 @@ public sealed class CloudBackupService : ICloudBackupService
         var backupFileName = $"aion-{timestamp:yyyyMMddHHmmss}.db";
         var destination = Path.Combine(_backupFolder, backupFileName);
         await using var source = new FileStream(encryptedDatabasePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        await using var dest = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        await source.CopyToAsync(dest, cancellationToken).ConfigureAwait(false);
+        await using (var dest = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan))
+        {
+            await source.CopyToAsync(dest, cancellationToken).ConfigureAwait(false);
+            await dest.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         var manifest = new BackupManifest
         {
