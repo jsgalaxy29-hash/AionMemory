@@ -1,6 +1,5 @@
 @using Microsoft.AspNetCore.Components.Forms
 @inherits OwningComponentBase
-
 <EditForm Model="FieldValues" OnValidSubmit="HandleValidSubmit">
     <DataAnnotationsValidator />
     <div class="form-row">
@@ -12,20 +11,25 @@
                     <label>@field.Label</label>
                     @switch (field.DataType)
                     {
-                        case FieldDataType.Text or FieldDataType.Lookup or FieldDataType.Tags or FieldDataType.File:
+                        case FieldDataType.Text:
+                        case FieldDataType.Lookup:
+                        case FieldDataType.Tags:
+                        case FieldDataType.File:
                             <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
                             break;
                         case FieldDataType.Note:
                             <InputTextArea class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
                             break;
-                        case FieldDataType.Number or FieldDataType.Decimal:
+                        case FieldDataType.Number:
+                        case FieldDataType.Decimal:
                             <InputNumber TValue="decimal?" class="input" Value="@GetDecimal(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetDecimal(field.Name)" />
                             break;
                         case FieldDataType.Boolean:
                             <InputCheckbox class="input" Value="@GetBool(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetBool(field.Name)" />
                             break;
-                        case FieldDataType.Date or FieldDataType.DateTime:
-                            <InputDate<DateTime?> class="input" Value="@GetDateTime(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetDateTime(field.Name)" />
+                        case FieldDataType.Date:
+                        case FieldDataType.DateTime:
+                            <InputDate TValue="DateTime?" class="input" Value="@GetDateTime(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetDateTime(field.Name)" />
                             break;
                         default:
                             <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
