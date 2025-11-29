@@ -371,6 +371,19 @@ public class UserPersona
 // Métamodèle simplifié : tables, champs et vues permettent d'harmoniser les
 // modules AION Memory (Notes, Agenda, Potager, etc.) autour d'une même
 // structure persistante.
+// Exemple JSON pour tests rapides :
+// {
+//   "name": "agenda_event",
+//   "displayName": "Événements",
+//   "description": "Gestion des événements calendrier",
+//   "isSystem": false,
+//   "supportsSoftDelete": true,
+//   "hasAuditTrail": true,
+//   "defaultView": "upcoming",
+//   "rowLabelTemplate": "{{title}} ({{start}})",
+//   "fields": [],
+//   "views": []
+// }
 public class STable
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -380,6 +393,13 @@ public class STable
     public string DisplayName { get; set; } = string.Empty;
     [StringLength(1024)]
     public string? Description { get; set; }
+    public bool IsSystem { get; set; }
+    public bool SupportsSoftDelete { get; set; }
+    public bool HasAuditTrail { get; set; }
+    [StringLength(128)]
+    public string? DefaultView { get; set; }
+    [StringLength(256)]
+    public string? RowLabelTemplate { get; set; }
 
     public ICollection<SFieldDefinition> Fields { get; set; } = new List<SFieldDefinition>();
     public ICollection<SViewDefinition> Views { get; set; } = new List<SViewDefinition>();
@@ -395,6 +415,20 @@ public class STable
 
 public class SFieldDefinition
 {
+    // Exemple JSON :
+    // {
+    //   "name": "title",
+    //   "label": "Titre",
+    //   "dataType": "Text",
+    //   "isRequired": true,
+    //   "isPrimaryKey": false,
+    //   "isUnique": true,
+    //   "isIndexed": true,
+    //   "minLength": 3,
+    //   "maxLength": 160,
+    //   "validationPattern": "^.+$",
+    //   "placeholder": "Titre de l'événement"
+    // }
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid TableId { get; set; }
     [Required, StringLength(128)]
@@ -403,10 +437,35 @@ public class SFieldDefinition
     public string Label { get; set; } = string.Empty;
     public FieldDataType DataType { get; set; }
     public bool IsRequired { get; set; }
+    public bool IsPrimaryKey { get; set; }
+    public bool IsUnique { get; set; }
+    public bool IsIndexed { get; set; }
+    public bool IsSearchable { get; set; } = true;
+    public bool IsSortable { get; set; }
+    public bool IsFilterable { get; set; }
+    public bool IsHidden { get; set; }
+    public bool IsReadOnly { get; set; }
+    public bool IsComputed { get; set; }
+    [StringLength(2048)]
+    public string? ComputedExpression { get; set; }
     [StringLength(1024)]
     public string? DefaultValue { get; set; }
+    [Range(0, 16384)]
+    public int? MinLength { get; set; }
+    [Range(1, 16384)]
+    public int? MaxLength { get; set; }
+    public decimal? MinValue { get; set; }
+    public decimal? MaxValue { get; set; }
+    [StringLength(512)]
+    public string? ValidationPattern { get; set; }
+    [StringLength(256)]
+    public string? Placeholder { get; set; }
+    [StringLength(128)]
+    public string? Unit { get; set; }
     [StringLength(128)]
     public string? LookupTarget { get; set; }
+    [StringLength(128)]
+    public string? LookupField { get; set; }
 
     public static SFieldDefinition Text(string name, string label, bool required = false, string? defaultValue = null)
         => new()
@@ -417,18 +476,53 @@ public class SFieldDefinition
             IsRequired = required,
             DefaultValue = defaultValue
         };
+
+    public static SFieldDefinition Computed(string name, string label, string expression)
+        => new()
+        {
+            Name = name,
+            Label = label,
+            DataType = FieldDataType.Calculated,
+            IsComputed = true,
+            IsReadOnly = true,
+            IsRequired = false,
+            ComputedExpression = expression
+        };
 }
 
 public class SViewDefinition
 {
+    // Exemple JSON :
+    // {
+    //   "name": "upcoming",
+    //   "displayName": "À venir",
+    //   "description": "Événements à venir dans les 30 jours",
+    //   "queryDefinition": "start >= now() && start < now().addDays(30)",
+    //   "filterExpression": "status != \"done\"",
+    //   "sortExpression": "start asc, priority desc",
+    //   "pageSize": 50,
+    //   "visualization": "table",
+    //   "isDefault": true
+    // }
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid TableId { get; set; }
     [Required, StringLength(128)]
     public string Name { get; set; } = string.Empty;
+    [Required, StringLength(128)]
+    public string DisplayName { get; set; } = string.Empty;
+    [StringLength(1024)]
+    public string? Description { get; set; }
     [Required, StringLength(4000)]
     public string QueryDefinition { get; set; } = string.Empty;
+    [StringLength(512)]
+    public string? FilterExpression { get; set; }
+    [StringLength(512)]
+    public string? SortExpression { get; set; }
+    [Range(1, 500)]
+    public int? PageSize { get; set; }
     [StringLength(128)]
     public string? Visualization { get; set; }
+    public bool IsDefault { get; set; }
 }
 
 public class F_FileLink
