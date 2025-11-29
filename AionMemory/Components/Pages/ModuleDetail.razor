@@ -17,7 +17,7 @@ else
                     <h4>@Module.Name</h4>
                     <p class="text-muted">@Module.Description</p>
                 </div>
-                <button class="button secondary" @onclick="() => Navigation.NavigateTo($"/dashboard/{Module.Name.ToLowerInvariant()}")">Dashboard</button>
+                <button class="button secondary" @onclick="NavigateToDashboard">Dashboard</button>
             </div>
             @if (SelectedEntity is not null)
             {
@@ -56,5 +56,13 @@ else
     private void HandleSaved(F_Record record)
     {
         OpenRecord(record);
+    }
+
+    private void NavigateToDashboard()
+    {
+        if (Module is not null)
+        {
+            Navigation.NavigateTo($"/dashboard/{Module.Name.ToLowerInvariant()}");
+        }
     }
 }
