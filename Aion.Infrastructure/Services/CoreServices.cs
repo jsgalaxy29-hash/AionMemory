@@ -955,7 +955,7 @@ public sealed class SearchService : ISearchService
         float[] embedding;
         try
         {
-            embedding = await _embeddingProvider.EmbedAsync(query, cancellationToken).ConfigureAwait(false);
+            embedding = (await _embeddingProvider.EmbedAsync(query, cancellationToken).ConfigureAwait(false)).Vector;
         }
         catch (Exception ex)
         {
@@ -1023,7 +1023,7 @@ public sealed class SearchService : ISearchService
             var embedding = await _embeddingProvider
                 .EmbedAsync($"{title}\n{content}", cancellationToken)
                 .ConfigureAwait(false);
-            return JsonSerializer.Serialize(embedding, EmbeddingSerializerOptions);
+            return JsonSerializer.Serialize(embedding.Vector, EmbeddingSerializerOptions);
         }
         catch (Exception ex)
         {

@@ -12,7 +12,7 @@ namespace Aion.AI;
 /// Les appels réseau sont encapsulés dans HttpClientFactory pour être facilement testés
 /// et remplacés.
 /// </summary>
-public sealed class DefaultAionAiProvider : ITextGenerationProvider, IEmbeddingProvider, IAudioTranscriptionProvider
+public sealed class DefaultAionAiProvider : ILLMProvider, IEmbeddingProvider, IAudioTranscriptionProvider
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly IHttpClientFactory _httpClientFactory;
@@ -26,14 +26,15 @@ public sealed class DefaultAionAiProvider : ITextGenerationProvider, IEmbeddingP
         _logger = logger;
     }
 
-    public async Task<string> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
+    public async Task<LlmResponse> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
     {
         var endpoint = _options.LlmEndpoint ?? _options.BaseEndpoint;
 
         if (string.IsNullOrWhiteSpace(endpoint))
         {
             _logger.LogWarning("Endpoint IA non configuré, retour d'une réponse stub.");
-            return $"[stub] {_options.LlmModel ?? "model"}: {prompt}";
+            var content = $"[stub] {_options.LlmModel ?? "model"}: {prompt}";
+            return new LlmResponse(content, content, _options.LlmModel);
         }
 
         var client = CreateClient();
@@ -52,23 +53,25 @@ public sealed class DefaultAionAiProvider : ITextGenerationProvider, IEmbeddingP
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("Appel IA non réussi ({Status}) - bascule en mode stub", response.StatusCode);
-            return $"[stub-fallback] {prompt}";
+            var content = $"[stub-fallback] {prompt}";
+            return new LlmResponse(content, content, _options.LlmModel);
         }
 
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
         var content = doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
-        return content ?? string.Empty;
+        return new LlmResponse(content ?? string.Empty, json, _options.LlmModel);
     }
 
-    public async Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
+    public async Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default)
     {
         var endpoint = _options.EmbeddingsEndpoint ?? _options.BaseEndpoint;
 
         if (string.IsNullOrWhiteSpace(endpoint))
         {
             _logger.LogWarning("Embedding endpoint not configured, returning deterministic stub vector.");
-            return Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            return new EmbeddingResult(vector, _options.EmbeddingModel ?? _options.LlmModel);
         }
 
         var client = CreateClient();
@@ -88,7 +91,7 @@ public sealed class DefaultAionAiProvider : ITextGenerationProvider, IEmbeddingP
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
         var values = doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(e => e.GetSingle()).ToArray();
-        return values;
+        return new EmbeddingResult(values, _options.EmbeddingModel ?? _options.LlmModel, json);
     }
 
     public async Task<TranscriptionResult> TranscribeAsync(Stream audioStream, string fileName, CancellationToken cancellationToken = default)
@@ -148,27 +151,28 @@ public sealed class DefaultAionAiProvider : ITextGenerationProvider, IEmbeddingP
 
 public sealed class DefaultIntentRecognizer : IIntentDetector
 {
-    private readonly ITextGenerationProvider _provider;
+    private readonly ILLMProvider _provider;
 
-    public DefaultIntentRecognizer(ITextGenerationProvider provider)
+    public DefaultIntentRecognizer(ILLMProvider provider)
     {
         _provider = provider;
     }
 
-    public async Task<string> DetectAsync(string input, CancellationToken cancellationToken = default)
+    public async Task<IntentDetectionResult> DetectAsync(string input, CancellationToken cancellationToken = default)
     {
         var prompt = $"Analyse l'intention utilisateur pour: {input}";
-        return await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
+        var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
+        return new IntentDetectionResult("analysis", new Dictionary<string, string> { ["prompt"] = input }, 0.5, response.RawResponse ?? response.Content);
     }
 }
 
 public sealed class DefaultModuleDesigner : IModuleDesigner
 {
-    private readonly ITextGenerationProvider _provider;
+    private readonly ILLMProvider _provider;
 
     public string? LastGeneratedJson { get; private set; }
 
-    public DefaultModuleDesigner(ITextGenerationProvider provider)
+    public DefaultModuleDesigner(ILLMProvider provider)
     {
         _provider = provider;
     }
@@ -196,7 +200,7 @@ public sealed class DefaultModuleDesigner : IModuleDesigner
 """;
 
         var generationPrompt = $"Propose un module AION (entités/champs) pour: {prompt}. La réponse doit être un JSON valide suivant ce schéma: {schema}";
-        LastGeneratedJson = (await _provider.GenerateAsync(generationPrompt, cancellationToken).ConfigureAwait(false))?.Trim();
+        LastGeneratedJson = (await _provider.GenerateAsync(generationPrompt, cancellationToken).ConfigureAwait(false)).Content.Trim();
 
         if (!string.IsNullOrWhiteSpace(LastGeneratedJson))
         {

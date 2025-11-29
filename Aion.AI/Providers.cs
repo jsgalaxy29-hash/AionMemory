@@ -7,14 +7,6 @@ using Aion.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 namespace Aion.AI;
-public interface ITextGenerationProvider
-{
-    Task<string> GenerateAsync(string prompt, CancellationToken cancellationToken = default);
-}
-public interface IEmbeddingProvider
-{
-    Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default);
-}
 internal static class HttpClientNames
 {
     public const string Llm = "aion-ai-llm";
@@ -22,7 +14,7 @@ internal static class HttpClientNames
     public const string Transcription = "aion-ai-transcription";
     public const string Vision = "aion-ai-vision";
 }
-public sealed class HttpTextGenerationProvider : ITextGenerationProvider
+public sealed class HttpTextGenerationProvider : ILLMProvider
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly IHttpClientFactory _httpClientFactory;
@@ -34,14 +26,14 @@ public sealed class HttpTextGenerationProvider : ITextGenerationProvider
         _options = options;
         _logger = logger;
     }
-    public async Task<string> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
+    public async Task<LlmResponse> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
     {
         var opts = _options.CurrentValue;
         var client = CreateClient(HttpClientNames.Llm, opts.LlmEndpoint ?? opts.BaseEndpoint);
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("LLM endpoint not configured; returning stub response");
-            return $"[stub-llm] {prompt}";
+            return new LlmResponse($"[stub-llm] {prompt}", string.Empty, opts.LlmModel);
         }
         var payload = new
         {
@@ -57,7 +49,7 @@ public sealed class HttpTextGenerationProvider : ITextGenerationProvider
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("LLM call failed with status {Status}; returning stub", response.StatusCode);
-            return $"[stub-llm-fallback] {prompt}";
+            return new LlmResponse($"[stub-llm-fallback] {prompt}", string.Empty, opts.LlmModel);
         }
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
@@ -66,7 +58,7 @@ public sealed class HttpTextGenerationProvider : ITextGenerationProvider
             .GetProperty("message")
             .GetProperty("content")
             .GetString();
-        return content ?? string.Empty;
+        return new LlmResponse(content ?? string.Empty, json, opts.LlmModel);
     }
     private HttpClient CreateClient(string clientName, string? endpoint)
     {
@@ -146,36 +138,44 @@ public sealed class HttpEmbeddingProvider : IEmbeddingProvider
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptionsMonitor<AionAiOptions> _options;
     private readonly ILogger<HttpEmbeddingProvider> _logger;
+
     public HttpEmbeddingProvider(IHttpClientFactory httpClientFactory, IOptionsMonitor<AionAiOptions> options, ILogger<HttpEmbeddingProvider> logger)
     {
         _httpClientFactory = httpClientFactory;
         _options = options;
         _logger = logger;
     }
-    public async Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
+
+    public async Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default)
     {
         var opts = _options.CurrentValue;
         var client = _httpClientFactory.CreateClient(HttpClientNames.Embeddings);
         HttpTextGenerationProvider.EnsureClientConfigured(client, opts.EmbeddingsEndpoint ?? opts.BaseEndpoint, opts);
+
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("Embedding endpoint not configured; returning stub vector");
-            return Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
         }
+
         var payload = new { model = opts.EmbeddingModel ?? opts.LlmModel ?? "generic-embedding", input = text };
         var response = await HttpRetryHelper.SendWithRetryAsync(client, () => new HttpRequestMessage(HttpMethod.Post, "embeddings")
         {
             Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
         }, _logger, cancellationToken).ConfigureAwait(false);
+
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("Embedding call failed with status {Status}; returning stub", response.StatusCode);
-            return Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
         }
+
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
         var values = doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(e => e.GetSingle()).ToArray();
-        return values;
+        return new EmbeddingResult(values, opts.EmbeddingModel ?? opts.LlmModel, json);
     }
 }
 public sealed class HttpAudioTranscriptionProvider : IAudioTranscriptionProvider
@@ -266,43 +266,46 @@ public sealed class HttpVisionProvider : IVisionService
             ResultJson = JsonSerializer.Serialize(new { summary = message, tags = new[] { "stub" } }, SerializerOptions)
         };
 }
-public sealed record IntentRecognitionResult(string Intent, IDictionary<string, string> Parameters, double Confidence, string RawResponse);
 public sealed class IntentRecognizer : IIntentDetector
 {
-    private readonly ITextGenerationProvider _provider;
+    private readonly ILLMProvider _provider;
     private readonly ILogger<IntentRecognizer> _logger;
-    public IntentRecognizer(ITextGenerationProvider provider, ILogger<IntentRecognizer> logger)
+
+    public IntentRecognizer(ILLMProvider provider, ILogger<IntentRecognizer> logger)
     {
         _provider = provider;
         _logger = logger;
     }
-    public async Task<string> DetectAsync(string input, CancellationToken cancellationToken = default)
-    {
-        var structured = await DetectStructuredAsync(input, cancellationToken).ConfigureAwait(false);
-        return JsonSerializer.Serialize(structured, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-    }
-    public async Task<IntentRecognitionResult> DetectStructuredAsync(string input, CancellationToken cancellationToken = default)
+
+    public async Task<IntentDetectionResult> DetectAsync(string input, CancellationToken cancellationToken = default)
     {
         var prompt = $$"""
 Analyse l'intention utilisateur pour l'entrée suivante et réponds uniquement en JSON compact :
 {"intent":"<type>","parameters":{...},"confidence":0.0}
 Message: "{{input}}"
 """;
+
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
-        var json = JsonHelper.ExtractJson(response ?? string.Empty);
+        var json = JsonHelper.ExtractJson(response.Content);
+
         try
         {
             var result = JsonSerializer.Deserialize<IntentRecognitionResultInternal>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
             if (result is not null)
             {
-                return new IntentRecognitionResult(result.Intent ?? "unknown", result.Parameters ?? new Dictionary<string, string>(), result.Confidence ?? 0.5, response);
+                return new IntentDetectionResult(
+                    result.Intent ?? "unknown",
+                    result.Parameters ?? new Dictionary<string, string>(),
+                    result.Confidence ?? 0.5,
+                    response.RawResponse);
             }
         }
         catch (JsonException ex)
         {
             _logger.LogWarning(ex, "Failed to parse intent response, returning fallback structure");
         }
-        return new IntentRecognitionResult("unknown", new Dictionary<string, string> { ["raw"] = input }, 0.1, response);
+
+        return new IntentDetectionResult("unknown", new Dictionary<string, string> { ["raw"] = input }, 0.1, response.RawResponse);
     }
     private sealed class IntentRecognitionResultInternal
     {
@@ -319,9 +322,9 @@ public sealed class ModuleDesigner : IModuleDesigner
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true
     };
-    private readonly ITextGenerationProvider _provider;
+    private readonly ILLMProvider _provider;
     private readonly ILogger<ModuleDesigner> _logger;
-    public ModuleDesigner(ITextGenerationProvider provider, ILogger<ModuleDesigner> logger)
+    public ModuleDesigner(ILLMProvider provider, ILogger<ModuleDesigner> logger)
     {
         _provider = provider;
         _logger = logger;
@@ -347,7 +350,7 @@ Description utilisateur: {{prompt}}
 Ne réponds que par du JSON valide.
 """;
         var response = await _provider.GenerateAsync(generationPrompt, cancellationToken).ConfigureAwait(false);
-        LastGeneratedJson = JsonHelper.ExtractJson(response ?? string.Empty);
+        LastGeneratedJson = JsonHelper.ExtractJson(response.Content);
         try
         {
             var design = JsonSerializer.Deserialize<ModuleDesignSchema>(LastGeneratedJson, SerializerOptions);
@@ -575,14 +578,16 @@ Ne réponds que par du JSON valide.
 }
 public sealed class CrudInterpreter : ICrudInterpreter
 {
-    private readonly ITextGenerationProvider _provider;
+    private readonly ILLMProvider _provider;
     private readonly ILogger<CrudInterpreter> _logger;
-    public CrudInterpreter(ITextGenerationProvider provider, ILogger<CrudInterpreter> logger)
+
+    public CrudInterpreter(ILLMProvider provider, ILogger<CrudInterpreter> logger)
     {
         _provider = provider;
         _logger = logger;
     }
-    public async Task<string> GenerateQueryAsync(string intent, S_Module module, CancellationToken cancellationToken = default)
+
+    public async Task<CrudInterpretation> GenerateQueryAsync(string intent, S_Module module, CancellationToken cancellationToken = default)
     {
         var fieldNames = string.Join(", ", module.EntityTypes.SelectMany(e => e.Fields.Select(f => f.Name)));
         var prompt = $$$"""
@@ -591,20 +596,60 @@ Module: {{module.Name}}
 Champs: {{fieldNames}}
 Réponds par une instruction JSON avec {"action":"create|update|delete|query","filters":{},"payload":{}} pour: {{intent}}
 """;
+
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
-        var cleaned = JsonHelper.ExtractJson(response ?? string.Empty);
+        var cleaned = JsonHelper.ExtractJson(response.Content);
+
         if (string.IsNullOrWhiteSpace(cleaned))
         {
             _logger.LogWarning("Empty CRUD interpretation, returning stub query");
-            return $"{\"action\":\"query\",\"filters\":{},\"payload\":{},\"raw\":\"{intent}\"}";
+            return new CrudInterpretation("query", new Dictionary<string, string?> { ["raw"] = intent }, new Dictionary<string, string?>(), response.RawResponse);
         }
-        return cleaned;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(cleaned);
+            var root = doc.RootElement;
+            var action = root.TryGetProperty("action", out var actionProperty) ? actionProperty.GetString() ?? "query" : "query";
+            var filters = ExtractStringDictionary(root, "filters");
+            var payload = ExtractStringDictionary(root, "payload");
+            return new CrudInterpretation(action, filters, payload, response.RawResponse ?? cleaned);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Unable to parse CRUD interpretation, returning fallback");
+            return new CrudInterpretation("query", new Dictionary<string, string?> { ["raw"] = intent }, new Dictionary<string, string?>(), response.RawResponse ?? cleaned);
+        }
+    }
+
+    private static Dictionary<string, string?> ExtractStringDictionary(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var element) || element.ValueKind != JsonValueKind.Object)
+        {
+            return new Dictionary<string, string?>();
+        }
+
+        var result = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var prop in element.EnumerateObject())
+        {
+            result[prop.Name] = prop.Value.ValueKind switch
+            {
+                JsonValueKind.String => prop.Value.GetString(),
+                JsonValueKind.Number => prop.Value.ToString(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                _ => prop.Value.GetRawText()
+            };
+        }
+
+        return result;
     }
 }
 public sealed class AgendaInterpreter : IAgendaInterpreter
 {
-    private readonly ITextGenerationProvider _provider;
-    public AgendaInterpreter(ITextGenerationProvider provider)
+    private readonly ILLMProvider _provider;
+
+    public AgendaInterpreter(ILLMProvider provider)
     {
         _provider = provider;
     }
@@ -616,7 +661,7 @@ Génère un événement JSON {"title":"","start":"ISO","end":"ISO|null","reminde
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
         try
         {
-            var evt = JsonSerializer.Deserialize<AgendaResponse>(JsonHelper.ExtractJson(response ?? string.Empty), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var evt = JsonSerializer.Deserialize<AgendaResponse>(JsonHelper.ExtractJson(response.Content), new JsonSerializerOptions(JsonSerializerDefaults.Web));
             if (evt is not null)
             {
                 return new S_Event
@@ -646,8 +691,9 @@ Génère un événement JSON {"title":"","start":"ISO","end":"ISO|null","reminde
 }
 public sealed class NoteInterpreter : INoteInterpreter
 {
-    private readonly ITextGenerationProvider _provider;
-    public NoteInterpreter(ITextGenerationProvider provider)
+    private readonly ILLMProvider _provider;
+
+    public NoteInterpreter(ILLMProvider provider)
     {
         _provider = provider;
     }
@@ -660,13 +706,14 @@ Contenu:
 {{content}}
 """;
         var refined = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
-        return new S_Note { Title = title, Content = refined, Source = NoteSourceType.Generated, CreatedAt = DateTimeOffset.UtcNow };
+        return new S_Note { Title = title, Content = refined.Content, Source = NoteSourceType.Generated, CreatedAt = DateTimeOffset.UtcNow };
     }
 }
 public sealed class ReportInterpreter : IReportInterpreter
 {
-    private readonly ITextGenerationProvider _provider;
-    public ReportInterpreter(ITextGenerationProvider provider)
+    private readonly ILLMProvider _provider;
+
+    public ReportInterpreter(ILLMProvider provider)
     {
         _provider = provider;
     }
@@ -678,7 +725,7 @@ Construis une requête JSON {"query":"...","visualization":"table|chart"} pour u
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
         try
         {
-            var report = JsonSerializer.Deserialize<ReportResponse>(JsonHelper.ExtractJson(response ?? string.Empty), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var report = JsonSerializer.Deserialize<ReportResponse>(JsonHelper.ExtractJson(response.Content), new JsonSerializerOptions(JsonSerializerDefaults.Web));
             if (report is not null)
             {
                 return new S_ReportDefinition
