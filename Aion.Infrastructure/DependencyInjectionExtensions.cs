@@ -92,6 +92,7 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddHostedService<BackupCleanupService>();
         services.AddScoped<ModuleDesignerService>();
+        services.AddScoped<DemoModuleSeeder>();
 
         return services;
     }
@@ -101,6 +102,9 @@ public static class DependencyInjectionExtensions
         await using var scope = serviceProvider.CreateAsyncScope();
         var context = scope.ServiceProvider.GetRequiredService<AionDbContext>();
         await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+
+        var demoSeeder = scope.ServiceProvider.GetRequiredService<DemoModuleSeeder>();
+        await demoSeeder.EnsureDemoDataAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static string ChooseValue(string current, params string?[] candidates)

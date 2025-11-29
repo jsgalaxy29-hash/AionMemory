@@ -1,26 +1,33 @@
 @page "/potager/edit/{recordId?}"
+@using Aion.Domain
 @inject IMetadataService Metadata
 @inject IDataEngine DataEngine
+@inject AionMemory.Services.ITableDefinitionService Tables
 @inject NavigationManager Navigation
 
 <h3>Nouvelle culture</h3>
-@if (PotagerEntity is null)
+@if (PotagerTable is null)
 {
     <p>Module Potager non disponible.</p>
 }
 else
 {
-    <DynamicForm EntityType="PotagerEntity" DataEngine="DataEngine" OnSaved="Saved" />
+    <DynamicForm Table="PotagerTable" DataEngine="DataEngine" OnSaved="Saved" />
 }
 
 @code {
     [Parameter] public string? RecordId { get; set; }
     private S_EntityType? PotagerEntity { get; set; }
+    private STable? PotagerTable { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
         var modules = await Metadata.GetModulesAsync();
         PotagerEntity = modules.FirstOrDefault(m => m.Name.Contains("Potager", StringComparison.OrdinalIgnoreCase))?.EntityTypes.FirstOrDefault();
+        if (PotagerEntity is not null)
+        {
+            PotagerTable = await Tables.EnsureTableAsync(PotagerEntity);
+        }
     }
 
     private void Saved(F_Record record)
