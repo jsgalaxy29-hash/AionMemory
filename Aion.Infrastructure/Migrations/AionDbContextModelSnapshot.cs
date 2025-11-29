@@ -23,14 +23,17 @@ namespace Aion.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("ActionType")
-                        .HasColumnType("INTEGER");
+                    b.Property<string>("ActionType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
 
                     b.Property<Guid>("AutomationRuleId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ParametersJson")
                         .IsRequired()
+                        .HasMaxLength(4000)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -51,6 +54,7 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("Expression")
                         .IsRequired()
+                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -58,6 +62,50 @@ namespace Aion.Infrastructure.Migrations
                     b.HasIndex("AutomationRuleId");
 
                     b.ToTable("AutomationConditions");
+                });
+
+            modelBuilder.Entity("Aion.Domain.AutomationExecution", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PayloadSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RuleId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RuleId");
+
+                    b.HasIndex("StartedAt");
+
+                    b.ToTable("AutomationExecutions");
                 });
 
             modelBuilder.Entity("Aion.Domain.DashboardWidget", b =>
@@ -68,6 +116,7 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("ConfigurationJson")
                         .IsRequired()
+                        .HasMaxLength(4000)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Order")
@@ -75,10 +124,12 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("Title")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("WidgetType")
                         .IsRequired()
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -94,17 +145,21 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("FileName")
                         .IsRequired()
+                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("MimeType")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("StoragePath")
                         .IsRequired()
+                        .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ThumbnailPath")
+                        .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("UploadedAt")
@@ -128,6 +183,7 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Relation")
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("TargetId")
@@ -135,6 +191,7 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("TargetType")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -184,6 +241,7 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("TargetType")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -207,6 +265,7 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("TargetType")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -224,19 +283,33 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("Category")
                         .IsRequired()
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PackagePath")
                         .IsRequired()
+                        .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
                     b.ToTable("Marketplace");
+                });
+
+            modelBuilder.Entity("Aion.Domain.NoteSearchEntry", b =>
+                {
+                    b.Property<string>("Content");
+
+                    b.Property<Guid>("NoteId");
+
+                    b.ToTable((string)null);
+
+                    b.ToView("NoteSearch");
                 });
 
             modelBuilder.Entity("Aion.Domain.PredictionInsight", b =>
@@ -248,22 +321,39 @@ namespace Aion.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("GeneratedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Message")
                         .IsRequired()
+                        .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid?>("TargetId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("TargetType")
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
                     b.ToTable("Predictions");
+                });
+
+            modelBuilder.Entity("Aion.Domain.RecordSearchEntry", b =>
+                {
+                    b.Property<string>("Content");
+
+                    b.Property<Guid>("EntityTypeId");
+
+                    b.Property<Guid>("RecordId");
+
+                    b.ToTable((string)null);
+
+                    b.ToView("RecordSearch");
                 });
 
             modelBuilder.Entity("Aion.Domain.S_AutomationRule", b =>
@@ -273,20 +363,26 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("IsEnabled")
-                        .HasColumnType("INTEGER");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
 
                     b.Property<Guid>("ModuleId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("Trigger")
-                        .HasColumnType("INTEGER");
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("TriggerFilter")
                         .IsRequired()
+                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -303,6 +399,7 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Icon")
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("ModuleId")
@@ -310,10 +407,12 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PluralName")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -323,109 +422,50 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("EntityTypes");
                 });
 
-            modelBuilder.Entity("Aion.Domain.S_Event", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsCompleted")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset?>("ReminderAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("End")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("Start")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Events");
-                });
-
             modelBuilder.Entity("Aion.Domain.S_Field", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("DataType")
-                        .HasColumnType("INTEGER");
+                    b.Property<string>("DataType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("DefaultValue")
+                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("EntityTypeId")
                         .HasColumnType("TEXT");
 
-                    b.Property<bool>("IsRequired")
-                        .HasColumnType("INTEGER");
-
                     b.Property<string>("Label")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("LookupTarget")
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("OptionsJson")
+                        .HasMaxLength(4000)
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsRequired")
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 
                     b.HasIndex("EntityTypeId");
 
                     b.ToTable("Fields");
-                });
-
-            modelBuilder.Entity("Aion.Domain.S_FieldDefinition", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("DataType")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("DefaultValue")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsRequired")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Label")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LookupTarget")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("TableId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TableId");
-
-                    b.ToTable("TableFields");
                 });
 
             modelBuilder.Entity("Aion.Domain.S_HistoryEvent", b =>
@@ -435,6 +475,7 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Description")
+                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("OccurredAt")
@@ -442,6 +483,7 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("Title")
                         .IsRequired()
+                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -457,6 +499,7 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("Relation")
                         .IsRequired()
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("SourceId")
@@ -464,6 +507,7 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("SourceType")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("TargetId")
@@ -471,6 +515,7 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("TargetType")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -487,10 +532,12 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Description")
+                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -518,13 +565,17 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("JournalContext")
+                        .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("Source")
-                        .HasColumnType("INTEGER");
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Title")
                         .IsRequired()
+                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -545,16 +596,20 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("FromField")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("IsBidirectional")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("ToEntity")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -572,16 +627,19 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("QueryDefinition")
+                        .IsRequired()
+                        .HasMaxLength(4000)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("ModuleId")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("QueryDefinition")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Visualization")
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -591,14 +649,41 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("Reports");
                 });
 
+            modelBuilder.Entity("Aion.Domain.S_Table", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Tables");
+                });
+
             modelBuilder.Entity("Aion.Domain.S_VisionAnalysis", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("AnalysisType")
-                        .HasColumnType("INTEGER");
+                    b.Property<string>("AnalysisType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
@@ -615,26 +700,46 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("VisionAnalyses");
                 });
 
-            modelBuilder.Entity("Aion.Domain.STable", b =>
+            modelBuilder.Entity("Aion.Domain.SFieldDefinition", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Description")
+                    b.Property<string>("DataType")
+                        .IsRequired()
+                        .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("DisplayName")
+                    b.Property<string>("DefaultValue")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsRequired")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Label")
                         .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LookupTarget")
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TableId")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
-                    b.ToTable("Tables");
+                    b.HasIndex("TableId");
+
+                    b.ToTable("TableFields");
                 });
 
             modelBuilder.Entity("Aion.Domain.SViewDefinition", b =>
@@ -645,16 +750,19 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("QueryDefinition")
                         .IsRequired()
+                        .HasMaxLength(4000)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("TableId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Visualization")
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -671,10 +779,12 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Description")
+                        .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Payload")
@@ -683,6 +793,7 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("Version")
                         .IsRequired()
+                        .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -698,26 +809,90 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("StyleNotes")
+                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("Tone")
-                        .HasColumnType("INTEGER");
+                    b.Property<string>("Tone")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
                     b.ToTable("Personas");
                 });
 
+            modelBuilder.Entity("Aion.Domain.S_Event", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsCompleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("ReminderAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("Start")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("End")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Events");
+                });
+
+            modelBuilder.Entity("Aion.Domain.S_Field", b =>
+                {
+                    b.Property<bool>("IsRequired")
+                        .HasColumnType("INTEGER");
+                });
+
+            modelBuilder.Entity("Aion.Domain.SFieldDefinition", b =>
+                {
+                    b.Property<bool>("IsRequired")
+                        .HasColumnType("INTEGER");
+                });
+
             modelBuilder.Entity("Aion.Domain.S_AutomationRule", b =>
                 {
-                    b.HasOne("Aion.Domain.S_Module", null)
-                        .WithMany("AutomationRules")
-                        .HasForeignKey("ModuleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("INTEGER");
+                });
+
+            modelBuilder.Entity("Aion.Domain.S_Note", b =>
+                {
+                    b.Property<bool>("IsTranscribed")
+                        .HasColumnType("INTEGER");
+                });
+
+            modelBuilder.Entity("Aion.Domain.S_Table", b =>
+                {
+                    b.Property<string>("Description")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+                });
+
+            modelBuilder.Entity("Aion.Domain.F_File", b =>
+                {
+                    b.Property<long>("Size")
+                        .HasColumnType("INTEGER");
                 });
 
             modelBuilder.Entity("Aion.Domain.AutomationAction", b =>
@@ -734,6 +909,24 @@ namespace Aion.Infrastructure.Migrations
                     b.HasOne("Aion.Domain.S_AutomationRule", null)
                         .WithMany("Conditions")
                         .HasForeignKey("AutomationRuleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Aion.Domain.AutomationExecution", b =>
+                {
+                    b.HasOne("Aion.Domain.S_AutomationRule", null)
+                        .WithMany()
+                        .HasForeignKey("RuleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Aion.Domain.F_FileLink", b =>
+                {
+                    b.HasOne("Aion.Domain.F_File", null)
+                        .WithMany()
+                        .HasForeignKey("FileId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -756,29 +949,11 @@ namespace Aion.Infrastructure.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Aion.Domain.S_Field", b =>
+            modelBuilder.Entity("Aion.Domain.S_AutomationRule", b =>
                 {
-                    b.HasOne("Aion.Domain.S_EntityType", null)
-                        .WithMany("Fields")
-                        .HasForeignKey("EntityTypeId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Aion.Domain.S_FieldDefinition", b =>
-                {
-                    b.HasOne("Aion.Domain.STable", null)
-                        .WithMany("Fields")
-                        .HasForeignKey("TableId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Aion.Domain.S_Link", b =>
-                {
-                    b.HasOne("Aion.Domain.S_HistoryEvent", null)
-                        .WithMany("Links")
-                        .HasForeignKey("SourceId")
+                    b.HasOne("Aion.Domain.S_Module", null)
+                        .WithMany("AutomationRules")
+                        .HasForeignKey("ModuleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -788,6 +963,24 @@ namespace Aion.Infrastructure.Migrations
                     b.HasOne("Aion.Domain.S_Module", null)
                         .WithMany("EntityTypes")
                         .HasForeignKey("ModuleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Aion.Domain.S_Field", b =>
+                {
+                    b.HasOne("Aion.Domain.S_EntityType", null)
+                        .WithMany("Fields")
+                        .HasForeignKey("EntityTypeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Aion.Domain.S_Link", b =>
+                {
+                    b.HasOne("Aion.Domain.S_HistoryEvent", null)
+                        .WithMany("Links")
+                        .HasForeignKey("SourceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -810,69 +1003,22 @@ namespace Aion.Infrastructure.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Aion.Infrastructure.NoteSearchEntry", b =>
+            modelBuilder.Entity("Aion.Domain.SFieldDefinition", b =>
                 {
-                    b.Property<Guid>("NoteId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasNoKey();
-
-                    b.ToView("NoteSearch");
-                });
-
-            modelBuilder.Entity("Aion.Infrastructure.RecordSearchEntry", b =>
-                {
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("EntityTypeId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("RecordId")
-                        .HasColumnType("TEXT");
-
-                    b.HasNoKey();
-
-                    b.ToView("RecordSearch");
-                });
-
-            modelBuilder.Entity("Aion.Domain.SViewDefinition", b =>
-                {
-                    b.HasOne("Aion.Domain.STable", null)
-                        .WithMany("Views")
+                    b.HasOne("Aion.Domain.S_Table", null)
+                        .WithMany("Fields")
                         .HasForeignKey("TableId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Aion.Domain.F_FileLink", b =>
+            modelBuilder.Entity("Aion.Domain.SViewDefinition", b =>
                 {
-                    b.HasOne("Aion.Domain.F_File", null)
-                        .WithMany()
-                        .HasForeignKey("FileId")
+                    b.HasOne("Aion.Domain.S_Table", null)
+                        .WithMany("Views")
+                        .HasForeignKey("TableId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("Aion.Domain.S_Module", b =>
-                {
-                    b.Navigation("AutomationRules");
-
-                    b.Navigation("EntityTypes");
-
-                    b.Navigation("Reports");
-                });
-
-            modelBuilder.Entity("Aion.Domain.S_EntityType", b =>
-                {
-                    b.Navigation("Fields");
-
-                    b.Navigation("Relations");
                 });
 
             modelBuilder.Entity("Aion.Domain.S_Event", b =>
@@ -885,23 +1031,32 @@ namespace Aion.Infrastructure.Migrations
                     b.Navigation("Links");
                 });
 
+            modelBuilder.Entity("Aion.Domain.S_Module", b =>
+                {
+                    b.Navigation("AutomationRules");
+
+                    b.Navigation("EntityTypes");
+
+                    b.Navigation("Reports");
+                });
+
             modelBuilder.Entity("Aion.Domain.S_Note", b =>
                 {
                     b.Navigation("Links");
                 });
 
-            modelBuilder.Entity("Aion.Domain.STable", b =>
+            modelBuilder.Entity("Aion.Domain.S_Table", b =>
                 {
                     b.Navigation("Fields");
 
                     b.Navigation("Views");
                 });
 
-            modelBuilder.Entity("Aion.Domain.S_AutomationRule", b =>
+            modelBuilder.Entity("Aion.Domain.S_EntityType", b =>
                 {
-                    b.Navigation("Actions");
+                    b.Navigation("Fields");
 
-                    b.Navigation("Conditions");
+                    b.Navigation("Relations");
                 });
 #pragma warning restore 612, 618
         }

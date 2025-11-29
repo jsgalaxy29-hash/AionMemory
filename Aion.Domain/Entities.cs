@@ -54,6 +54,15 @@ public enum AutomationActionType
     GenerateNote
 }
 
+public enum AutomationExecutionStatus
+{
+    Scheduled,
+    Running,
+    Succeeded,
+    Failed,
+    Skipped
+}
+
 public enum VisionAnalysisType
 {
     Ocr,
@@ -156,6 +165,18 @@ public class AutomationAction
     public Guid AutomationRuleId { get; set; }
     public AutomationActionType ActionType { get; set; }
     public string ParametersJson { get; set; } = string.Empty;
+}
+
+public class AutomationExecution
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid RuleId { get; set; }
+    public string Trigger { get; set; } = string.Empty;
+    public string PayloadSnapshot { get; set; } = string.Empty;
+    public AutomationExecutionStatus Status { get; set; }
+    public string Outcome { get; set; } = string.Empty;
+    public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? CompletedAt { get; set; }
 }
 
 public class S_Note

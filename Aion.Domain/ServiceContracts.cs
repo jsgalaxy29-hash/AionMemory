@@ -73,6 +73,12 @@ public interface IAutomationService
     Task<IEnumerable<S_AutomationRule>> GetRulesAsync(CancellationToken cancellationToken = default);
 }
 
+public interface IAutomationOrchestrator
+{
+    Task<IEnumerable<AutomationExecution>> TriggerAsync(string eventName, object payload, CancellationToken cancellationToken = default);
+    Task<IEnumerable<AutomationExecution>> GetRecentExecutionsAsync(int take = 50, CancellationToken cancellationToken = default);
+}
+
 public interface IDashboardService
 {
     Task<IEnumerable<DashboardWidget>> GetWidgetsAsync(CancellationToken cancellationToken = default);

@@ -511,11 +511,13 @@ public sealed class AutomationService : IAionAutomationService, IAutomationServi
 {
     private readonly AionDbContext _db;
     private readonly ILogger<AutomationService> _logger;
+    private readonly IAutomationOrchestrator _orchestrator;
 
-    public AutomationService(AionDbContext db, ILogger<AutomationService> logger)
+    public AutomationService(AionDbContext db, ILogger<AutomationService> logger, IAutomationOrchestrator orchestrator)
     {
         _db = db;
         _logger = logger;
+        _orchestrator = orchestrator;
     }
 
     public async Task<S_AutomationRule> AddRuleAsync(S_AutomationRule rule, CancellationToken cancellationToken = default)
@@ -533,15 +535,8 @@ public sealed class AutomationService : IAionAutomationService, IAutomationServi
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-    public async Task TriggerAsync(string eventName, object payload, CancellationToken cancellationToken = default)
-    {
-        var rules = await GetRulesAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var rule in rules.Where(r => r.IsEnabled && string.Equals(r.TriggerFilter, eventName, StringComparison.OrdinalIgnoreCase)))
-        {
-            _logger.LogInformation("[automation] Rule {Rule} triggered by {Event}", rule.Name, eventName);
-            // TODO: dispatch actions to background worker / message bus
-        }
-    }
+    public Task<IEnumerable<AutomationExecution>> TriggerAsync(string eventName, object payload, CancellationToken cancellationToken = default)
+        => _orchestrator.TriggerAsync(eventName, payload, cancellationToken);
 }
 
 public sealed class DashboardService : IDashboardService
