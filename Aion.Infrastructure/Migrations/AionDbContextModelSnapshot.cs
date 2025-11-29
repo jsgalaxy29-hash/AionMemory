@@ -705,14 +705,18 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("Reports");
                 });
 
-            modelBuilder.Entity("Aion.Domain.STable", b =>
+                modelBuilder.Entity("Aion.Domain.STable", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Description")
-                        .HasMaxLength(512)
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DefaultView")
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("DisplayName")
@@ -720,10 +724,23 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("HasAuditTrail")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsSystem")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("RowLabelTemplate")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("SupportsSoftDelete")
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 
@@ -774,11 +791,46 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ComputedExpression")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsComputed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsFilterable")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsHidden")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsIndexed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsPrimaryKey")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsReadOnly")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsRequired")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsSearchable")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsSortable")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsUnique")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Label")
                         .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LookupField")
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
@@ -791,7 +843,31 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("MaxLength")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal?>("MaxValue")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("MinLength")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal?>("MinValue")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Placeholder")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("TableId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Unit")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ValidationPattern")
+                        .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -810,14 +886,37 @@ namespace Aion.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Description")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FilterExpression")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("PageSize")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("QueryDefinition")
                         .IsRequired()
                         .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SortExpression")
+                        .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("TableId")
