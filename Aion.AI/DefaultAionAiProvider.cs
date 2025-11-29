@@ -230,7 +230,7 @@ public sealed class DefaultModuleDesigner : IModuleDesigner
                     PluralName = "Items",
                     Fields = new List<S_Field>
                     {
-                        new() { Name = "Titre", Label = "Titre", DataType = FieldDataType.Text, IsRequired = true }
+                        new() { Name = "Titre", Label = "Titre", DataType = EnumSFieldType.String, IsRequired = true, IsSearchable = true, IsListVisible = true }
                     }
                 }
             }

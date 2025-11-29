@@ -305,44 +305,38 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
         switch (field.DataType)
         {
-            case FieldDataType.Text:
-            case FieldDataType.Note:
-            case FieldDataType.Lookup:
-            case FieldDataType.Tags:
-            case FieldDataType.Json:
-            case FieldDataType.File:
+            case EnumSFieldType.String:
+            case EnumSFieldType.Enum:
+            case EnumSFieldType.Relation:
+            case EnumSFieldType.File:
                 if (value is not string)
                 {
                     throw new InvalidOperationException($"Field '{field.Name}' expects text content");
                 }
                 break;
-            case FieldDataType.Number:
+            case EnumSFieldType.Int:
                 if (value is not long && value is not int)
                 {
                     throw new InvalidOperationException($"Field '{field.Name}' expects an integer number");
                 }
                 break;
-            case FieldDataType.Decimal:
+            case EnumSFieldType.Decimal:
                 if (value is not double && value is not decimal && value is not float)
                 {
                     throw new InvalidOperationException($"Field '{field.Name}' expects a decimal number");
                 }
                 break;
-            case FieldDataType.Boolean:
+            case EnumSFieldType.Bool:
                 if (value is not bool)
                 {
                     throw new InvalidOperationException($"Field '{field.Name}' expects a boolean value");
                 }
                 break;
-            case FieldDataType.Date:
-            case FieldDataType.DateTime:
+            case EnumSFieldType.Date:
                 if (value is not string dateString || !DateTimeOffset.TryParse(dateString, out _))
                 {
                     throw new InvalidOperationException($"Field '{field.Name}' expects an ISO-8601 date/time string");
                 }
-                break;
-            case FieldDataType.Calculated:
-                // Calculated fields are validated by automation layer; accept any value but presence is optional.
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(field.DataType), $"Unsupported data type {field.DataType}");

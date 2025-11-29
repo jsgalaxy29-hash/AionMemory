@@ -496,12 +496,25 @@ namespace Aion.Infrastructure.Migrations
                     b.Property<Guid>("EntityTypeId")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Label")
-                        .IsRequired()
-                        .HasMaxLength(128)
+                    b.Property<string>("EnumValues")
+                        .HasMaxLength(4000)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("LookupTarget")
+                    b.Property<bool>("IsListVisible")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("IsRequired")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsSearchable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("Label")
+                        .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
@@ -510,12 +523,8 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("OptionsJson")
-                        .HasMaxLength(4000)
+                    b.Property<Guid?>("RelationTargetEntityTypeId")
                         .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsRequired")
-                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 
@@ -647,30 +656,25 @@ namespace Aion.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("EntityTypeId")
+                    b.Property<Guid>("FromEntityTypeId")
                         .HasColumnType("TEXT");
-
-                    b.Property<string>("FromField")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsBidirectional")
-                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("ToEntity")
+                    b.Property<string>("RoleName")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("ToEntityTypeId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("EntityTypeId");
+                    b.HasIndex("FromEntityTypeId");
 
                     b.ToTable("Relations");
                 });
@@ -774,21 +778,34 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("EnumValues")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsListVisible")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("IsRequired")
                         .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsSearchable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("Label")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("LookupTarget")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("RelationTargetEntityTypeId")
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("TableId")
@@ -1054,7 +1071,7 @@ namespace Aion.Infrastructure.Migrations
                 {
                     b.HasOne("Aion.Domain.S_EntityType", null)
                         .WithMany("Relations")
-                        .HasForeignKey("EntityTypeId")
+                        .HasForeignKey("FromEntityTypeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
