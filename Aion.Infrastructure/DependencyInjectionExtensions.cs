@@ -1,3 +1,4 @@
+using System.IO;
 using Aion.Domain;
 using Aion.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -11,26 +12,45 @@ public static class DependencyInjectionExtensions
 {
     public static IServiceCollection AddAionInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        services.PostConfigure<AionDatabaseOptions>(options =>
+        var databaseOptions = services.AddOptions<AionDatabaseOptions>();
+        databaseOptions.PostConfigure(options =>
         {
             options.ConnectionString = ChooseValue(options.ConnectionString, configuration["ConnectionStrings:Aion"], configuration["Aion:Database:ConnectionString"]);
             options.EncryptionKey = ChooseValue(options.EncryptionKey, configuration["Aion:Database:EncryptionKey"], configuration["AION_DB_KEY"]);
         });
+        databaseOptions.Validate(o => !string.IsNullOrWhiteSpace(o.ConnectionString), "The database connection string cannot be empty.");
+        databaseOptions.Validate(o => !string.IsNullOrWhiteSpace(o.EncryptionKey), "The database encryption key cannot be empty.");
+        databaseOptions.ValidateOnStart();
 
-        services.PostConfigure<StorageOptions>(options =>
+        var storageOptions = services.AddOptions<StorageOptions>();
+        storageOptions.PostConfigure(options =>
         {
             options.RootPath = ChooseValue(options.RootPath, configuration["Aion:Storage:RootPath"]);
+            EnsureDirectoryExists(options.RootPath);
         });
+        storageOptions.Validate(o => !string.IsNullOrWhiteSpace(o.RootPath), "A storage root path is required.");
+        storageOptions.Validate(o => Directory.Exists(o.RootPath), "The configured storage root path must exist.");
+        storageOptions.ValidateOnStart();
 
-        services.PostConfigure<MarketplaceOptions>(options =>
+        var marketplaceOptions = services.AddOptions<MarketplaceOptions>();
+        marketplaceOptions.PostConfigure(options =>
         {
             options.MarketplaceFolder = ChooseValue(options.MarketplaceFolder, configuration["Aion:Marketplace:Folder"]);
+            EnsureDirectoryExists(options.MarketplaceFolder);
         });
+        marketplaceOptions.Validate(o => !string.IsNullOrWhiteSpace(o.MarketplaceFolder), "The marketplace folder cannot be empty.");
+        marketplaceOptions.Validate(o => Directory.Exists(o.MarketplaceFolder), "The configured marketplace folder must exist.");
+        marketplaceOptions.ValidateOnStart();
 
-        services.PostConfigure<BackupOptions>(options =>
+        var backupOptions = services.AddOptions<BackupOptions>();
+        backupOptions.PostConfigure(options =>
         {
             options.BackupFolder = ChooseValue(options.BackupFolder, configuration["Aion:Backup:Folder"]);
+            EnsureDirectoryExists(options.BackupFolder);
         });
+        backupOptions.Validate(o => !string.IsNullOrWhiteSpace(o.BackupFolder), "The backup folder cannot be empty.");
+        backupOptions.Validate(o => Directory.Exists(o.BackupFolder), "The configured backup folder must exist.");
+        backupOptions.ValidateOnStart();
 
         services.AddDbContext<AionDbContext>((serviceProvider, dbOptions) =>
         {
@@ -87,5 +107,13 @@ public static class DependencyInjectionExtensions
         }
 
         return current;
+    }
+
+    private static void EnsureDirectoryExists(string? path)
+    {
+        if (!string.IsNullOrWhiteSpace(path) && !Directory.Exists(path))
+        {
+            Directory.CreateDirectory(path);
+        }
     }
 }
