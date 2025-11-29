@@ -10,18 +10,70 @@
 }
 else
 {
+    <div class="module-header" style="margin-bottom:12px;">
+        <div>
+            <h4>@Module.Name</h4>
+            <p class="text-muted">@Module.Description</p>
+        </div>
+        <button class="button secondary" @onclick="NavigateToDashboard">Dashboard</button>
+    </div>
+
+    <div class="grid columns-3" style="margin-bottom:12px;">
+        <div class="card">
+            <h5>Entités</h5>
+            <ul class="module-entities">
+                @foreach (var entity in Module.EntityTypes)
+                {
+                    <li class="@(SelectedEntity == entity ? "active" : string.Empty)" @onclick="() => SelectEntity(entity)">
+                        <div><strong>@entity.Name</strong></div>
+                        <small class="text-muted">@entity.Fields.Count champ(s)</small>
+                    </li>
+                }
+            </ul>
+        </div>
+        <div class="card">
+            <h5>Vues enregistrées</h5>
+            @if (SelectedTableViews.Any())
+            {
+                <select class="select" @onchange="OnViewChanged" value="@SelectedView">
+                    <option value="">Toutes les données</option>
+                    @foreach (var view in SelectedTableViews)
+                    {
+                        <option value="@view.Name">@view.Name</option>
+                    }
+                </select>
+            }
+            else
+            {
+                <p class="text-muted">Aucune vue filtrée pour cette entité.</p>
+            }
+        </div>
+        <div class="card">
+            <h5>Rapports</h5>
+            @if (Module.Reports.Any())
+            {
+                <ul class="module-entities">
+                    @foreach (var report in Module.Reports)
+                    {
+                        <li>
+                            <div><strong>@report.Name</strong></div>
+                            <small class="text-muted">@report.Visualization ?? "Requête"</small>
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="text-muted">Pas encore de rapports pour ce module.</p>
+            }
+        </div>
+    </div>
+
     <div class="grid columns-2">
         <div class="card">
-            <div class="module-header">
-                <div>
-                    <h4>@Module.Name</h4>
-                    <p class="text-muted">@Module.Description</p>
-                </div>
-                <button class="button secondary" @onclick="NavigateToDashboard">Dashboard</button>
-            </div>
             @if (SelectedEntity is not null)
             {
-                <DynamicList EntityType="SelectedEntity" DataEngine="DataEngine" OnSelect="OpenRecord" />
+                <DynamicList EntityType="SelectedEntity" Filter="@SelectedView" DataEngine="DataEngine" OnSelect="OpenRecord" />
             }
         </div>
         <div class="card">
@@ -37,15 +89,17 @@ else
 @code {
     [Parameter] public string? Id { get; set; }
     private S_Module? Module { get; set; }
-    private S_EntityType? SelectedEntity => Module?.EntityTypes.FirstOrDefault();
+    private S_EntityType? SelectedEntity { get; set; }
+    private readonly Dictionary<Guid, STable> Tables = new();
+    private string? SelectedView { get; set; }
+    private IEnumerable<SViewDefinition> SelectedTableViews
+        => SelectedEntity is not null && Tables.TryGetValue(SelectedEntity.Id, out var table)
+            ? table.Views
+            : Enumerable.Empty<SViewDefinition>();
 
     protected override async Task OnParametersSetAsync()
     {
-        var modules = await Metadata.GetModulesAsync();
-        if (Guid.TryParse(Id, out var guid))
-        {
-            Module = modules.FirstOrDefault(m => m.Id == guid);
-        }
+        await LoadModule();
     }
 
     private void OpenRecord(F_Record record)
@@ -56,6 +110,85 @@ else
     private void HandleSaved(F_Record record)
     {
         OpenRecord(record);
+    }
+
+    private async Task LoadModule()
+    {
+        var modules = await Metadata.GetModulesAsync();
+        if (!Guid.TryParse(Id, out var guid))
+        {
+            return;
+        }
+
+        Module = modules.FirstOrDefault(m => m.Id == guid);
+        if (Module is null)
+        {
+            return;
+        }
+
+        await EnsureTablesAreLoaded(Module);
+        SelectedEntity ??= Module.EntityTypes.FirstOrDefault();
+        SelectedView = null;
+    }
+
+    private async Task EnsureTablesAreLoaded(S_Module module)
+    {
+        if (DataEngine is null)
+        {
+            return;
+        }
+
+        foreach (var entity in module.EntityTypes)
+        {
+            if (Tables.ContainsKey(entity.Id))
+            {
+                continue;
+            }
+
+            var existing = await DataEngine.GetTableAsync(entity.Id);
+            if (existing is not null)
+            {
+                Tables[entity.Id] = existing;
+                continue;
+            }
+
+            var table = new STable
+            {
+                Id = entity.Id,
+                Name = entity.Name,
+                DisplayName = entity.PluralName,
+                Description = entity.Description,
+                Fields = entity.Fields
+                    .Select(f => new SFieldDefinition
+                    {
+                        Id = f.Id,
+                        TableId = entity.Id,
+                        Name = f.Name,
+                        Label = f.Label,
+                        DataType = f.DataType,
+                        IsRequired = f.IsRequired,
+                        DefaultValue = f.DefaultValue,
+                        LookupTarget = f.LookupTarget
+                    })
+                    .ToList(),
+                Views = new List<SViewDefinition>()
+            };
+
+            var created = await DataEngine.CreateTableAsync(table);
+            Tables[entity.Id] = created;
+        }
+    }
+
+    private void SelectEntity(S_EntityType entity)
+    {
+        SelectedEntity = entity;
+        SelectedView = null;
+    }
+
+    private async Task OnViewChanged(ChangeEventArgs args)
+    {
+        SelectedView = args.Value?.ToString();
+        await InvokeAsync(StateHasChanged);
     }
 
     private void NavigateToDashboard()
