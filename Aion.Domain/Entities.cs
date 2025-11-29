@@ -220,16 +220,17 @@ public class J_Event_Link
     public Guid TargetId { get; set; }
 }
 
-public class F_File
-{
-    public Guid Id { get; set; } = Guid.NewGuid();
-    public string FileName { get; set; } = string.Empty;
-    public string MimeType { get; set; } = "application/octet-stream";
-    public long Size { get; set; }
-    public string StoragePath { get; set; } = string.Empty;
-    public string? ThumbnailPath { get; set; }
-    public DateTimeOffset UploadedAt { get; set; } = DateTimeOffset.UtcNow;
-}
+    public class F_File
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public string FileName { get; set; } = string.Empty;
+        public string MimeType { get; set; } = "application/octet-stream";
+        public long Size { get; set; }
+        public string StoragePath { get; set; } = string.Empty;
+        public string? ThumbnailPath { get; set; }
+        public string Sha256 { get; set; } = string.Empty;
+        public DateTimeOffset UploadedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
 
 public class F_Record
 {
