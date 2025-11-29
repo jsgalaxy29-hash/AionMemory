@@ -365,6 +365,19 @@ public class UserPersona
 // Métamodèle simplifié : tables, champs et vues permettent d'harmoniser les
 // modules AION Memory (Notes, Agenda, Potager, etc.) autour d'une même
 // structure persistante.
+// Exemple JSON pour tests rapides :
+// {
+//   "name": "agenda_event",
+//   "displayName": "Événements",
+//   "description": "Gestion des événements calendrier",
+//   "isSystem": false,
+//   "supportsSoftDelete": true,
+//   "hasAuditTrail": true,
+//   "defaultView": "upcoming",
+//   "rowLabelTemplate": "{{title}} ({{start}})",
+//   "fields": [],
+//   "views": []
+// }
 public class STable
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -374,6 +387,13 @@ public class STable
     public string DisplayName { get; set; } = string.Empty;
     [StringLength(1024)]
     public string? Description { get; set; }
+    public bool IsSystem { get; set; }
+    public bool SupportsSoftDelete { get; set; }
+    public bool HasAuditTrail { get; set; }
+    [StringLength(128)]
+    public string? DefaultView { get; set; }
+    [StringLength(256)]
+    public string? RowLabelTemplate { get; set; }
 
     public ICollection<SFieldDefinition> Fields { get; set; } = new List<SFieldDefinition>();
     public ICollection<SViewDefinition> Views { get; set; } = new List<SViewDefinition>();
@@ -389,6 +409,20 @@ public class STable
 
 public class SFieldDefinition
 {
+    // Exemple JSON :
+    // {
+    //   "name": "title",
+    //   "label": "Titre",
+    //   "dataType": "Text",
+    //   "isRequired": true,
+    //   "isPrimaryKey": false,
+    //   "isUnique": true,
+    //   "isIndexed": true,
+    //   "minLength": 3,
+    //   "maxLength": 160,
+    //   "validationPattern": "^.+$",
+    //   "placeholder": "Titre de l'événement"
+    // }
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid TableId { get; set; }
     [Required, StringLength(128)]
@@ -420,14 +454,37 @@ public class SFieldDefinition
 
 public class SViewDefinition
 {
+    // Exemple JSON :
+    // {
+    //   "name": "upcoming",
+    //   "displayName": "À venir",
+    //   "description": "Événements à venir dans les 30 jours",
+    //   "queryDefinition": "start >= now() && start < now().addDays(30)",
+    //   "filterExpression": "status != \"done\"",
+    //   "sortExpression": "start asc, priority desc",
+    //   "pageSize": 50,
+    //   "visualization": "table",
+    //   "isDefault": true
+    // }
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid TableId { get; set; }
     [Required, StringLength(128)]
     public string Name { get; set; } = string.Empty;
+    [Required, StringLength(128)]
+    public string DisplayName { get; set; } = string.Empty;
+    [StringLength(1024)]
+    public string? Description { get; set; }
     [Required, StringLength(4000)]
     public string QueryDefinition { get; set; } = string.Empty;
+    [StringLength(512)]
+    public string? FilterExpression { get; set; }
+    [StringLength(512)]
+    public string? SortExpression { get; set; }
+    [Range(1, 500)]
+    public int? PageSize { get; set; }
     [StringLength(128)]
     public string? Visualization { get; set; }
+    public bool IsDefault { get; set; }
 }
 
 public class F_FileLink
