@@ -1,0 +1,51 @@
+name: Build & Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.100-preview.5'
+          include-prerelease: true
+
+      - name: Restore
+        run: dotnet restore AionMemory.slnx
+
+      - name: Build core libraries
+        run: |
+          dotnet build Aion.Domain/Aion.Domain.csproj --configuration Release --no-restore
+          dotnet build Aion.Infrastructure/Aion.Infrastructure.csproj --configuration Release --no-restore
+          dotnet build Aion.AI/Aion.AI.csproj --configuration Release --no-restore
+          dotnet build AionMemory.Logic/AionMemory.Logic.csproj --configuration Release --no-restore
+
+      - name: Run tests
+        run: |
+          dotnet test Aion.Domain.Tests/Aion.Domain.Tests.csproj --configuration Release --no-build
+          dotnet test Aion.Infrastructure.Tests/Aion.Infrastructure.Tests.csproj --configuration Release --no-build
+          dotnet test Aion.AI.Tests/Aion.AI.Tests.csproj --configuration Release --no-build
+          dotnet test AionMemory.Logic.Tests/AionMemory.Logic.Tests.csproj --configuration Release --no-build
+
+      - name: Validate EF Core migrations
+        env:
+          PATH: $HOME/.dotnet/tools:${{ env.PATH }}
+        run: |
+          dotnet tool install --global dotnet-ef
+          mkdir -p artifacts
+          dotnet ef migrations script --project Aion.Infrastructure/Aion.Infrastructure.csproj --no-build --output artifacts/migrations.sql
+
+      - name: Publish migration artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: migrations-sql
+          path: artifacts/migrations.sql
