@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using Aion.Domain;
 using Microsoft.EntityFrameworkCore;
@@ -126,15 +127,18 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         var query = _db.Records.AsQueryable().Where(r => r.EntityTypeId == entityTypeId);
         if (!string.IsNullOrWhiteSpace(filter))
         {
-            query = query.Where(r => r.DataJson.Contains(filter));
+            query = query.Where(r => _db.RecordSearch
+                .Where(s => s.EntityTypeId == entityTypeId && EF.Functions.Match(s.Content, filter))
+                .Select(s => s.RecordId)
+                .Contains(r.Id));
         }
 
         if (equals is not null)
         {
             foreach (var clause in equals.Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value)))
             {
-                var needle = $"\"{clause.Key}\":\"{clause.Value}\"";
-                query = query.Where(r => r.DataJson.Contains(needle));
+                var jsonPath = $"$.{clause.Key}";
+                query = query.Where(r => EF.Functions.JsonExtract(r.DataJson, jsonPath) == clause.Value);
             }
         }
 
@@ -361,6 +365,11 @@ public sealed class FileStorageService : IFileStorageService
 
 public sealed class CloudBackupService : ICloudBackupService
 {
+    private static readonly JsonSerializerOptions ManifestSerializerOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true
+    };
+
     private readonly string _backupFolder;
     private readonly ILogger<CloudBackupService> _logger;
 
@@ -374,25 +383,100 @@ public sealed class CloudBackupService : ICloudBackupService
 
     public async Task BackupAsync(string encryptedDatabasePath, CancellationToken cancellationToken = default)
     {
-        var destination = Path.Combine(_backupFolder, Path.GetFileName(encryptedDatabasePath));
+        if (!File.Exists(encryptedDatabasePath))
+        {
+            throw new FileNotFoundException("Database file not found", encryptedDatabasePath);
+        }
+
+        var timestamp = DateTimeOffset.UtcNow;
+        var backupFileName = $"aion-{timestamp:yyyyMMddHHmmss}.db";
+        var destination = Path.Combine(_backupFolder, backupFileName);
         await using var source = new FileStream(encryptedDatabasePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
         await using var dest = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
         await source.CopyToAsync(dest, cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Backup created at {Destination}", destination);
+
+        var manifest = new BackupManifest
+        {
+            FileName = backupFileName,
+            CreatedAt = timestamp,
+            Size = new FileInfo(destination).Length,
+            Sha256 = await ComputeHashAsync(destination, cancellationToken).ConfigureAwait(false),
+            SourcePath = Path.GetFullPath(encryptedDatabasePath)
+        };
+
+        await using var manifestStream = new FileStream(Path.ChangeExtension(destination, ".json"), FileMode.Create, FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous);
+        await JsonSerializer.SerializeAsync(manifestStream, manifest, ManifestSerializerOptions, cancellationToken).ConfigureAwait(false);
+
+        _logger.LogInformation("Backup created at {Destination} (hash {Hash})", destination, manifest.Sha256);
     }
 
     public async Task RestoreAsync(string destinationPath, CancellationToken cancellationToken = default)
     {
-        var backupFile = Directory.GetFiles(_backupFolder).OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
-        if (backupFile is null)
+        var manifest = LoadLatestManifest();
+        if (manifest is null)
         {
-            throw new FileNotFoundException("No backup found", _backupFolder);
+            throw new FileNotFoundException("No backup manifest found", _backupFolder);
         }
 
-        await using var source = new FileStream(backupFile, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        await using var dest = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        await source.CopyToAsync(dest, cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Backup restored from {BackupFile}", backupFile);
+        var backupFile = Path.Combine(_backupFolder, manifest.FileName);
+        if (!File.Exists(backupFile))
+        {
+            throw new FileNotFoundException("Backup file missing", backupFile);
+        }
+
+        var tempPath = destinationPath + ".restoring";
+        await using (var source = new FileStream(backupFile, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan))
+        await using (var dest = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan))
+        {
+            await source.CopyToAsync(dest, cancellationToken).ConfigureAwait(false);
+        }
+
+        var computedHash = await ComputeHashAsync(tempPath, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(computedHash, manifest.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            File.Delete(tempPath);
+            throw new InvalidOperationException("Backup integrity check failed: hash mismatch");
+        }
+
+        var backupExisting = destinationPath + ".bak";
+        if (File.Exists(destinationPath))
+        {
+            File.Move(destinationPath, backupExisting, overwrite: true);
+        }
+
+        File.Move(tempPath, destinationPath, overwrite: true);
+        _logger.LogInformation("Backup restored transactionally from {BackupFile}", backupFile);
+    }
+
+    private BackupManifest? LoadLatestManifest()
+    {
+        var manifestFile = Directory.GetFiles(_backupFolder, "*.json")
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+
+        if (manifestFile is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var json = File.ReadAllText(manifestFile);
+            return JsonSerializer.Deserialize<BackupManifest>(json, ManifestSerializerOptions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Unable to read backup manifest {Manifest}", manifestFile);
+            return null;
+        }
+    }
+
+    private static async Task<string> ComputeHashAsync(string path, CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var sha = SHA256.Create();
+        var hash = await sha.ComputeHashAsync(stream, cancellationToken).ConfigureAwait(false);
+        return Convert.ToHexString(hash);
     }
 }
 
@@ -407,8 +491,18 @@ public sealed class SearchService : ISearchService
 
     public async Task<IEnumerable<string>> SearchAsync(string query, CancellationToken cancellationToken = default)
     {
-        var notes = await _db.Notes.Where(n => n.Content.Contains(query)).Select(n => $"Note:{n.Id}").ToListAsync(cancellationToken).ConfigureAwait(false);
-        var records = await _db.Records.Where(r => r.DataJson.Contains(query)).Select(r => $"Record:{r.Id}").ToListAsync(cancellationToken).ConfigureAwait(false);
+        var notes = await _db.NoteSearch
+            .Where(n => EF.Functions.Match(n.Content, query))
+            .Select(n => $"Note:{n.NoteId}")
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var records = await _db.RecordSearch
+            .Where(r => EF.Functions.Match(r.Content, query))
+            .Select(r => $"Record:{r.RecordId}")
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
         return notes.Concat(records);
     }
 }

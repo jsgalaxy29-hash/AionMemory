@@ -28,6 +28,8 @@ public class AionDbContext : DbContext
     public DbSet<F_File> Files => Set<F_File>();
     public DbSet<F_FileLink> FileLinks => Set<F_FileLink>();
     public DbSet<F_Record> Records => Set<F_Record>();
+    public DbSet<NoteSearchEntry> NoteSearch => Set<NoteSearchEntry>();
+    public DbSet<RecordSearchEntry> RecordSearch => Set<RecordSearchEntry>();
     public DbSet<STable> Tables => Set<STable>();
     public DbSet<SFieldDefinition> TableFields => Set<SFieldDefinition>();
     public DbSet<SViewDefinition> TableViews => Set<SViewDefinition>();
@@ -106,6 +108,20 @@ public class AionDbContext : DbContext
             .HasMany(h => h.Links)
             .WithOne()
             .HasForeignKey(l => l.SourceId);
+
+        modelBuilder.Entity<F_Record>()
+            .HasIndex(r => new { r.EntityTypeId, r.CreatedAt });
+
+        modelBuilder.Entity<S_Note>()
+            .HasIndex(n => n.CreatedAt);
+
+        modelBuilder.Entity<NoteSearchEntry>()
+            .HasNoKey()
+            .ToView("NoteSearch");
+
+        modelBuilder.Entity<RecordSearchEntry>()
+            .HasNoKey()
+            .ToView("RecordSearch");
 
         base.OnModelCreating(modelBuilder);
     }

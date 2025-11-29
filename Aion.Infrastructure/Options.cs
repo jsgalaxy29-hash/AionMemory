@@ -19,4 +19,6 @@ public sealed record MarketplaceOptions
 public sealed record BackupOptions
 {
     public string? BackupFolder { get; set; }
+    public int RetentionDays { get; set; } = 30;
+    public int MaxBackups { get; set; } = 10;
 }
