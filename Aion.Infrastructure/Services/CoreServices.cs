@@ -134,13 +134,13 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         var query = _db.Records.AsQueryable().Where(r => r.EntityTypeId == entityTypeId);
         var table = await GetTableAsync(entityTypeId, cancellationToken).ConfigureAwait(false);
 
+        var viewFilter = table is null ? null : ResolveViewFilter(filter, table);
         if (table is not null)
         {
-            var viewFilter = ResolveViewFilter(filter, table);
             equals = MergeEqualsFilters(equals, viewFilter);
         }
 
-        if (!string.IsNullOrWhiteSpace(filter))
+        if (!string.IsNullOrWhiteSpace(filter) && viewFilter is null)
         {
             query = query.Where(r => _db.RecordSearch
                 .Where(s => s.EntityTypeId == entityTypeId && s.Content.Contains(filter))
