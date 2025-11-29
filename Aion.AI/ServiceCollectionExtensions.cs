@@ -9,7 +9,13 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddAionAi(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddOptions<AionAiOptions>().Bind(configuration.GetSection("Aion:Ai"));
+        services
+            .AddOptions<AionAiOptions>()
+            .Bind(configuration.GetSection("Aion:Ai"))
+            .PostConfigure(o => o.Normalize())
+            .Validate(o => o.RequestTimeout > TimeSpan.Zero, "RequestTimeout must be positive.")
+            .Validate(o => o.DefaultHeaders is not null, "DefaultHeaders collection must be configured.")
+            .ValidateOnStart();
 
         services.AddHttpClient(HttpClientNames.Llm, ConfigureClient(HttpClientNames.Llm));
         services.AddHttpClient(HttpClientNames.Embeddings, ConfigureClient(HttpClientNames.Embeddings));
