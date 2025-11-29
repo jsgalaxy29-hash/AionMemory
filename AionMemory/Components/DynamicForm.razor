@@ -24,6 +24,8 @@
                             <InputTextArea class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
                             break;
                         case FieldDataType.Number:
+                            <InputNumber TValue="long?" class="input" Value="@GetLong(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetLong(field.Name)" />
+                            break;
                         case FieldDataType.Decimal:
                             <InputNumber TValue="decimal?" class="input" Value="@GetDecimal(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetDecimal(field.Name)" />
                             break;
@@ -109,6 +111,28 @@
         if (value is JsonElement element && element.ValueKind == JsonValueKind.Number && element.TryGetDecimal(out var parsed))
         {
             return parsed;
+        }
+
+        return null;
+    }
+
+    private long? GetLong(string key)
+    {
+        if (!FieldValues.TryGetValue(key, out var value))
+        {
+            return null;
+        }
+
+        switch (value)
+        {
+            case long l:
+                return l;
+            case int i:
+                return i;
+            case decimal d:
+                return (long)d;
+            case JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var parsed):
+                return parsed;
         }
 
         return null;
