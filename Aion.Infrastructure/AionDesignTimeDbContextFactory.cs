@@ -9,14 +9,14 @@ public sealed class AionDesignTimeDbContextFactory : IDesignTimeDbContextFactory
     public AionDbContext CreateDbContext(string[] args)
     {
         var builder = new DbContextOptionsBuilder<AionDbContext>();
-        var connectionString = SqliteCipherDevelopmentDefaults.BuildConnectionString("aion_designtime.db");
-
-        var options = Options.Create(new AionDatabaseOptions
+        var devDefaults = SqliteCipherDevelopmentDefaults.CreateDefaults("aion_designtime.db");
+        var overrideKey = Environment.GetEnvironmentVariable("AION_DB_KEY");
+        if (!string.IsNullOrWhiteSpace(overrideKey))
         {
-            ConnectionString = connectionString,
-            EncryptionKey = Environment.GetEnvironmentVariable("AION_DB_KEY")
-                ?? SqliteCipherDevelopmentDefaults.DevelopmentKey
-        });
+            devDefaults.EncryptionKey = overrideKey;
+        }
+
+        var options = Options.Create(devDefaults);
 
         SqliteConnectionFactory.ConfigureBuilder(builder, options);
         return new AionDbContext(builder.Options);
