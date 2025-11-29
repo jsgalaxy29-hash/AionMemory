@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Aion.Infrastructure")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8be8e5ab4691ad6223eaa1599ca57af853437c92")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+1b755856bd8c5964de6fc5e8b6ad81d0fa700133")]
 [assembly: System.Reflection.AssemblyProductAttribute("Aion.Infrastructure")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Aion.Infrastructure")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

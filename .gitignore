@@ -481,3 +481,5 @@ Aion.Infrastructure/obj/Aion.Infrastructure.csproj.nuget.dgspec.json
 Aion.Infrastructure/obj/Aion.Infrastructure.csproj.nuget.g.props
 Aion.Infrastructure/obj/Aion.Infrastructure.csproj.nuget.g.targets
 Aion.Infrastructure/obj/project.assets.json
+Aion.Infrastructure/obj/Debug/net10.0/Aion.Infrastructure.AssemblyInfoInputs.cache
+Aion.Infrastructure/obj/Debug/net10.0/Aion.Infrastructure.AssemblyInfo.cs
