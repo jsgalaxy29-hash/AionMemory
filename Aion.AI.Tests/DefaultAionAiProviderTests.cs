@@ -18,7 +18,8 @@ public class DefaultAionAiProviderTests
 
         var response = await provider.GenerateAsync("bonjour");
 
-        Assert.Equal("[stub] gpt-stub: bonjour", response);
+        Assert.Equal("[stub] gpt-stub: bonjour", response.Content);
+        Assert.Equal("gpt-stub", response.Model);
     }
 
     [Fact]
@@ -28,8 +29,8 @@ public class DefaultAionAiProviderTests
 
         var vector = await provider.EmbedAsync("demo");
 
-        Assert.Equal(8, vector.Length);
-        Assert.True(vector.SequenceEqual(new[] { 4f, 5f, 6f, 7f, 8f, 9f, 10f, 11f }));
+        Assert.Equal(8, vector.Vector.Length);
+        Assert.True(vector.Vector.SequenceEqual(new[] { 4f, 5f, 6f, 7f, 8f, 9f, 10f, 11f }));
     }
 
     [Fact]
@@ -113,7 +114,7 @@ public class DefaultAionAiProviderTests
             });
     }
 
-    private sealed class StubTextGenerationProvider : ITextGenerationProvider
+    private sealed class StubTextGenerationProvider : ILLMProvider
     {
         private readonly string _payload;
 
@@ -122,7 +123,7 @@ public class DefaultAionAiProviderTests
             _payload = payload;
         }
 
-        public Task<string> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
-            => Task.FromResult(_payload);
+        public Task<LlmResponse> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
+            => Task.FromResult(new LlmResponse(_payload, _payload));
     }
 }

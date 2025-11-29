@@ -125,9 +125,27 @@ public interface IAudioTranscriptionProvider
     Task<TranscriptionResult> TranscribeAsync(Stream audioStream, string fileName, CancellationToken cancellationToken = default);
 }
 
+public sealed record LlmResponse(string Content, string RawResponse, string? Model = null);
+
+public interface ILLMProvider
+{
+    Task<LlmResponse> GenerateAsync(string prompt, CancellationToken cancellationToken = default);
+}
+
+public sealed record EmbeddingResult(float[] Vector, string? Model = null, string? RawResponse = null);
+
+public interface IEmbeddingProvider
+{
+    Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default);
+}
+
+public sealed record IntentDetectionResult(string Intent, IDictionary<string, string> Parameters, double Confidence, string RawResponse);
+
+public sealed record CrudInterpretation(string Action, IDictionary<string, string?> Filters, IDictionary<string, string?> Payload, string RawResponse);
+
 public interface IIntentDetector
 {
-    Task<string> DetectAsync(string input, CancellationToken cancellationToken = default);
+    Task<IntentDetectionResult> DetectAsync(string input, CancellationToken cancellationToken = default);
 }
 
 public interface IModuleDesigner
@@ -138,7 +156,7 @@ public interface IModuleDesigner
 
 public interface ICrudInterpreter
 {
-    Task<string> GenerateQueryAsync(string intent, S_Module module, CancellationToken cancellationToken = default);
+    Task<CrudInterpretation> GenerateQueryAsync(string intent, S_Module module, CancellationToken cancellationToken = default);
 }
 
 public interface IAgendaInterpreter

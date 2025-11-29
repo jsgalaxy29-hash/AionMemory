@@ -29,7 +29,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<OpenAiEmbeddingProvider>();
         services.AddScoped<OpenAiAudioTranscriptionProvider>();
 
-        services.AddSingleton<ITextGenerationProvider>(ResolveTextProvider);
+        services.AddSingleton<ILLMProvider>(ResolveTextProvider);
         services.AddSingleton<IEmbeddingProvider>(ResolveEmbeddingProvider);
         services.AddScoped<IAudioTranscriptionProvider>(ResolveTranscriptionProvider);
         services.AddSingleton<HttpVisionProvider>();
@@ -46,7 +46,7 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    private static ITextGenerationProvider ResolveTextProvider(IServiceProvider sp)
+    private static ILLMProvider ResolveTextProvider(IServiceProvider sp)
     {
         var options = sp.GetRequiredService<IOptionsMonitor<AionAiOptions>>().CurrentValue;
         return string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase)

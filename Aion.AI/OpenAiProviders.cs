@@ -11,7 +11,7 @@ namespace Aion.AI;
 /// <summary>
 /// Provider spécialisé pour OpenAI (ou compatible) avec gestion basique du rate-limit.
 /// </summary>
-public sealed class OpenAiTextGenerationProvider : ITextGenerationProvider
+public sealed class OpenAiTextGenerationProvider : ILLMProvider
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly IHttpClientFactory _httpClientFactory;
@@ -25,7 +25,7 @@ public sealed class OpenAiTextGenerationProvider : ITextGenerationProvider
         _logger = logger;
     }
 
-    public async Task<string> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
+    public async Task<LlmResponse> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
     {
         var opts = _options.CurrentValue;
         var client = BuildClient(HttpClientNames.Llm, opts.LlmEndpoint ?? opts.BaseEndpoint);
@@ -33,7 +33,8 @@ public sealed class OpenAiTextGenerationProvider : ITextGenerationProvider
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("OpenAI endpoint not configured; returning stub response");
-            return $"[openai-stub] {prompt}";
+            var content = $"[openai-stub] {prompt}";
+            return new LlmResponse(content, content, opts.LlmModel);
         }
 
         var payload = new
@@ -52,13 +53,14 @@ public sealed class OpenAiTextGenerationProvider : ITextGenerationProvider
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("OpenAI call failed with status {Status}; returning stub", response.StatusCode);
-            return $"[openai-fallback] {prompt}";
+            var content = $"[openai-fallback] {prompt}";
+            return new LlmResponse(content, content, opts.LlmModel);
         }
 
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
         var content = doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
-        return content ?? string.Empty;
+        return new LlmResponse(content ?? string.Empty, json, opts.LlmModel);
     }
 
     internal HttpClient BuildClient(string clientName, string? endpoint)
@@ -106,7 +108,7 @@ public sealed class OpenAiEmbeddingProvider : IEmbeddingProvider
         _logger = logger;
     }
 
-    public async Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
+    public async Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default)
     {
         var opts = _options.CurrentValue;
         var client = _clientBuilder.BuildClient(HttpClientNames.Embeddings, opts.EmbeddingsEndpoint ?? opts.BaseEndpoint);
@@ -114,7 +116,8 @@ public sealed class OpenAiEmbeddingProvider : IEmbeddingProvider
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("OpenAI embeddings endpoint not configured; returning stub");
-            return Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
         }
 
         var payload = new { model = opts.EmbeddingModel ?? "text-embedding-3-small", input = text };
@@ -126,12 +129,14 @@ public sealed class OpenAiEmbeddingProvider : IEmbeddingProvider
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("OpenAI embeddings failed with status {Status}; returning stub", response.StatusCode);
-            return Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
         }
 
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
-        return doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(e => e.GetSingle()).ToArray();
+        var vector = doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(e => e.GetSingle()).ToArray();
+        return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel, json);
     }
 }
 

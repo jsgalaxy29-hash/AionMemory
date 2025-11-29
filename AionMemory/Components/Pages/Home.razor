@@ -1,6 +1,6 @@
 @page "/"
 @page "/home"
-@inject ITextGenerationProvider TextGen
+@inject ILLMProvider TextGen
 @inject IIntentDetector IntentDetector
 @inject IModuleDesigner ModuleDesigner
 @inject ISearchService SearchService
@@ -112,7 +112,7 @@
         Messages.Add(new ChatMessage("Moi", CurrentInput, true));
         IsSearching = true;
         var intent = await IntentDetector.DetectAsync(CurrentInput);
-        IntentPreview = intent;
+        IntentPreview = $"{intent.Intent} (score {intent.Confidence:P0})";
 
         try
         {
@@ -126,7 +126,7 @@
                 : $"Contexte:\n{string.Join("\n", context)}\n\nQuestion: {CurrentInput}";
 
             var reply = await TextGen.GenerateAsync(prompt);
-            Messages.Add(new ChatMessage("AION", reply, false));
+            Messages.Add(new ChatMessage("AION", reply.Content, false));
         }
         finally
         {
@@ -167,7 +167,7 @@
         var file = args.File;
         await using var stream = file.OpenReadStream();
         var result = await TextGen.GenerateAsync($"Transcris {file.Name}");
-        DictationStatus = $"Transcription simulée: {result}";
-        Messages.Add(new ChatMessage("Note", result, false));
+        DictationStatus = $"Transcription simulée: {result.Content}";
+        Messages.Add(new ChatMessage("Note", result.Content, false));
     }
 }
