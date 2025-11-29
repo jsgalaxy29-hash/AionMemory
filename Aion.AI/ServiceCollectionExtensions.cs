@@ -16,9 +16,16 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient(HttpClientNames.Transcription, ConfigureClient(HttpClientNames.Transcription));
         services.AddHttpClient(HttpClientNames.Vision, ConfigureClient(HttpClientNames.Vision));
 
-        services.AddSingleton<ITextGenerationProvider, HttpTextGenerationProvider>();
-        services.AddSingleton<IEmbeddingProvider, HttpEmbeddingProvider>();
-        services.AddScoped<IAudioTranscriptionProvider, HttpAudioTranscriptionProvider>();
+        services.AddSingleton<HttpTextGenerationProvider>();
+        services.AddSingleton<HttpEmbeddingProvider>();
+        services.AddScoped<HttpAudioTranscriptionProvider>();
+        services.AddSingleton<OpenAiTextGenerationProvider>();
+        services.AddSingleton<OpenAiEmbeddingProvider>();
+        services.AddScoped<OpenAiAudioTranscriptionProvider>();
+
+        services.AddSingleton<ITextGenerationProvider>(ResolveTextProvider);
+        services.AddSingleton<IEmbeddingProvider>(ResolveEmbeddingProvider);
+        services.AddScoped<IAudioTranscriptionProvider>(ResolveTranscriptionProvider);
         services.AddSingleton<HttpVisionProvider>();
         services.AddScoped<IAionVisionService, VisionEngine>();
         services.AddScoped<IVisionService>(sp => sp.GetRequiredService<IAionVisionService>());
@@ -31,6 +38,30 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IReportInterpreter, ReportInterpreter>();
 
         return services;
+    }
+
+    private static ITextGenerationProvider ResolveTextProvider(IServiceProvider sp)
+    {
+        var options = sp.GetRequiredService<IOptionsMonitor<AionAiOptions>>().CurrentValue;
+        return string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase)
+            ? sp.GetRequiredService<OpenAiTextGenerationProvider>()
+            : sp.GetRequiredService<HttpTextGenerationProvider>();
+    }
+
+    private static IEmbeddingProvider ResolveEmbeddingProvider(IServiceProvider sp)
+    {
+        var options = sp.GetRequiredService<IOptionsMonitor<AionAiOptions>>().CurrentValue;
+        return string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase)
+            ? sp.GetRequiredService<OpenAiEmbeddingProvider>()
+            : sp.GetRequiredService<HttpEmbeddingProvider>();
+    }
+
+    private static IAudioTranscriptionProvider ResolveTranscriptionProvider(IServiceProvider sp)
+    {
+        var options = sp.GetRequiredService<IOptionsMonitor<AionAiOptions>>().CurrentValue;
+        return string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase)
+            ? sp.GetRequiredService<OpenAiAudioTranscriptionProvider>()
+            : sp.GetRequiredService<HttpAudioTranscriptionProvider>();
     }
 
     private static Action<IServiceProvider, HttpClient> ConfigureClient(string clientName)

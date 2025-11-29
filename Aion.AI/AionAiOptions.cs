@@ -4,6 +4,7 @@ public sealed record AionAiOptions
 {
     private string? _baseEndpoint;
     private string? _llmModel;
+    private string? _provider;
 
     public string? BaseEndpoint
     {
@@ -32,6 +33,14 @@ public sealed record AionAiOptions
         get => _llmModel;
         init => _llmModel = value;
     }
+
+    public string Provider
+    {
+        get => _provider ?? "http";
+        init => _provider = value;
+    }
+
+    public string? Organization { get; init; }
     public int? MaxTokens { get; init; }
     public double Temperature { get; init; } = 0.2;
 
