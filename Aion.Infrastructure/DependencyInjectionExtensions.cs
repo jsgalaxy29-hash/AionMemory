@@ -66,6 +66,7 @@ public static class DependencyInjectionExtensions
         services.AddScoped<INoteService>(sp => sp.GetRequiredService<IAionNoteService>());
         services.AddScoped<IAionAgendaService, AgendaService>();
         services.AddScoped<IAgendaService>(sp => sp.GetRequiredService<IAionAgendaService>());
+        services.AddScoped<IAutomationOrchestrator, AutomationOrchestrator>();
         services.AddScoped<IAionAutomationService, AutomationService>();
         services.AddScoped<IAutomationService>(sp => sp.GetRequiredService<IAionAutomationService>());
         services.AddScoped<IAionTemplateMarketplaceService, TemplateService>();

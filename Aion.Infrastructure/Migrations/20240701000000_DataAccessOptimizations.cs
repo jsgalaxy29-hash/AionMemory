@@ -10,16 +10,6 @@ namespace Aion.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.CreateIndex(
-                name: "IX_Records_EntityTypeId_CreatedAt",
-                table: "Records",
-                columns: new[] { "EntityTypeId", "CreatedAt" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Notes_CreatedAt",
-                table: "Notes",
-                column: "CreatedAt");
-
             migrationBuilder.Sql(@"
 DROP TRIGGER IF EXISTS NoteSearch_ai;
 DROP TRIGGER IF EXISTS NoteSearch_au;
@@ -68,14 +58,6 @@ SELECT Id, EntityTypeId, COALESCE(DataJson,'') FROM Records;
 DROP TABLE IF EXISTS NoteSearch;
 DROP TABLE IF EXISTS RecordSearch;
 ");
-
-            migrationBuilder.DropIndex(
-                name: "IX_Records_EntityTypeId_CreatedAt",
-                table: "Records");
-
-            migrationBuilder.DropIndex(
-                name: "IX_Notes_CreatedAt",
-                table: "Notes");
         }
     }
 }
