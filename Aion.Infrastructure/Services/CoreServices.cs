@@ -595,7 +595,19 @@ public sealed class FileStorageService : IFileStorageService
     {
         var file = await _db.Files.FirstAsync(f => f.Id == fileId, cancellationToken).ConfigureAwait(false);
         var encryptedBytes = await File.ReadAllBytesAsync(file.StoragePath, cancellationToken).ConfigureAwait(false);
-        var decrypted = Decrypt(encryptedBytes);
+        var decrypted = encryptedBytes;
+
+        if (encryptedBytes.Length >= 28)
+        {
+            try
+            {
+                decrypted = Decrypt(encryptedBytes);
+            }
+            catch (CryptographicException) when (string.IsNullOrWhiteSpace(file.Sha256))
+            {
+                _logger.LogWarning("Unable to decrypt legacy plaintext file {FileId}; returning raw bytes", fileId);
+            }
+        }
 
         if (_options.RequireIntegrityCheck && !string.IsNullOrWhiteSpace(file.Sha256))
         {

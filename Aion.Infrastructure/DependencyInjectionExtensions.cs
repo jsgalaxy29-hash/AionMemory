@@ -1,4 +1,6 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using Aion.Domain;
 using Aion.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
@@ -30,7 +32,7 @@ public static class DependencyInjectionExtensions
         storageOptions.PostConfigure(options =>
         {
             options.RootPath = ChooseValue(options.RootPath, configuration["Aion:Storage:RootPath"]);
-            options.EncryptionKey = ChooseValue(options.EncryptionKey, configuration["Aion:Storage:EncryptionKey"], configuration["Aion:Database:EncryptionKey"], configuration["AION_DB_KEY"]);
+            options.EncryptionKey = BuildStorageKey(options, configuration);
             EnsureDirectoryExists(options.RootPath);
         });
         storageOptions.Validate(o => !string.IsNullOrWhiteSpace(o.RootPath), "A storage root path is required.");
@@ -119,6 +121,29 @@ public static class DependencyInjectionExtensions
         }
 
         return current;
+    }
+
+    private static string? BuildStorageKey(StorageOptions options, IConfiguration configuration)
+    {
+        var configuredKey = ChooseValue(
+            options.EncryptionKey,
+            configuration["Aion:Storage:EncryptionKey"],
+            configuration["Aion:Database:EncryptionKey"],
+            configuration["AION_DB_KEY"]);
+
+        if (!string.IsNullOrWhiteSpace(configuredKey))
+        {
+            return configuredKey;
+        }
+
+        if (string.IsNullOrWhiteSpace(options.RootPath))
+        {
+            return null;
+        }
+
+        var normalizedRoot = Path.GetFullPath(options.RootPath);
+        var derivedKey = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedRoot));
+        return Convert.ToHexString(derivedKey);
     }
 
     private static void EnsureDirectoryExists(string? path)
