@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -63,13 +64,35 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
     public async Task<STable> CreateTableAsync(STable table, CancellationToken cancellationToken = default)
     {
+        var added = EnsureBasicViews(table);
         NormalizeTableDefinition(table);
         ValidateTableDefinition(table);
 
         await _db.Tables.AddAsync(table, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Table {Table} created with {FieldCount} fields", table.Name, table.Fields.Count);
+        if (added > 0)
+        {
+            _logger.LogInformation("{ViewCount} default view(s) created for table {Table}", added, table.Name);
+        }
         return table;
+    }
+
+    public async Task<IEnumerable<SViewDefinition>> GenerateSimpleViewsAsync(Guid tableId, CancellationToken cancellationToken = default)
+    {
+        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
+
+        var added = EnsureBasicViews(table);
+        if (added > 0)
+        {
+            NormalizeTableDefinition(table);
+            _db.Tables.Update(table);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Generated {Count} simple view(s) for table {Table}", added, table.Name);
+        }
+
+        return table.Views;
     }
 
     public async Task<STable?> GetTableAsync(Guid tableId, CancellationToken cancellationToken = default)
@@ -87,17 +110,29 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             .ConfigureAwait(false);
 
     public async Task<F_Record?> GetAsync(Guid entityTypeId, Guid id, CancellationToken cancellationToken = default)
-        => await _db.Records.FirstOrDefaultAsync(r => r.EntityTypeId == entityTypeId && r.Id == id, cancellationToken)
+        => await _db.Records.AsNoTracking().FirstOrDefaultAsync(r => r.EntityTypeId == entityTypeId && r.Id == id, cancellationToken)
             .ConfigureAwait(false);
 
-    public async Task<F_Record> InsertAsync(Guid entityTypeId, string dataJson, CancellationToken cancellationToken = default)
+    public async Task<ResolvedRecord?> GetResolvedAsync(Guid entityTypeId, Guid id, CancellationToken cancellationToken = default)
     {
-        var validatedJson = await ValidateRecordAsync(entityTypeId, dataJson, cancellationToken).ConfigureAwait(false);
+        var record = await GetAsync(entityTypeId, id, cancellationToken).ConfigureAwait(false);
+        if (record is null)
+        {
+            return null;
+        }
 
+        return await BuildResolvedRecordAsync(record, cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task<F_Record> InsertAsync(Guid entityTypeId, string dataJson, CancellationToken cancellationToken = default)
+        => InsertAsync(entityTypeId, ParseJsonPayload(dataJson), cancellationToken);
+
+    public async Task<F_Record> InsertAsync(Guid entityTypeId, IDictionary<string, object?> data, CancellationToken cancellationToken = default)
+    {
         var record = new F_Record
         {
             EntityTypeId = entityTypeId,
-            DataJson = validatedJson,
+            DataJson = await ValidateRecordAsync(entityTypeId, data, cancellationToken).ConfigureAwait(false),
             CreatedAt = DateTimeOffset.UtcNow
         };
         await _db.Records.AddAsync(record, cancellationToken).ConfigureAwait(false);
@@ -107,12 +142,15 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         return record;
     }
 
-    public async Task<F_Record> UpdateAsync(Guid entityTypeId, Guid id, string dataJson, CancellationToken cancellationToken = default)
+    public Task<F_Record> UpdateAsync(Guid entityTypeId, Guid id, string dataJson, CancellationToken cancellationToken = default)
+        => UpdateAsync(entityTypeId, id, ParseJsonPayload(dataJson), cancellationToken);
+
+    public async Task<F_Record> UpdateAsync(Guid entityTypeId, Guid id, IDictionary<string, object?> data, CancellationToken cancellationToken = default)
     {
         var record = await _db.Records.FirstOrDefaultAsync(r => r.EntityTypeId == entityTypeId && r.Id == id, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Record {id} not found for entity {entityTypeId}");
 
-        record.DataJson = await ValidateRecordAsync(entityTypeId, dataJson, cancellationToken).ConfigureAwait(false);
+        record.DataJson = await ValidateRecordAsync(entityTypeId, data, cancellationToken).ConfigureAwait(false);
         record.UpdatedAt = DateTimeOffset.UtcNow;
         _db.Records.Update(record);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -165,6 +203,23 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         }
 
         return await query.OrderByDescending(r => r.CreatedAt).ToListAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IEnumerable<ResolvedRecord>> QueryResolvedAsync(Guid entityTypeId, string? filter = null, IDictionary<string, string?>? equals = null, CancellationToken cancellationToken = default)
+    {
+        var table = await GetTableAsync(entityTypeId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {entityTypeId} not found");
+
+        var results = await QueryAsync(entityTypeId, filter, equals, cancellationToken).ConfigureAwait(false);
+        var resolved = new List<ResolvedRecord>();
+
+        foreach (var record in results)
+        {
+            var resolvedRecord = await BuildResolvedRecordAsync(record, table, cancellationToken).ConfigureAwait(false);
+            resolved.Add(resolvedRecord);
+        }
+
+        return resolved;
     }
 
     private static void NormalizeTableDefinition(STable table)
@@ -239,44 +294,10 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         }
     }
 
-    private async Task<string> ValidateRecordAsync(Guid tableId, string dataJson, CancellationToken cancellationToken)
+    private async Task<string> ValidateRecordAsync(Guid tableId, IDictionary<string, object?> values, CancellationToken cancellationToken)
     {
-        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Table {tableId} not found");
-
-        using var payload = JsonDocument.Parse(string.IsNullOrWhiteSpace(dataJson) ? "{}" : dataJson);
-        var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-
-        if (payload.RootElement.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var property in payload.RootElement.EnumerateObject())
-            {
-                EnsureFieldExists(table, property.Name);
-                values[property.Name] = ExtractValue(property.Value);
-            }
-        }
-
-        foreach (var field in table.Fields)
-        {
-            if (!values.ContainsKey(field.Name))
-            {
-                if (field.DefaultValue is not null)
-                {
-                    values[field.Name] = field.DefaultValue;
-                }
-                else if (field.IsRequired)
-                {
-                    throw new InvalidOperationException($"Field '{field.Name}' is required for table {table.Name}");
-                }
-            }
-
-            if (values.TryGetValue(field.Name, out var value))
-            {
-                ValidateFieldValue(field, value);
-            }
-        }
-
-        return JsonSerializer.Serialize(values, new JsonSerializerOptions { WriteIndented = false });
+        var validated = await NormalizePayloadAsync(tableId, values, cancellationToken).ConfigureAwait(false);
+        return SerializeValues(validated);
     }
 
     private static object? ExtractValue(JsonElement element)
@@ -304,16 +325,23 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
         switch (field.DataType)
         {
-            case EnumSFieldType.String:
-            case EnumSFieldType.Enum:
-            case EnumSFieldType.Relation:
-            case EnumSFieldType.File:
+            case FieldDataType.Text:
+            case FieldDataType.Note:
+            case FieldDataType.Tags:
+            case FieldDataType.Json:
+            case FieldDataType.File:
                 if (value is not string)
                 {
                     throw new InvalidOperationException($"Field '{field.Name}' expects text content");
                 }
                 break;
-            case EnumSFieldType.Int:
+            case FieldDataType.Lookup:
+                if (value is not string && value is not Guid)
+                {
+                    throw new InvalidOperationException($"Field '{field.Name}' expects a lookup identifier");
+                }
+                break;
+            case FieldDataType.Number:
                 if (value is not long && value is not int)
                 {
                     throw new InvalidOperationException($"Field '{field.Name}' expects an integer number");
@@ -340,6 +368,47 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             default:
                 throw new ArgumentOutOfRangeException(nameof(field.DataType), $"Unsupported data type {field.DataType}");
         }
+    }
+
+    private async Task<Dictionary<string, object?>> NormalizePayloadAsync(Guid tableId, IDictionary<string, object?> values, CancellationToken cancellationToken)
+    {
+        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
+
+        var normalized = new Dictionary<string, object?>(values, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var kv in values.ToArray())
+        {
+            EnsureFieldExists(table, kv.Key);
+        }
+
+        foreach (var field in table.Fields)
+        {
+            if (!normalized.ContainsKey(field.Name))
+            {
+                if (field.DefaultValue is not null)
+                {
+                    normalized[field.Name] = field.DefaultValue;
+                }
+                else if (field.IsRequired)
+                {
+                    throw new InvalidOperationException($"Field '{field.Name}' is required for table {table.Name}");
+                }
+            }
+
+            if (normalized.TryGetValue(field.Name, out var value))
+            {
+                ValidateFieldValue(field, value);
+                if (!string.IsNullOrWhiteSpace(field.LookupTarget) && value is not null)
+                {
+                    var lookupId = ParseGuid(value) ?? throw new InvalidOperationException($"Field '{field.Name}' expects a GUID lookup value");
+                    await EnsureLookupTargetExists(field, lookupId, cancellationToken).ConfigureAwait(false);
+                    normalized[field.Name] = lookupId;
+                }
+            }
+        }
+
+        return normalized;
     }
 
     private static IDictionary<string, string?>? ResolveViewFilter(string? filter, STable table)
@@ -386,6 +455,207 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         }
 
         return original;
+    }
+
+    private static int EnsureBasicViews(STable table)
+    {
+        var added = 0;
+
+        if (!table.Views.Any())
+        {
+            table.Views.Add(new SViewDefinition
+            {
+                Name = "all",
+                DisplayName = string.IsNullOrWhiteSpace(table.DisplayName) ? table.Name : table.DisplayName,
+                Description = "Vue par défaut générée automatiquement",
+                QueryDefinition = "{}",
+                Visualization = "table",
+                IsDefault = true
+            });
+            added++;
+        }
+
+        foreach (var view in table.Views.Where(v => string.IsNullOrWhiteSpace(v.DisplayName)))
+        {
+            view.DisplayName = view.Name;
+        }
+
+        if (string.IsNullOrWhiteSpace(table.DefaultView) && table.Views.Any())
+        {
+            table.DefaultView = table.Views.FirstOrDefault(v => v.IsDefault)?.Name ?? table.Views.First().Name;
+        }
+
+        return added;
+    }
+
+    private static IDictionary<string, object?> ParseJsonPayload(string dataJson)
+    {
+        var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(dataJson))
+        {
+            return values;
+        }
+
+        using var payload = JsonDocument.Parse(dataJson);
+        if (payload.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            return values;
+        }
+
+        foreach (var property in payload.RootElement.EnumerateObject())
+        {
+            values[property.Name] = ExtractValue(property.Value);
+        }
+
+        return values;
+    }
+
+    private static string SerializeValues(IDictionary<string, object?> values)
+        => JsonSerializer.Serialize(values, new JsonSerializerOptions { WriteIndented = false });
+
+    private static Guid? ParseGuid(object value)
+        => value switch
+        {
+            Guid g => g,
+            string s when Guid.TryParse(s, out var parsed) => parsed,
+            JsonElement element when element.ValueKind == JsonValueKind.String && Guid.TryParse(element.GetString(), out var parsed) => parsed,
+            _ => null
+        };
+
+    private async Task EnsureLookupTargetExists(SFieldDefinition field, Guid lookupId, CancellationToken cancellationToken)
+    {
+        var targetTable = await FindLookupTableAsync(field, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Lookup target '{field.LookupTarget}' not found for field {field.Name}");
+
+        var exists = await _db.Records.AnyAsync(r => r.EntityTypeId == targetTable.Id && r.Id == lookupId, cancellationToken).ConfigureAwait(false);
+        if (!exists)
+        {
+            throw new InvalidOperationException($"Lookup value {lookupId} not found in table {targetTable.Name}");
+        }
+    }
+
+    private async Task<STable?> FindLookupTableAsync(SFieldDefinition field, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(field.LookupTarget))
+        {
+            return null;
+        }
+
+        if (Guid.TryParse(field.LookupTarget, out var tableId))
+        {
+            return await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await _db.Tables
+            .Include(t => t.Fields)
+            .Include(t => t.Views)
+            .FirstOrDefaultAsync(t => t.Name == field.LookupTarget, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<ResolvedRecord> BuildResolvedRecordAsync(F_Record record, CancellationToken cancellationToken)
+    {
+        var table = await GetTableAsync(record.EntityTypeId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {record.EntityTypeId} not found");
+
+        return await BuildResolvedRecordAsync(record, table, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ResolvedRecord> BuildResolvedRecordAsync(F_Record record, STable table, CancellationToken cancellationToken)
+    {
+        var values = ParseJsonPayload(record.DataJson);
+        var lookups = await ResolveLookupValuesAsync(table, values, cancellationToken).ConfigureAwait(false);
+        return new ResolvedRecord(record, new ReadOnlyDictionary<string, object?>(values), new ReadOnlyDictionary<string, LookupResolution>(lookups));
+    }
+
+    private async Task<Dictionary<string, LookupResolution>> ResolveLookupValuesAsync(STable table, IReadOnlyDictionary<string, object?> values, CancellationToken cancellationToken)
+    {
+        var resolved = new Dictionary<string, LookupResolution>(StringComparer.OrdinalIgnoreCase);
+        var tableCache = new Dictionary<string, STable?>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var field in table.Fields.Where(f => !string.IsNullOrWhiteSpace(f.LookupTarget)))
+        {
+            if (!values.TryGetValue(field.Name, out var raw) || raw is null)
+            {
+                continue;
+            }
+
+            var lookupId = ParseGuid(raw);
+            if (lookupId is null)
+            {
+                continue;
+            }
+
+            if (!tableCache.TryGetValue(field.LookupTarget!, out var targetTable))
+            {
+                targetTable = await FindLookupTableAsync(field, cancellationToken).ConfigureAwait(false);
+                tableCache[field.LookupTarget!] = targetTable;
+            }
+
+            if (targetTable is null)
+            {
+                continue;
+            }
+
+            var targetRecord = await _db.Records.AsNoTracking()
+                .FirstOrDefaultAsync(r => r.EntityTypeId == targetTable.Id && r.Id == lookupId.Value, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (targetRecord is null)
+            {
+                continue;
+            }
+
+            var targetValues = ParseJsonPayload(targetRecord.DataJson);
+            var label = ResolveLabel(targetTable, targetValues, field);
+            resolved[field.Name] = new LookupResolution(lookupId.Value, label, targetTable.Id, targetTable.Name);
+        }
+
+        return resolved;
+    }
+
+    private static string? ResolveLabel(STable table, IReadOnlyDictionary<string, object?> targetValues, SFieldDefinition field)
+    {
+        if (!string.IsNullOrWhiteSpace(field.LookupField) && targetValues.TryGetValue(field.LookupField, out var lookupValue))
+        {
+            return lookupValue?.ToString();
+        }
+
+        var templateLabel = ApplyRowLabelTemplate(table.RowLabelTemplate, targetValues);
+        if (!string.IsNullOrWhiteSpace(templateLabel))
+        {
+            return templateLabel;
+        }
+
+        return GetFirstTextValue(table, targetValues);
+    }
+
+    private static string? ApplyRowLabelTemplate(string? template, IReadOnlyDictionary<string, object?> values)
+    {
+        if (string.IsNullOrWhiteSpace(template))
+        {
+            return null;
+        }
+
+        var result = template;
+        foreach (var kv in values)
+        {
+            var placeholder = "{{" + kv.Key + "}}";
+            result = result.Replace(placeholder, kv.Value?.ToString() ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return result;
+    }
+
+    private static string? GetFirstTextValue(STable table, IReadOnlyDictionary<string, object?> values)
+    {
+        var textField = table.Fields.FirstOrDefault(f => f.DataType is FieldDataType.Text or FieldDataType.Note);
+        if (textField is not null && values.TryGetValue(textField.Name, out var value))
+        {
+            return value?.ToString();
+        }
+
+        return values.Values.Select(v => v?.ToString()).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
     }
 }
 

@@ -27,11 +27,16 @@ public interface IDataEngine
     Task<STable> CreateTableAsync(STable table, CancellationToken cancellationToken = default);
     Task<STable?> GetTableAsync(Guid tableId, CancellationToken cancellationToken = default);
     Task<IEnumerable<STable>> GetTablesAsync(CancellationToken cancellationToken = default);
+    Task<IEnumerable<SViewDefinition>> GenerateSimpleViewsAsync(Guid tableId, CancellationToken cancellationToken = default);
     Task<F_Record> InsertAsync(Guid entityTypeId, string dataJson, CancellationToken cancellationToken = default);
+    Task<F_Record> InsertAsync(Guid entityTypeId, IDictionary<string, object?> data, CancellationToken cancellationToken = default);
     Task<F_Record?> GetAsync(Guid entityTypeId, Guid id, CancellationToken cancellationToken = default);
+    Task<ResolvedRecord?> GetResolvedAsync(Guid entityTypeId, Guid id, CancellationToken cancellationToken = default);
     Task<F_Record> UpdateAsync(Guid entityTypeId, Guid id, string dataJson, CancellationToken cancellationToken = default);
+    Task<F_Record> UpdateAsync(Guid entityTypeId, Guid id, IDictionary<string, object?> data, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid entityTypeId, Guid id, CancellationToken cancellationToken = default);
     Task<IEnumerable<F_Record>> QueryAsync(Guid entityTypeId, string? filter = null, IDictionary<string, string?>? equals = null, CancellationToken cancellationToken = default);
+    Task<IEnumerable<ResolvedRecord>> QueryResolvedAsync(Guid entityTypeId, string? filter = null, IDictionary<string, string?>? equals = null, CancellationToken cancellationToken = default);
 }
 
 public interface INoteService

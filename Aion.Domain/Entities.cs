@@ -270,6 +270,10 @@ public class F_Record
     public DateTimeOffset? UpdatedAt { get; set; }
 }
 
+public sealed record LookupResolution(Guid TargetId, string? Label, Guid? TableId = null, string? TableName = null);
+
+public sealed record ResolvedRecord(F_Record Record, IReadOnlyDictionary<string, object?> Data, IReadOnlyDictionary<string, LookupResolution> Lookups);
+
 public class S_VisionAnalysis
 {
     public Guid Id { get; set; } = Guid.NewGuid();
