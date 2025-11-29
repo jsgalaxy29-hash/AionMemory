@@ -21,6 +21,7 @@ The app bootstraps an encrypted SQLite database (`aion.db`) and seeds the Potage
 
 ## Roadmap produit (squelette)
 
+- **Checklist détaillée par couche** : voir `AION_Checklist.md` pour suivre l’avancement Domain/Infrastructure/AI/AppHost.
 - **MVP (itérations 0-1)** :
   - finaliser la persistance chiffrée (SQLite + SQLCipher) et la validation stricte des chemins de stockage ;
   - exposer les formulaires dynamiques (Potager, MarketPlace) via les Razor Components de l’hôte ;
