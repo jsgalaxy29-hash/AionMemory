@@ -3,7 +3,6 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Aion.AI;
 using Aion.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -348,27 +347,23 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
                     throw new InvalidOperationException($"Field '{field.Name}' expects an integer number");
                 }
                 break;
-            case FieldDataType.Decimal:
+            case EnumSFieldType.Decimal:
                 if (value is not double && value is not decimal && value is not float)
                 {
                     throw new InvalidOperationException($"Field '{field.Name}' expects a decimal number");
                 }
                 break;
-            case FieldDataType.Boolean:
+            case EnumSFieldType.Bool:
                 if (value is not bool)
                 {
                     throw new InvalidOperationException($"Field '{field.Name}' expects a boolean value");
                 }
                 break;
-            case FieldDataType.Date:
-            case FieldDataType.DateTime:
+            case EnumSFieldType.Date:
                 if (value is not string dateString || !DateTimeOffset.TryParse(dateString, out _))
                 {
                     throw new InvalidOperationException($"Field '{field.Name}' expects an ISO-8601 date/time string");
                 }
-                break;
-            case FieldDataType.Calculated:
-                // Calculated fields are validated by automation layer; accept any value but presence is optional.
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(field.DataType), $"Unsupported data type {field.DataType}");
@@ -1643,12 +1638,12 @@ public sealed class VisionService : IAionVisionService, IVisionService
         _db = db;
     }
 
-    public async Task<S_VisionAnalysis> AnalyzeAsync(Guid fileId, VisionAnalysisType analysisType, CancellationToken cancellationToken = default)
+    public async Task<S_VisionAnalysis> AnalyzeAsync(VisionAnalysisRequest request, CancellationToken cancellationToken = default)
     {
         var analysis = new S_VisionAnalysis
         {
-            FileId = fileId,
-            AnalysisType = analysisType,
+            FileId = request.FileId,
+            AnalysisType = request.AnalysisType,
             ResultJson = JsonSerializer.Serialize(new { summary = "Vision analysis placeholder" })
         };
 

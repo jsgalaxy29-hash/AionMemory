@@ -62,7 +62,7 @@ public class AionDbContext : DbContext
             builder.Property(e => e.PluralName).IsRequired().HasMaxLength(128);
             builder.Property(e => e.Icon).HasMaxLength(64);
             builder.HasMany(e => e.Fields).WithOne().HasForeignKey(f => f.EntityTypeId);
-            builder.HasMany(e => e.Relations).WithOne().HasForeignKey(r => r.EntityTypeId);
+            builder.HasMany(e => e.Relations).WithOne().HasForeignKey(r => r.FromEntityTypeId);
         });
 
         modelBuilder.Entity<S_Field>(builder =>
@@ -70,15 +70,15 @@ public class AionDbContext : DbContext
             builder.Property(f => f.Name).IsRequired().HasMaxLength(128);
             builder.Property(f => f.Label).IsRequired().HasMaxLength(128);
             builder.Property(f => f.DataType).HasConversion<string>().HasMaxLength(32);
-            builder.Property(f => f.LookupTarget).HasMaxLength(128);
-            builder.Property(f => f.OptionsJson).HasMaxLength(4000);
             builder.Property(f => f.DefaultValue).HasMaxLength(1024);
+            builder.Property(f => f.EnumValues).HasMaxLength(4000);
+            builder.Property(f => f.IsSearchable).HasDefaultValue(false);
+            builder.Property(f => f.IsListVisible).HasDefaultValue(false);
         });
 
         modelBuilder.Entity<S_Relation>(builder =>
         {
-            builder.Property(r => r.FromField).IsRequired().HasMaxLength(128);
-            builder.Property(r => r.ToEntity).IsRequired().HasMaxLength(128);
+            builder.Property(r => r.RoleName).IsRequired().HasMaxLength(128);
             builder.Property(r => r.Kind).HasConversion<string>().HasMaxLength(32);
         });
 
@@ -224,7 +224,9 @@ public class AionDbContext : DbContext
         {
             builder.Property(t => t.Name).IsRequired().HasMaxLength(128);
             builder.Property(t => t.DisplayName).IsRequired().HasMaxLength(128);
-            builder.Property(t => t.Description).HasMaxLength(512);
+            builder.Property(t => t.Description).HasMaxLength(1024);
+            builder.Property(t => t.DefaultView).HasMaxLength(128);
+            builder.Property(t => t.RowLabelTemplate).HasMaxLength(256);
             builder.HasMany(t => t.Fields).WithOne().HasForeignKey(f => f.TableId);
             builder.HasMany(t => t.Views).WithOne().HasForeignKey(v => v.TableId);
             builder.HasIndex(t => t.Name).IsUnique();
@@ -237,13 +239,23 @@ public class AionDbContext : DbContext
             builder.Property(f => f.DataType).HasConversion<string>().HasMaxLength(32);
             builder.Property(f => f.DefaultValue).HasMaxLength(1024);
             builder.Property(f => f.LookupTarget).HasMaxLength(128);
+            builder.Property(f => f.ComputedExpression).HasMaxLength(2048);
+            builder.Property(f => f.ValidationPattern).HasMaxLength(512);
+            builder.Property(f => f.Placeholder).HasMaxLength(256);
+            builder.Property(f => f.Unit).HasMaxLength(128);
+            builder.Property(f => f.LookupField).HasMaxLength(128);
             builder.HasIndex(f => new { f.TableId, f.Name }).IsUnique();
         });
 
         modelBuilder.Entity<SViewDefinition>(builder =>
         {
             builder.Property(v => v.Name).IsRequired().HasMaxLength(128);
+            builder.Property(v => v.DisplayName).IsRequired().HasMaxLength(128);
+            builder.Property(v => v.Description).HasMaxLength(1024);
             builder.Property(v => v.QueryDefinition).IsRequired().HasMaxLength(4000);
+            builder.Property(v => v.FilterExpression).HasMaxLength(512);
+            builder.Property(v => v.SortExpression).HasMaxLength(512);
+            builder.Property(v => v.PageSize);
             builder.Property(v => v.Visualization).HasMaxLength(128);
             builder.HasIndex(v => new { v.TableId, v.Name }).IsUnique();
         });

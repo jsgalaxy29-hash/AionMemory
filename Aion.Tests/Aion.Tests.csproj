@@ -18,6 +18,5 @@
   <ItemGroup>
     <ProjectReference Include="..\Aion.Infrastructure\Aion.Infrastructure.csproj" />
     <ProjectReference Include="..\Aion.Domain\Aion.Domain.csproj" />
-    <ProjectReference Include="..\Aion.AI\Aion.AI.csproj" />
   </ItemGroup>
 </Project>

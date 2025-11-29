@@ -23,8 +23,9 @@ public class ModuleDesignerService
 
     public async Task<S_Module> CreateModuleFromPromptAsync(string prompt, CancellationToken token = default)
     {
-        var module = await _designer.GenerateModuleFromPromptAsync(prompt, token).ConfigureAwait(false);
-        LastGeneratedJson = _designer.LastGeneratedJson;
+        var design = await _designer.GenerateModuleAsync(new ModuleDesignRequest { Prompt = prompt }, token).ConfigureAwait(false);
+        var module = design.Module;
+        LastGeneratedJson = design.RawDesignJson;
 
         await _metadata.CreateModuleAsync(module, token).ConfigureAwait(false);
         await EnsureTablesAsync(module, token).ConfigureAwait(false);
@@ -56,8 +57,11 @@ public class ModuleDesignerService
                     Label = f.Label,
                     DataType = f.DataType,
                     IsRequired = f.IsRequired,
+                    IsSearchable = f.IsSearchable,
+                    IsListVisible = f.IsListVisible,
                     DefaultValue = f.DefaultValue,
-                    LookupTarget = f.LookupTarget
+                    EnumValues = f.EnumValues,
+                    RelationTargetEntityTypeId = f.RelationTargetEntityTypeId
                 }).ToList(),
                 Views = new List<SViewDefinition>()
             };

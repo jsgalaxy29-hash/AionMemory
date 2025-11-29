@@ -137,11 +137,6 @@ public interface IPersonaEngine
     Task<UserPersona> SavePersonaAsync(UserPersona persona, CancellationToken cancellationToken = default);
 }
 
-public interface IVisionService
-{
-    Task<S_VisionAnalysis> AnalyzeAsync(Guid fileId, VisionAnalysisType analysisType, CancellationToken cancellationToken = default);
-}
-
 public interface IAudioTranscriptionProvider
 {
     Task<TranscriptionResult> TranscribeAsync(Stream audioStream, string fileName, CancellationToken cancellationToken = default);
@@ -161,24 +156,66 @@ public interface IEmbeddingProvider
     Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default);
 }
 
-public sealed record IntentDetectionResult(string Intent, IDictionary<string, string> Parameters, double Confidence, string RawResponse);
+public readonly record struct IntentDetectionRequest
+{
+    public required string Input { get; init; }
+    public string Locale { get; init; } = "fr-FR";
+    public IDictionary<string, string?> Context { get; init; } = new Dictionary<string, string?>();
+}
 
-public sealed record CrudInterpretation(string Action, IDictionary<string, string?> Filters, IDictionary<string, string?> Payload, string RawResponse);
+public readonly record struct IntentDetectionResult(string Intent, IReadOnlyDictionary<string, string> Parameters, double Confidence, string RawResponse);
+
+public readonly record struct ModuleDesignRequest
+{
+    public required string Prompt { get; init; }
+    public string Locale { get; init; } = "fr-FR";
+    public string? ModuleNameHint { get; init; }
+    public bool IncludeRelations { get; init; } = true;
+}
+
+public readonly record struct ModuleDesignResult(S_Module Module, string RawDesignJson);
+
+public readonly record struct CrudQueryRequest
+{
+    public required string Intent { get; init; }
+    public required S_Module Module { get; init; }
+    public string Locale { get; init; } = "fr-FR";
+}
+
+public readonly record struct CrudInterpretation(string Action, IReadOnlyDictionary<string, string?> Filters, IReadOnlyDictionary<string, string?> Payload, string RawResponse);
+
+public readonly record struct ReportBuildRequest
+{
+    public required Guid ModuleId { get; init; }
+    public required string Description { get; init; }
+    public string? PreferredVisualization { get; init; }
+    public string Locale { get; init; } = "fr-FR";
+}
+
+public readonly record struct ReportBuildResult(S_ReportDefinition Report, string RawResponse);
+
+public readonly record struct VisionAnalysisRequest
+{
+    public required Guid FileId { get; init; }
+    public VisionAnalysisType AnalysisType { get; init; } = VisionAnalysisType.Ocr;
+    public string? Model { get; init; }
+    public string Locale { get; init; } = "fr-FR";
+}
 
 public interface IIntentDetector
 {
-    Task<IntentDetectionResult> DetectAsync(string input, CancellationToken cancellationToken = default);
+    Task<IntentDetectionResult> DetectAsync(IntentDetectionRequest request, CancellationToken cancellationToken = default);
 }
 
 public interface IModuleDesigner
 {
-    Task<S_Module> GenerateModuleFromPromptAsync(string prompt, CancellationToken cancellationToken = default);
+    Task<ModuleDesignResult> GenerateModuleAsync(ModuleDesignRequest request, CancellationToken cancellationToken = default);
     string? LastGeneratedJson { get; }
 }
 
 public interface ICrudInterpreter
 {
-    Task<CrudInterpretation> GenerateQueryAsync(string intent, S_Module module, CancellationToken cancellationToken = default);
+    Task<CrudInterpretation> GenerateQueryAsync(CrudQueryRequest request, CancellationToken cancellationToken = default);
 }
 
 public interface IAgendaInterpreter
@@ -193,5 +230,69 @@ public interface INoteInterpreter
 
 public interface IReportInterpreter
 {
-    Task<S_ReportDefinition> BuildReportAsync(string description, Guid moduleId, CancellationToken cancellationToken = default);
+    Task<ReportBuildResult> BuildReportAsync(ReportBuildRequest request, CancellationToken cancellationToken = default);
+}
+
+public interface IVisionService
+{
+    Task<S_VisionAnalysis> AnalyzeAsync(VisionAnalysisRequest request, CancellationToken cancellationToken = default);
+}
+
+public static class AiContractExamples
+{
+    public static IntentDetectionRequest IntentExample => new()
+    {
+        Input = "Ajoute un rappel demain à 9h pour appeler le client",
+        Context = new Dictionary<string, string?> { ["channel"] = "voice" }
+    };
+
+    public static ModuleDesignRequest ModuleDesignExample => new()
+    {
+        Prompt = "Gestion d'un potager",
+        ModuleNameHint = "Potager",
+        IncludeRelations = true
+    };
+
+    public static CrudQueryRequest CrudExample
+    {
+        get
+        {
+            var module = new S_Module
+            {
+                Name = "Contacts",
+                EntityTypes =
+                [
+                    new()
+                    {
+                        Name = "Contact",
+                        PluralName = "Contacts",
+                        Fields =
+                        [
+                            new() { Name = "Nom", Label = "Nom", DataType = FieldDataType.Text },
+                            new() { Name = "Email", Label = "Email", DataType = FieldDataType.Text }
+                        ]
+                    }
+                ]
+            };
+            return new CrudQueryRequest
+            {
+                Intent = "Trouve les contacts sans email",
+                Module = module
+            };
+        }
+    }
+
+    public static ReportBuildRequest ReportExample => new()
+    {
+        ModuleId = Guid.NewGuid(),
+        Description = "Liste hebdomadaire des tâches en retard",
+        PreferredVisualization = "table"
+    };
+
+    public static VisionAnalysisRequest VisionExample => new()
+    {
+        FileId = Guid.NewGuid(),
+        AnalysisType = VisionAnalysisType.Ocr,
+        Model = "ocr-small"
+    };
 }
