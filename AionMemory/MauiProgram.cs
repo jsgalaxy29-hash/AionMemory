@@ -51,6 +51,7 @@ public static class MauiProgram
         var marketplacePath = Path.Combine(baseDirectory, "marketplace");
         var backupPath = Path.Combine(storagePath, "backup");
 
+        Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
         Directory.CreateDirectory(storagePath);
         Directory.CreateDirectory(marketplacePath);
         Directory.CreateDirectory(backupPath);
@@ -60,7 +61,8 @@ public static class MauiProgram
             var sqliteBuilder = new SqliteConnectionStringBuilder
             {
                 DataSource = databasePath,
-                Mode = SqliteOpenMode.ReadWriteCreate
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Cache = SqliteCacheMode.Private
             };
 
             options.ConnectionString = sqliteBuilder.ToString();
