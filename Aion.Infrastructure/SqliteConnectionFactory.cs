@@ -23,12 +23,18 @@ public static class SqliteConnectionFactory
             builder.Mode = SqliteOpenMode.ReadWriteCreate;
         }
 
+        if (builder.Cache is not SqliteCacheMode.Private)
+        {
+            builder.Cache = SqliteCacheMode.Private;
+        }
+
         if (!string.IsNullOrWhiteSpace(options.EncryptionKey))
         {
             builder.Password = options.EncryptionKey;
         }
 
         var connection = new SqliteConnection(builder.ToString());
+        optionsBuilder.AddInterceptors(new SqliteEncryptionInterceptor(options.EncryptionKey));
         optionsBuilder.UseSqlite(connection);
     }
 }

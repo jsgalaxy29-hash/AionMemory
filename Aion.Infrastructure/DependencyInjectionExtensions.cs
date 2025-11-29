@@ -1,6 +1,7 @@
 using System.IO;
 using Aion.Domain;
 using Aion.Infrastructure.Services;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +21,9 @@ public static class DependencyInjectionExtensions
         });
         databaseOptions.Validate(o => !string.IsNullOrWhiteSpace(o.ConnectionString), "The database connection string cannot be empty.");
         databaseOptions.Validate(o => !string.IsNullOrWhiteSpace(o.EncryptionKey), "The database encryption key cannot be empty.");
+        databaseOptions.Validate(o => IsDataSourceConfigured(o.ConnectionString), "The SQLite data source path must be configured in the connection string.");
+        databaseOptions.Validate(o => DatabaseDirectoryExists(o.ConnectionString), "The SQLite data source directory must exist.");
+        databaseOptions.Validate(o => o.EncryptionKey?.Length >= 32, "The database encryption key must contain at least 32 characters.");
         databaseOptions.ValidateOnStart();
 
         var storageOptions = services.AddOptions<StorageOptions>();
@@ -117,5 +121,29 @@ public static class DependencyInjectionExtensions
         {
             Directory.CreateDirectory(path);
         }
+    }
+
+    private static bool IsDataSourceConfigured(string? connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return false;
+        }
+
+        var builder = new SqliteConnectionStringBuilder(connectionString);
+        return !string.IsNullOrWhiteSpace(builder.DataSource);
+    }
+
+    private static bool DatabaseDirectoryExists(string? connectionString)
+    {
+        if (!IsDataSourceConfigured(connectionString))
+        {
+            return false;
+        }
+
+        var builder = new SqliteConnectionStringBuilder(connectionString!);
+        var fullPath = Path.GetFullPath(builder.DataSource);
+        var directory = Path.GetDirectoryName(fullPath);
+        return directory is not null && Directory.Exists(directory);
     }
 }
