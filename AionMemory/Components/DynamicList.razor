@@ -50,6 +50,7 @@
 @code {
     [Parameter] public S_EntityType? EntityType { get; set; }
     [Parameter] public IDataEngine? DataEngine { get; set; }
+    [Parameter] public string? Filter { get; set; }
     [Parameter] public EventCallback<F_Record> OnSelect { get; set; }
 
     private IEnumerable<F_Record>? Items { get; set; }
@@ -63,7 +64,7 @@
     {
         if (DataEngine is not null && EntityType is not null)
         {
-            Items = await DataEngine.QueryAsync(EntityType.Id);
+            Items = await DataEngine.QueryAsync(EntityType.Id, Filter);
             StateHasChanged();
         }
     }
