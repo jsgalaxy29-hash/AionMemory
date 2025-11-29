@@ -3,6 +3,10 @@
   <Project Path="Aion.Domain/Aion.Domain.csproj" />
   <Project Path="Aion.Infrastructure/Aion.Infrastructure.csproj" />
   <Project Path="Aion.Infrastructure.Tests/Aion.Infrastructure.Tests.csproj" />
+  <Project Path="Aion.Domain.Tests/Aion.Domain.Tests.csproj" />
+  <Project Path="Aion.AI.Tests/Aion.AI.Tests.csproj" />
+  <Project Path="AionMemory.Logic/AionMemory.Logic.csproj" />
+  <Project Path="AionMemory.Logic.Tests/AionMemory.Logic.Tests.csproj" />
   <Project Path="AionMemory/AionMemory.csproj">
     <Deploy Solution="Debug|*" />
   </Project>
