@@ -227,6 +227,7 @@ public class AionDbContext : DbContext
             builder.Property(t => t.Description).HasMaxLength(512);
             builder.HasMany(t => t.Fields).WithOne().HasForeignKey(f => f.TableId);
             builder.HasMany(t => t.Views).WithOne().HasForeignKey(v => v.TableId);
+            builder.HasIndex(t => t.Name).IsUnique();
         });
 
         modelBuilder.Entity<SFieldDefinition>(builder =>
@@ -236,6 +237,7 @@ public class AionDbContext : DbContext
             builder.Property(f => f.DataType).HasConversion<string>().HasMaxLength(32);
             builder.Property(f => f.DefaultValue).HasMaxLength(1024);
             builder.Property(f => f.LookupTarget).HasMaxLength(128);
+            builder.HasIndex(f => new { f.TableId, f.Name }).IsUnique();
         });
 
         modelBuilder.Entity<SViewDefinition>(builder =>
@@ -243,6 +245,7 @@ public class AionDbContext : DbContext
             builder.Property(v => v.Name).IsRequired().HasMaxLength(128);
             builder.Property(v => v.QueryDefinition).IsRequired().HasMaxLength(4000);
             builder.Property(v => v.Visualization).HasMaxLength(128);
+            builder.HasIndex(v => new { v.TableId, v.Name }).IsUnique();
         });
 
         modelBuilder.Entity<NoteSearchEntry>()

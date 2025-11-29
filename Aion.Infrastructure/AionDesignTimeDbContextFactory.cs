@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Options;
@@ -10,17 +9,13 @@ public sealed class AionDesignTimeDbContextFactory : IDesignTimeDbContextFactory
     public AionDbContext CreateDbContext(string[] args)
     {
         var builder = new DbContextOptionsBuilder<AionDbContext>();
-        var databasePath = Path.GetFullPath("aion_designtime.db");
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate
-        }.ToString();
+        var connectionString = SqliteCipherDevelopmentDefaults.BuildConnectionString("aion_designtime.db");
 
         var options = Options.Create(new AionDatabaseOptions
         {
             ConnectionString = connectionString,
-            EncryptionKey = Environment.GetEnvironmentVariable("AION_DB_KEY") ?? string.Empty
+            EncryptionKey = Environment.GetEnvironmentVariable("AION_DB_KEY")
+                ?? SqliteCipherDevelopmentDefaults.DevelopmentKey
         });
 
         SqliteConnectionFactory.ConfigureBuilder(builder, options);
