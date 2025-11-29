@@ -128,7 +128,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         if (!string.IsNullOrWhiteSpace(filter))
         {
             query = query.Where(r => _db.RecordSearch
-                .Where(s => s.EntityTypeId == entityTypeId && EF.Functions.Match(s.Content, filter))
+                .Where(s => s.EntityTypeId == entityTypeId && s.Content.Contains(filter))
                 .Select(s => s.RecordId)
                 .Contains(r.Id));
         }
@@ -137,8 +137,8 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         {
             foreach (var clause in equals.Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value)))
             {
-                var jsonPath = $"$.{clause.Key}";
-                query = query.Where(r => EF.Functions.JsonExtract(r.DataJson, jsonPath) == clause.Value);
+                var searchText = $"\"{clause.Key}\":\"{clause.Value}\"";
+                query = query.Where(r => r.DataJson != null && r.DataJson.Contains(searchText));
             }
         }
 
@@ -492,13 +492,13 @@ public sealed class SearchService : ISearchService
     public async Task<IEnumerable<string>> SearchAsync(string query, CancellationToken cancellationToken = default)
     {
         var notes = await _db.NoteSearch
-            .Where(n => EF.Functions.Match(n.Content, query))
+            .Where(n => n.Content.Contains(query))
             .Select(n => $"Note:{n.NoteId}")
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
         var records = await _db.RecordSearch
-            .Where(r => EF.Functions.Match(r.Content, query))
+            .Where(r => r.Content.Contains(query))
             .Select(r => $"Record:{r.RecordId}")
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
