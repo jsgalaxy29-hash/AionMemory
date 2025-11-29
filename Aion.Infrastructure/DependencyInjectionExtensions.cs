@@ -79,6 +79,7 @@ public static class DependencyInjectionExtensions
         services.AddScoped<ISearchService, SearchService>();
         services.AddScoped<ICloudBackupService, CloudBackupService>();
         services.AddScoped<IDashboardService, DashboardService>();
+        services.AddHostedService<BackupCleanupService>();
         services.AddScoped<ModuleDesignerService>();
 
         return services;

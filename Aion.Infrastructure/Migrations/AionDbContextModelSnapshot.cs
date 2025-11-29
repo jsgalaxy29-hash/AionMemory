@@ -165,6 +165,8 @@ namespace Aion.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EntityTypeId", "CreatedAt");
+
                     b.ToTable("Records");
                 });
 
@@ -527,6 +529,8 @@ namespace Aion.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedAt");
+
                     b.ToTable("Notes");
                 });
 
@@ -804,6 +808,37 @@ namespace Aion.Infrastructure.Migrations
                         .HasForeignKey("ModuleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Aion.Infrastructure.NoteSearchEntry", b =>
+                {
+                    b.Property<Guid>("NoteId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasNoKey();
+
+                    b.ToView("NoteSearch");
+                });
+
+            modelBuilder.Entity("Aion.Infrastructure.RecordSearchEntry", b =>
+                {
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EntityTypeId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RecordId")
+                        .HasColumnType("TEXT");
+
+                    b.HasNoKey();
+
+                    b.ToView("RecordSearch");
                 });
 
             modelBuilder.Entity("Aion.Domain.SViewDefinition", b =>
