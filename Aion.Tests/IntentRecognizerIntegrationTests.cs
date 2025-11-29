@@ -1,5 +1,5 @@
-using Aion.AI;
 using Aion.Domain;
+using Aion.Infrastructure.Adapters;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -12,7 +12,7 @@ public class IntentRecognizerIntegrationTests
     {
         const string payload = "Réponse:\n```{\"intent\":\"create_task\",\"parameters\":{\"title\":\"Planter\"},\"confidence\":0.73}```";
         var provider = new StubLlmProvider(payload);
-        var recognizer = new IntentRecognizer(provider, NullLogger<IntentRecognizer>.Instance);
+        var recognizer = new BasicIntentDetector(provider, NullLogger<BasicIntentDetector>.Instance);
 
         var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "ajoute une tâche" });
 

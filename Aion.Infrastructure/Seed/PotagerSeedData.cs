@@ -22,11 +22,11 @@ public static class PotagerSeedData
             PluralName = "Plantations",
             Fields =
             {
-                new S_Field { Name = "Name", Label = "Nom", DataType = FieldDataType.Text, IsRequired = true },
-                new S_Field { Name = "Variety", Label = "Variété", DataType = FieldDataType.Text },
-                new S_Field { Name = "PlantedOn", Label = "Date de plantation", DataType = FieldDataType.Date },
-                new S_Field { Name = "Location", Label = "Emplacement", DataType = FieldDataType.Text },
-                new S_Field { Name = "Notes", Label = "Notes", DataType = FieldDataType.Note }
+                new S_Field { Name = "Name", Label = "Nom", DataType = EnumSFieldType.String, IsRequired = true, IsSearchable = true, IsListVisible = true },
+                new S_Field { Name = "Variety", Label = "Variété", DataType = EnumSFieldType.String, IsSearchable = true, IsListVisible = true },
+                new S_Field { Name = "PlantedOn", Label = "Date de plantation", DataType = EnumSFieldType.Date, IsListVisible = true },
+                new S_Field { Name = "Location", Label = "Emplacement", DataType = EnumSFieldType.String, IsSearchable = true, IsListVisible = true },
+                new S_Field { Name = "Notes", Label = "Notes", DataType = EnumSFieldType.String }
             }
         };
 
@@ -38,10 +38,10 @@ public static class PotagerSeedData
             PluralName = "Récoltes",
             Fields =
             {
-                new S_Field { Name = "PlantName", Label = "Plant", DataType = FieldDataType.Lookup, LookupTarget = plantEntity.Name },
-                new S_Field { Name = "Quantity", Label = "Quantité", DataType = FieldDataType.Number },
-                new S_Field { Name = "Unit", Label = "Unité", DataType = FieldDataType.Text },
-                new S_Field { Name = "HarvestDate", Label = "Date", DataType = FieldDataType.Date }
+                new S_Field { Name = "PlantName", Label = "Plant", DataType = EnumSFieldType.Relation, RelationTargetEntityTypeId = plantEntity.Id, IsRequired = true, IsListVisible = true },
+                new S_Field { Name = "Quantity", Label = "Quantité", DataType = EnumSFieldType.Int, IsListVisible = true },
+                new S_Field { Name = "Unit", Label = "Unité", DataType = EnumSFieldType.String, IsListVisible = true },
+                new S_Field { Name = "HarvestDate", Label = "Date", DataType = EnumSFieldType.Date, IsListVisible = true }
             }
         };
 
@@ -49,12 +49,12 @@ public static class PotagerSeedData
 
         var harvestRelation = new S_Relation
         {
-            FromField = "PlantName",
-            ToEntity = plantEntity.Name,
-            Kind = RelationKind.ManyToOne,
-            EntityTypeId = harvestEntity.Id
+            FromEntityTypeId = plantEntity.Id,
+            ToEntityTypeId = harvestEntity.Id,
+            Kind = RelationKind.OneToMany,
+            RoleName = "Harvests"
         };
-        harvestEntity.Relations.Add(harvestRelation);
+        plantEntity.Relations.Add(harvestRelation);
 
         var report = new S_ReportDefinition
         {

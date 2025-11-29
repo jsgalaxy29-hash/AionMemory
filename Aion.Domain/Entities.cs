@@ -5,26 +5,21 @@ using System.Linq;
 
 namespace Aion.Domain;
 
-public enum FieldDataType
+public enum EnumSFieldType
 {
-    Text,
-    Number,
+    String,
+    Int,
     Decimal,
-    Boolean,
     Date,
-    DateTime,
-    Lookup,
-    File,
-    Note,
-    Json,
-    Tags,
-    Calculated
+    Bool,
+    Enum,
+    Relation,
+    File
 }
 
 public enum RelationKind
 {
     OneToMany,
-    ManyToOne,
     ManyToMany
 }
 
@@ -122,26 +117,25 @@ public class S_Field
     public string Name { get; set; } = string.Empty;
     [Required, StringLength(128)]
     public string Label { get; set; } = string.Empty;
-    public FieldDataType DataType { get; set; }
+    public EnumSFieldType DataType { get; set; }
     public bool IsRequired { get; set; }
+    public bool IsSearchable { get; set; }
+    public bool IsListVisible { get; set; }
     [StringLength(1024)]
     public string? DefaultValue { get; set; }
-    [StringLength(128)]
-    public string? LookupTarget { get; set; }
     [StringLength(4000)]
-    public string? OptionsJson { get; set; }
+    public string? EnumValues { get; set; }
+    public Guid? RelationTargetEntityTypeId { get; set; }
 }
 
 public class S_Relation
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public Guid EntityTypeId { get; set; }
-    [Required, StringLength(128)]
-    public string FromField { get; set; } = string.Empty;
-    [Required, StringLength(128)]
-    public string ToEntity { get; set; } = string.Empty;
+    public Guid FromEntityTypeId { get; set; }
+    public Guid ToEntityTypeId { get; set; }
     public RelationKind Kind { get; set; }
-    public bool IsBidirectional { get; set; }
+    [Required, StringLength(128)]
+    public string RoleName { get; set; } = string.Empty;
 }
 
 public class S_ReportDefinition
@@ -435,58 +429,26 @@ public class SFieldDefinition
     public string Name { get; set; } = string.Empty;
     [Required, StringLength(128)]
     public string Label { get; set; } = string.Empty;
-    public FieldDataType DataType { get; set; }
+    public EnumSFieldType DataType { get; set; }
     public bool IsRequired { get; set; }
-    public bool IsPrimaryKey { get; set; }
-    public bool IsUnique { get; set; }
-    public bool IsIndexed { get; set; }
-    public bool IsSearchable { get; set; } = true;
-    public bool IsSortable { get; set; }
-    public bool IsFilterable { get; set; }
-    public bool IsHidden { get; set; }
-    public bool IsReadOnly { get; set; }
-    public bool IsComputed { get; set; }
-    [StringLength(2048)]
-    public string? ComputedExpression { get; set; }
+    public bool IsSearchable { get; set; }
+    public bool IsListVisible { get; set; }
     [StringLength(1024)]
     public string? DefaultValue { get; set; }
-    [Range(0, 16384)]
-    public int? MinLength { get; set; }
-    [Range(1, 16384)]
-    public int? MaxLength { get; set; }
-    public decimal? MinValue { get; set; }
-    public decimal? MaxValue { get; set; }
-    [StringLength(512)]
-    public string? ValidationPattern { get; set; }
-    [StringLength(256)]
-    public string? Placeholder { get; set; }
-    [StringLength(128)]
-    public string? Unit { get; set; }
-    [StringLength(128)]
-    public string? LookupTarget { get; set; }
-    [StringLength(128)]
-    public string? LookupField { get; set; }
+    [StringLength(4000)]
+    public string? EnumValues { get; set; }
+    public Guid? RelationTargetEntityTypeId { get; set; }
 
     public static SFieldDefinition Text(string name, string label, bool required = false, string? defaultValue = null)
         => new()
         {
             Name = name,
             Label = label,
-            DataType = FieldDataType.Text,
+            DataType = EnumSFieldType.String,
             IsRequired = required,
-            DefaultValue = defaultValue
-        };
-
-    public static SFieldDefinition Computed(string name, string label, string expression)
-        => new()
-        {
-            Name = name,
-            Label = label,
-            DataType = FieldDataType.Calculated,
-            IsComputed = true,
-            IsReadOnly = true,
-            IsRequired = false,
-            ComputedExpression = expression
+            DefaultValue = defaultValue,
+            IsSearchable = true,
+            IsListVisible = true
         };
 }
 

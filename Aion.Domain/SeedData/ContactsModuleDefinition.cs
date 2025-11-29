@@ -41,8 +41,10 @@ public static class ContactsModuleDefinition
                     EntityTypeId = EntityId,
                     Name = "firstName",
                     Label = "Prénom",
-                    DataType = FieldDataType.Text,
-                    IsRequired = true
+                    DataType = EnumSFieldType.String,
+                    IsRequired = true,
+                    IsSearchable = true,
+                    IsListVisible = true
                 },
                 new S_Field
                 {
@@ -50,8 +52,10 @@ public static class ContactsModuleDefinition
                     EntityTypeId = EntityId,
                     Name = "lastName",
                     Label = "Nom",
-                    DataType = FieldDataType.Text,
-                    IsRequired = true
+                    DataType = EnumSFieldType.String,
+                    IsRequired = true,
+                    IsSearchable = true,
+                    IsListVisible = true
                 },
                 new S_Field
                 {
@@ -59,8 +63,9 @@ public static class ContactsModuleDefinition
                     EntityTypeId = EntityId,
                     Name = "email",
                     Label = "Email",
-                    DataType = FieldDataType.Text,
-                    IsRequired = false
+                    DataType = EnumSFieldType.String,
+                    IsSearchable = true,
+                    IsListVisible = true
                 },
                 new S_Field
                 {
@@ -68,8 +73,9 @@ public static class ContactsModuleDefinition
                     EntityTypeId = EntityId,
                     Name = "phone",
                     Label = "Téléphone",
-                    DataType = FieldDataType.Text,
-                    IsRequired = false
+                    DataType = EnumSFieldType.String,
+                    IsSearchable = true,
+                    IsListVisible = true
                 },
                 new S_Field
                 {
@@ -77,8 +83,7 @@ public static class ContactsModuleDefinition
                     EntityTypeId = EntityId,
                     Name = "notes",
                     Label = "Notes",
-                    DataType = FieldDataType.Note,
-                    IsRequired = false
+                    DataType = EnumSFieldType.String
                 }
             }
         };
@@ -100,7 +105,7 @@ public static class ContactsModuleDefinition
                     TableId = EntityId,
                     Name = "firstName",
                     Label = "Prénom",
-                    DataType = FieldDataType.Text,
+                    DataType = EnumSFieldType.String,
                     IsRequired = true
                 },
                 new()
@@ -109,7 +114,7 @@ public static class ContactsModuleDefinition
                     TableId = EntityId,
                     Name = "lastName",
                     Label = "Nom",
-                    DataType = FieldDataType.Text,
+                    DataType = EnumSFieldType.String,
                     IsRequired = true
                 },
                 new()
@@ -118,7 +123,7 @@ public static class ContactsModuleDefinition
                     TableId = EntityId,
                     Name = "email",
                     Label = "Email",
-                    DataType = FieldDataType.Text
+                    DataType = EnumSFieldType.String
                 },
                 new()
                 {
@@ -126,7 +131,7 @@ public static class ContactsModuleDefinition
                     TableId = EntityId,
                     Name = "phone",
                     Label = "Téléphone",
-                    DataType = FieldDataType.Text
+                    DataType = EnumSFieldType.String
                 },
                 new()
                 {
@@ -134,7 +139,7 @@ public static class ContactsModuleDefinition
                     TableId = EntityId,
                     Name = "notes",
                     Label = "Notes",
-                    DataType = FieldDataType.Note
+                    DataType = EnumSFieldType.String
                 }
             },
             Views = new List<SViewDefinition>

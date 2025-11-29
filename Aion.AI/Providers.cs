@@ -344,7 +344,7 @@ Tu es l'orchestrateur AION. Génère STRICTEMENT du JSON compact sans texte addi
       "fields": [ { "name": "", "label": "", "type": "Text|Number|Decimal|Boolean|Date|DateTime|Lookup|File|Note|Json|Tags|Calculated" } ]
     }
   ],
-  "relations": [ { "fromEntity": "", "toEntity": "", "fromField": "", "kind": "OneToMany|ManyToOne|ManyToMany", "isBidirectional": false } ]
+  "relations": [ { "fromEntity": "", "toEntity": "", "fromField": "", "kind": "OneToMany|ManyToMany", "isBidirectional": false } ]
 }
 Description utilisateur: {{request.Prompt}}
 Ne réponds que par du JSON valide.
@@ -432,8 +432,8 @@ Ne réponds que par du JSON valide.
             {
                 continue;
             }
-            var toEntity = NormalizeName(relation.ToEntity) ?? relation.ToEntity ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(toEntity))
+            var target = module.EntityTypes.FirstOrDefault(e => IsSameName(e.Name, relation.ToEntity) || IsSameName(e.PluralName, relation.ToEntity));
+            if (target is null)
             {
                 continue;
             }
@@ -442,11 +442,10 @@ Ne réponds que par du JSON valide.
                 : RelationKind.OneToMany;
             source.Relations.Add(new S_Relation
             {
-                EntityTypeId = source.Id,
-                FromField = NormalizeName(relation.FromField) ?? "Relation",
-                ToEntity = toEntity,
+                FromEntityTypeId = source.Id,
+                ToEntityTypeId = target.Id,
                 Kind = kind,
-                IsBidirectional = relation.IsBidirectional ?? false
+                RoleName = NormalizeName(relation.FromField) ?? "Relation"
             });
         }
     }
@@ -466,8 +465,9 @@ Ne réponds que par du JSON valide.
                 DataType = MapFieldType(field.Type),
                 IsRequired = field.Required ?? false,
                 DefaultValue = field.DefaultValue,
-                LookupTarget = field.LookupTarget,
-                OptionsJson = field.OptionsJson
+                EnumValues = field.OptionsJson,
+                RelationTargetEntityTypeId = module.EntityTypes
+                    .FirstOrDefault(e => IsSameName(e.Name, field.LookupTarget) || IsSameName(e.PluralName, field.LookupTarget))?.Id
             };
         }
     }
@@ -479,16 +479,17 @@ Ne réponds que par du JSON valide.
                 EntityTypeId = entityType?.Id ?? Guid.Empty,
                 Name = "Titre",
                 Label = "Titre",
-                DataType = FieldDataType.Text,
-                IsRequired = true
+                DataType = EnumSFieldType.String,
+                IsRequired = true,
+                IsSearchable = true,
+                IsListVisible = true
             },
             new()
             {
                 EntityTypeId = entityType?.Id ?? Guid.Empty,
                 Name = "Créé le",
                 Label = "Créé le",
-                DataType = FieldDataType.DateTime,
-                IsRequired = false
+                DataType = EnumSFieldType.Date
             }
         ];
     private static S_Module BuildFallbackModule(string prompt, string? moduleNameHint)
@@ -513,20 +514,16 @@ Ne réponds que par du JSON valide.
         module.EntityTypes.Add(entity);
         return module;
     }
-    private static FieldDataType MapFieldType(string? type) => type?.ToLowerInvariant() switch
+    private static EnumSFieldType MapFieldType(string? type) => type?.ToLowerInvariant() switch
     {
-        "number" or "int" or "integer" => FieldDataType.Number,
-        "decimal" or "float" or "double" => FieldDataType.Decimal,
-        "bool" or "boolean" => FieldDataType.Boolean,
-        "date" => FieldDataType.Date,
-        "datetime" or "timestamp" => FieldDataType.DateTime,
-        "lookup" => FieldDataType.Lookup,
-        "file" or "image" or "photo" => FieldDataType.File,
-        "note" => FieldDataType.Note,
-        "json" => FieldDataType.Json,
-        "tags" or "tag" or "list" => FieldDataType.Tags,
-        "calculated" or "formula" => FieldDataType.Calculated,
-        _ => FieldDataType.Text
+        "number" or "int" or "integer" => EnumSFieldType.Int,
+        "decimal" or "float" or "double" => EnumSFieldType.Decimal,
+        "bool" or "boolean" => EnumSFieldType.Bool,
+        "date" or "datetime" or "timestamp" => EnumSFieldType.Date,
+        "lookup" or "relation" => EnumSFieldType.Relation,
+        "file" or "image" or "photo" => EnumSFieldType.File,
+        "enum" => EnumSFieldType.Enum,
+        _ => EnumSFieldType.String
     };
     private static string? NormalizeName(string? value)
     {
