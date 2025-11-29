@@ -42,10 +42,10 @@
         <div class="card">
             <h4>Actions rapides</h4>
             <div class="grid columns-2">
-                <button class="button secondary" @onclick="() => Navigation.NavigateTo("/modules")">📦 Modules</button>
-                <button class="button secondary" @onclick="() => Navigation.NavigateTo("/agenda/global")">🗓️ Agenda</button>
-                <button class="button secondary" @onclick="() => Navigation.NavigateTo("/dashboard/global")">📊 Dashboard</button>
-                <button class="button secondary" @onclick="() => Navigation.NavigateTo("/potager")">🌱 Potager</button>
+                <button class="button secondary" @onclick="NavigateToModules">📦 Modules</button>
+                <button class="button secondary" @onclick="NavigateToAgenda">🗓️ Agenda</button>
+                <button class="button secondary" @onclick="NavigateToDashboard">📊 Dashboard</button>
+                <button class="button secondary" @onclick="NavigateToPotager">🌱 Potager</button>
             </div>
         </div>
         <div class="card">
@@ -114,6 +114,11 @@
         var module = await ModuleDesigner.GenerateModuleFromPromptAsync(CurrentInput);
         Messages.Add(new ChatMessage("AION", $"Module généré: {module.Name} avec {module.EntityTypes.Count} entité(s).", false));
     }
+
+    private void NavigateToModules() => Navigation.NavigateTo("/modules");
+    private void NavigateToAgenda() => Navigation.NavigateTo("/agenda/global");
+    private void NavigateToDashboard() => Navigation.NavigateTo("/dashboard/global");
+    private void NavigateToPotager() => Navigation.NavigateTo("/potager");
 
     private void ToggleDictation()
     {

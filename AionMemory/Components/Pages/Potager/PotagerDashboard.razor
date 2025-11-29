@@ -19,7 +19,7 @@
                 <li>@evt.Start.ToLocalTime().ToString("g") - @evt.Title</li>
             }
         </ul>
-        <button class="button secondary" @onclick="() => Navigation.NavigateTo("/agenda/potager")">Ouvrir l'agenda</button>
+        <button class="button secondary" @onclick="OpenAgenda">Ouvrir l'agenda</button>
     </div>
     <div class="card">
         <h4>Widgets</h4>
@@ -36,4 +36,6 @@
         var now = DateTimeOffset.Now;
         UpcomingEvents = await AgendaService.GetEventsAsync(now, now.AddDays(14));
     }
+
+    private void OpenAgenda() => Navigation.NavigateTo("/agenda/potager");
 }
