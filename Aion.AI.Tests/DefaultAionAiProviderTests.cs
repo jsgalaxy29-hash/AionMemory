@@ -70,6 +70,21 @@ public class DefaultAionAiProviderTests
         Assert.Equal(moduleJson.Trim(), designer.LastGeneratedJson);
     }
 
+    [Fact]
+    public void Options_are_normalized_for_single_endpoint_configuration()
+    {
+        var options = new AionAiOptions
+        {
+            LlmEndpoint = " https://api.aion.local/v1 ",
+            Provider = "  openai  "
+        };
+
+        options.Normalize();
+
+        Assert.Equal("https://api.aion.local/v1", options.BaseEndpoint);
+        Assert.Equal("openai", options.Provider);
+    }
+
     private static DefaultAionAiProvider CreateProvider(AionAiOptions options)
     {
         var handler = new StubHttpMessageHandler();

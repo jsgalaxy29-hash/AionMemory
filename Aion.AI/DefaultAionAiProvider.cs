@@ -67,6 +67,7 @@ public sealed class DefaultAionAiProvider : ITextGenerationProvider, IEmbeddingP
 
         if (string.IsNullOrWhiteSpace(endpoint))
         {
+            _logger.LogWarning("Embedding endpoint not configured, returning deterministic stub vector.");
             return Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
         }
 
@@ -96,6 +97,7 @@ public sealed class DefaultAionAiProvider : ITextGenerationProvider, IEmbeddingP
 
         if (string.IsNullOrWhiteSpace(endpoint))
         {
+            _logger.LogWarning("Transcription endpoint not configured, returning stub result.");
             return new TranscriptionResult("Transcription stub", TimeSpan.Zero, _options.TranscriptionModel ?? _options.LlmModel);
         }
 
