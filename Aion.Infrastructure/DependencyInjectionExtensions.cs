@@ -60,6 +60,7 @@ public static class DependencyInjectionExtensions
         backupOptions.Validate(o => !string.IsNullOrWhiteSpace(o.BackupFolder), "The backup folder cannot be empty.");
         backupOptions.Validate(o => Directory.Exists(o.BackupFolder), "The configured backup folder must exist.");
         backupOptions.Validate(o => o.MaxDatabaseSizeBytes > 0, "The maximum database backup size must be greater than zero.");
+        backupOptions.Validate(o => o.BackupIntervalMinutes > 0, "The backup interval must be greater than zero minutes.");
         backupOptions.ValidateOnStart();
 
         services.AddDbContext<AionDbContext>((serviceProvider, dbOptions) =>
@@ -89,8 +90,12 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IPersonaEngine>(sp => sp.GetRequiredService<IAionPersonaEngine>());
         services.AddScoped<ISearchService, SearchService>();
         services.AddScoped<ICloudBackupService, CloudBackupService>();
+        services.AddScoped<IBackupService, BackupService>();
+        services.AddScoped<IRestoreService, RestoreService>();
+        services.AddScoped<ILogService, LogService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddHostedService<BackupCleanupService>();
+        services.AddHostedService<BackupSchedulerService>();
         services.AddScoped<ModuleDesignerService>();
         services.AddScoped<DemoModuleSeeder>();
 

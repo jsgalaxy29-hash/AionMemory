@@ -761,7 +761,8 @@ public sealed class CloudBackupService : ICloudBackupService
             CreatedAt = timestamp,
             Size = new FileInfo(destination).Length,
             Sha256 = await ComputeHashAsync(destination, cancellationToken).ConfigureAwait(false),
-            SourcePath = Path.GetFullPath(encryptedDatabasePath)
+            SourcePath = Path.GetFullPath(encryptedDatabasePath),
+            IsEncrypted = false
         };
 
         await using var manifestStream = new FileStream(Path.ChangeExtension(destination, ".json"), FileMode.Create, FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous);
