@@ -18,6 +18,10 @@ public static class DependencyInjectionExtensions
         {
             options.ConnectionString = ChooseValue(options.ConnectionString, configuration["ConnectionStrings:Aion"], configuration["Aion:Database:ConnectionString"]);
             options.EncryptionKey = ChooseValue(options.EncryptionKey, configuration["Aion:Database:EncryptionKey"], configuration["AION_DB_KEY"]);
+
+            // Ensure dev/test environments always have a working SQLCipher configuration
+            // even when configuration files are minimal.
+            SqliteCipherDevelopmentDefaults.ApplyDefaults(options);
         });
         databaseOptions.Validate(o => !string.IsNullOrWhiteSpace(o.ConnectionString), "The database connection string cannot be empty.");
         databaseOptions.Validate(o => !string.IsNullOrWhiteSpace(o.EncryptionKey), "The database encryption key cannot be empty.");
