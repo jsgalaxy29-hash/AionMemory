@@ -3,6 +3,7 @@
 @inject ITextGenerationProvider TextGen
 @inject IIntentDetector IntentDetector
 @inject IModuleDesigner ModuleDesigner
+@inject ISearchService SearchService
 @inject NavigationManager Navigation
 
 <div class="grid columns-2">
@@ -31,6 +32,22 @@
             <input class="input" placeholder="Posez une question à AION" @bind="CurrentInput" @bind:event="oninput" />
             <button class="button" @onclick="SendMessage">Envoyer</button>
         </div>
+        @if (IsSearching)
+        {
+            <p class="text-muted" style="margin-top:4px;">Recherche contextuelle…</p>
+        }
+        @if (SearchResults.Count > 0)
+        {
+            <div class="card" style="margin-top:8px;">
+                <h4 style="margin-bottom:4px;">Contextes trouvés</h4>
+                <ul style="margin:0; padding-left:18px;">
+                    @foreach (var hit in SearchResults.Take(5))
+                    {
+                        <li><strong>@hit.TargetType</strong> : @hit.Title <span class="text-muted">(@hit.Snippet)</span></li>
+                    }
+                </ul>
+            </div>
+        }
         <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
             @foreach (var suggestion in Suggestions)
             {
@@ -75,6 +92,8 @@
     private string IntentPreview { get; set; } = "Décrivez une tâche pour voir l'intention détectée.";
     private string DictationStatus { get; set; } = "Prêt pour l'enregistrement audio";
     private bool Listening { get; set; }
+    private bool IsSearching { get; set; }
+    private List<SearchHit> SearchResults { get; set; } = new();
     private static readonly string[] Suggestions =
     [
         "Créer un module Potager",
@@ -91,12 +110,29 @@
         }
 
         Messages.Add(new ChatMessage("Moi", CurrentInput, true));
+        IsSearching = true;
         var intent = await IntentDetector.DetectAsync(CurrentInput);
         IntentPreview = intent;
 
-        var reply = await TextGen.GenerateAsync(CurrentInput);
-        Messages.Add(new ChatMessage("AION", reply, false));
-        CurrentInput = string.Empty;
+        try
+        {
+            SearchResults = (await SearchService.SearchAsync(CurrentInput)).ToList();
+            var context = SearchResults.Take(5)
+                .Select(hit => $"- [{hit.TargetType}] {hit.Title}: {hit.Snippet}")
+                .ToList();
+
+            var prompt = context.Count == 0
+                ? CurrentInput
+                : $"Contexte:\n{string.Join("\n", context)}\n\nQuestion: {CurrentInput}";
+
+            var reply = await TextGen.GenerateAsync(prompt);
+            Messages.Add(new ChatMessage("AION", reply, false));
+        }
+        finally
+        {
+            IsSearching = false;
+            CurrentInput = string.Empty;
+        }
     }
 
     private void UseSuggestion(string suggestion)
