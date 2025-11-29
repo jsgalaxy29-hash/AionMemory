@@ -43,3 +43,4 @@ La configuration peut être passée via `appsettings.*`, variables d’environne
 ## Notes supplémentaires
 - La base de données et les dossiers sont créés dans le répertoire de données applicatif (`FileSystem.AppDataDirectory`).
 - Pour changer l’emplacement du stockage ou des sauvegardes, fournir des chemins absolus et existants via la configuration (sinon la validation échoue).
+- Une roadmap produit ainsi que les consignes de configuration/sécurité et les scénarios IA supportés sont documentés dans `AionDoc/README.md`.
