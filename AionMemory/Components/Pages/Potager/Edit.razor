@@ -12,13 +12,14 @@
 }
 else
 {
-    <DynamicForm Table="PotagerTable" DataEngine="DataEngine" OnSaved="Saved" />
+    <DynamicForm Table="PotagerTable" RecordId="EditingRecordId" DataEngine="DataEngine" OnSaved="Saved" />
 }
 
 @code {
     [Parameter] public string? RecordId { get; set; }
     private S_EntityType? PotagerEntity { get; set; }
     private STable? PotagerTable { get; set; }
+    private Guid? EditingRecordId { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -28,7 +29,14 @@ else
         {
             PotagerTable = await Tables.EnsureTableAsync(PotagerEntity);
         }
+
+        if (Guid.TryParse(RouteParamToGuid(RecordId), out var guid))
+        {
+            EditingRecordId = guid;
+        }
     }
+
+    private static string? RouteParamToGuid(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
     private void Saved(F_Record record)
     {
