@@ -705,7 +705,7 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("Reports");
                 });
 
-            modelBuilder.Entity("Aion.Domain.S_Table", b =>
+            modelBuilder.Entity("Aion.Domain.STable", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -726,6 +726,9 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
 
                     b.ToTable("Tables");
                 });
@@ -795,6 +798,9 @@ namespace Aion.Infrastructure.Migrations
 
                     b.HasIndex("TableId");
 
+                    b.HasIndex("TableId", "Name")
+                        .IsUnique();
+
                     b.ToTable("TableFields");
                 });
 
@@ -824,6 +830,9 @@ namespace Aion.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("TableId");
+
+                    b.HasIndex("TableId", "Name")
+                        .IsUnique();
 
                     b.ToTable("TableViews");
                 });
@@ -938,7 +947,7 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("INTEGER");
                 });
 
-            modelBuilder.Entity("Aion.Domain.S_Table", b =>
+            modelBuilder.Entity("Aion.Domain.STable", b =>
                 {
                     b.Property<string>("Description")
                         .HasMaxLength(512)
@@ -1061,7 +1070,7 @@ namespace Aion.Infrastructure.Migrations
 
             modelBuilder.Entity("Aion.Domain.SFieldDefinition", b =>
                 {
-                    b.HasOne("Aion.Domain.S_Table", null)
+                    b.HasOne("Aion.Domain.STable", null)
                         .WithMany("Fields")
                         .HasForeignKey("TableId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -1070,7 +1079,7 @@ namespace Aion.Infrastructure.Migrations
 
             modelBuilder.Entity("Aion.Domain.SViewDefinition", b =>
                 {
-                    b.HasOne("Aion.Domain.S_Table", null)
+                    b.HasOne("Aion.Domain.STable", null)
                         .WithMany("Views")
                         .HasForeignKey("TableId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -1101,7 +1110,7 @@ namespace Aion.Infrastructure.Migrations
                     b.Navigation("Links");
                 });
 
-            modelBuilder.Entity("Aion.Domain.S_Table", b =>
+            modelBuilder.Entity("Aion.Domain.STable", b =>
                 {
                     b.Navigation("Fields");
 

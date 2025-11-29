@@ -28,6 +28,12 @@ public static class SqliteConnectionFactory
             builder.Cache = SqliteCacheMode.Private;
         }
 
+        // Keep referential integrity enforced explicitly for SQLCipher deployments.
+        if (!builder.ForeignKeys)
+        {
+            builder.ForeignKeys = true;
+        }
+
         if (!string.IsNullOrWhiteSpace(options.EncryptionKey))
         {
             builder.Password = options.EncryptionKey;
