@@ -22,11 +22,11 @@ public static class PotagerSeedData
             PluralName = "Plantations",
             Fields =
             {
-                new S_Field { Name = "Name", Label = "Nom", DataType = EnumSFieldType.String, IsRequired = true, IsSearchable = true, IsListVisible = true },
-                new S_Field { Name = "Variety", Label = "Variété", DataType = EnumSFieldType.String, IsSearchable = true, IsListVisible = true },
-                new S_Field { Name = "PlantedOn", Label = "Date de plantation", DataType = EnumSFieldType.Date, IsListVisible = true },
-                new S_Field { Name = "Location", Label = "Emplacement", DataType = EnumSFieldType.String, IsSearchable = true, IsListVisible = true },
-                new S_Field { Name = "Notes", Label = "Notes", DataType = EnumSFieldType.String }
+                new S_Field { Name = "Name", Label = "Nom", DataType = FieldDataType.Text, IsRequired = true, IsSearchable = true, IsListVisible = true },
+                new S_Field { Name = "Variety", Label = "Variété", DataType = FieldDataType.Text, IsSearchable = true, IsListVisible = true },
+                new S_Field { Name = "PlantedOn", Label = "Date de plantation", DataType = FieldDataType.Date, IsListVisible = true },
+                new S_Field { Name = "Location", Label = "Emplacement", DataType = FieldDataType.Text, IsSearchable = true, IsListVisible = true },
+                new S_Field { Name = "Notes", Label = "Notes", DataType = FieldDataType.Text }
             }
         };
 
@@ -38,10 +38,10 @@ public static class PotagerSeedData
             PluralName = "Récoltes",
             Fields =
             {
-                new S_Field { Name = "PlantName", Label = "Plant", DataType = EnumSFieldType.Relation, RelationTargetEntityTypeId = plantEntity.Id, IsRequired = true, IsListVisible = true },
-                new S_Field { Name = "Quantity", Label = "Quantité", DataType = EnumSFieldType.Int, IsListVisible = true },
-                new S_Field { Name = "Unit", Label = "Unité", DataType = EnumSFieldType.String, IsListVisible = true },
-                new S_Field { Name = "HarvestDate", Label = "Date", DataType = EnumSFieldType.Date, IsListVisible = true }
+                new S_Field { Name = "PlantName", Label = "Plant", DataType = FieldDataType.Lookup, RelationTargetEntityTypeId = plantEntity.Id, IsRequired = true, IsListVisible = true },
+                new S_Field { Name = "Quantity", Label = "Quantité", DataType = FieldDataType.Number, IsListVisible = true },
+                new S_Field { Name = "Unit", Label = "Unité", DataType = FieldDataType.Text, IsListVisible = true },
+                new S_Field { Name = "HarvestDate", Label = "Date", DataType = FieldDataType.Date, IsListVisible = true }
             }
         };
 

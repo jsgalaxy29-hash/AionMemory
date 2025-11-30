@@ -92,7 +92,7 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IPredictService>(sp => sp.GetRequiredService<IAionPredictionService>());
         services.AddScoped<IAionPersonaEngine, PersonaEngine>();
         services.AddScoped<IPersonaEngine>(sp => sp.GetRequiredService<IAionPersonaEngine>());
-        services.AddScoped<ISearchService, SearchService>();
+        services.AddScoped<ISearchService, SemanticSearchService>();
         services.AddScoped<ICloudBackupService, CloudBackupService>();
         services.AddScoped<IBackupService, BackupService>();
         services.AddScoped<IRestoreService, RestoreService>();

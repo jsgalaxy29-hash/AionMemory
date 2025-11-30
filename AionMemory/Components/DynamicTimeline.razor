@@ -3,21 +3,28 @@
 <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:center;">
         <h5>Timeline</h5>
-        <button class="button secondary" @onclick="Refresh">Rafraîchir</button>
+        <button class="button secondary" @onclick="RefreshInternal">Rafraîchir</button>
     </div>
     <div class="timeline">
-        @if (Notes is null)
+        @if (Items is null)
         {
             <p>Chargement…</p>
         }
+        else if (!FilteredNotes.Any())
+        {
+            <p class="text-muted">Aucune note correspondant au contexte.</p>
+        }
         else
         {
-            @foreach (var note in Notes.OrderByDescending(n => n.CreatedAt))
+            @foreach (var note in FilteredNotes.OrderByDescending(n => n.CreatedAt))
             {
                 <div class="timeline-item">
-                    <strong>@note.Title</strong>
-                    <div>@note.Content</div>
-                    <small class="text-muted">@note.CreatedAt.ToLocalTime().ToString("g") (@note.Source)</small>
+                    <strong>@item.Title</strong>
+                    @if (!string.IsNullOrWhiteSpace(item.Content))
+                    {
+                        <div>@item.Content</div>
+                    }
+                    <small class="text-muted">@item.CreatedAt.ToLocalTime().ToString("g")</small>
                 </div>
             }
         }
@@ -26,19 +33,81 @@
 
 @code {
     [Parameter] public INoteService? NoteService { get; set; }
+    [Parameter] public string? TargetType { get; set; }
+    [Parameter] public Guid? TargetId { get; set; }
 
     private IEnumerable<S_Note>? Notes { get; set; }
+    private IEnumerable<S_Note> FilteredNotes => Notes?.Where(MatchesContext) ?? Enumerable.Empty<S_Note>();
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnParametersSetAsync()
     {
-        await Refresh();
+        await RefreshInternal();
     }
 
-    private async Task Refresh()
+    public async Task RefreshInternal()
     {
-        if (NoteService is not null)
+        await LoadTableMetadata();
+        Items = await LoadRecords();
+    }
+
+    private async Task LoadTableMetadata()
+    {
+        if (DataEngine is null || ResolvedTable is not null)
+        {
+            return;
+        }
+
+        if (TableId.HasValue)
+        {
+            LoadedTable = await DataEngine.GetTableAsync(TableId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(TableName))
+        {
+            var tables = await DataEngine.GetTablesAsync();
+            LoadedTable = tables.FirstOrDefault(t => string.Equals(t.Name, TableName, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private async Task<IReadOnlyList<TimelineItem>?> LoadRecords()
+    {
+        if (DataEngine is null || ResolvedTable is null)
         {
             Notes = await NoteService.GetChronologicalAsync();
+            StateHasChanged();
         }
+
+        var records = await DataEngine.QueryAsync(ResolvedTable.Id, equals: null);
+        return records
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(Take)
+            .Select(BuildTimelineItem)
+            .ToList();
+    }
+
+    private TimelineItem BuildTimelineItem(F_Record record)
+    {
+        var payload = DynamicListLogic.DeserializePayload(record.DataJson);
+        var title = ResolveTitle(payload);
+        var content = ResolveContent(payload);
+
+        return new TimelineItem(title, content, record.CreatedAt);
+    }
+
+    private bool MatchesContext(S_Note note)
+    {
+        if (TargetId is null && string.IsNullOrWhiteSpace(TargetType))
+        {
+            return true;
+        }
+
+        if (note.Links is null || note.Links.Count == 0)
+        {
+            return false;
+        }
+
+        return note.Links.Any(link =>
+            (string.IsNullOrWhiteSpace(TargetType) ||
+             string.Equals(link.TargetType, TargetType, StringComparison.OrdinalIgnoreCase)) &&
+            (!TargetId.HasValue || link.TargetId == TargetId.Value));
     }
 }

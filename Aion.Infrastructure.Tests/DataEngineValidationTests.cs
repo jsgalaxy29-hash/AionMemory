@@ -30,8 +30,8 @@ public class DataEngineValidationTests
             DisplayName = "Tâches",
             Fields = new List<SFieldDefinition>
             {
-                new() { Name = "Title", Label = "Titre", DataType = EnumSFieldType.String, IsRequired = true },
-                new() { Name = "Status", Label = "Statut", DataType = EnumSFieldType.String, DefaultValue = "todo" }
+                new() { Name = "Title", Label = "Titre", DataType = FieldDataType.Text, IsRequired = true },
+                new() { Name = "Status", Label = "Statut", DataType = FieldDataType.Text, DefaultValue = "todo" }
             }
         };
 
@@ -62,8 +62,8 @@ public class DataEngineValidationTests
             DisplayName = "Notes",
             Fields =
             {
-                new SFieldDefinition { Name = "Title", Label = "Titre", DataType = EnumSFieldType.String, IsRequired = true },
-                new SFieldDefinition { Name = "Category", Label = "Catégorie", DataType = EnumSFieldType.String }
+                new SFieldDefinition { Name = "Title", Label = "Titre", DataType = FieldDataType.Text, IsRequired = true },
+                new SFieldDefinition { Name = "Category", Label = "Catégorie", DataType = FieldDataType.Text }
             },
             Views =
             {

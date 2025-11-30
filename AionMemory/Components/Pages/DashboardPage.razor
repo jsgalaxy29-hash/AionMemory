@@ -1,9 +1,82 @@
 @page "/dashboard/{entity}"
 @inject IDashboardService DashboardService
+@inject IAgendaService AgendaService
+@inject INoteService NoteService
+@inject IDataEngine DataEngine
 
 <h3>Dashboard - @Entity</h3>
+<div class="grid columns-3" style="gap:12px;">
+    <div class="card">
+        <h4>Résumé des données</h4>
+        @if (!TableSummaries.Any())
+        {
+            <p class="text-muted">Aucune table disponible.</p>
+        }
+        else
+        {
+            <ul>
+                @foreach (var summary in TableSummaries)
+                {
+                    <li><strong>@summary.Name</strong> : @summary.Count enregistrement(s)</li>
+                }
+            </ul>
+        }
+    </div>
+    <div class="card">
+        <h4>Événements à venir</h4>
+        <ul>
+            @foreach (var evt in UpcomingEvents)
+            {
+                <li>@evt.Start.ToLocalTime().ToString("g") - @evt.Title</li>
+            }
+        </ul>
+    </div>
+    <div class="card">
+        <h4>Notes récentes</h4>
+        <ul>
+            @foreach (var note in RecentNotes)
+            {
+                <li><strong>@note.Title</strong> - @note.CreatedAt.ToLocalTime().ToString("g")</li>
+            }
+        </ul>
+    </div>
+</div>
+
 <Dashboard DashboardService="DashboardService" />
 
 @code {
     [Parameter] public string? Entity { get; set; }
+
+    private List<(string Name, int Count)> TableSummaries { get; set; } = new();
+    private IEnumerable<S_Event> UpcomingEvents { get; set; } = Array.Empty<S_Event>();
+    private IEnumerable<S_Note> RecentNotes { get; set; } = Array.Empty<S_Note>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTables();
+        await LoadAgenda();
+        await LoadNotes();
+    }
+
+    private async Task LoadTables()
+    {
+        var tables = await DataEngine.GetTablesAsync();
+        TableSummaries = new List<(string Name, int Count)>();
+        foreach (var table in tables)
+        {
+            var records = await DataEngine.QueryAsync(table.Id);
+            TableSummaries.Add((table.DisplayName ?? table.Name, records.Count()));
+        }
+    }
+
+    private async Task LoadAgenda()
+    {
+        var now = DateTimeOffset.Now;
+        UpcomingEvents = await AgendaService.GetEventsAsync(now, now.AddDays(7));
+    }
+
+    private async Task LoadNotes()
+    {
+        RecentNotes = await NoteService.GetChronologicalAsync(10);
+    }
 }

@@ -58,11 +58,13 @@
     <div class="grid columns-1" style="gap:12px;">
         <div class="card">
             <h4>Actions rapides</h4>
-            <div class="grid columns-2">
+            <div class="grid columns-3">
                 <button class="button secondary" @onclick="NavigateToModules">📦 Modules</button>
                 <button class="button secondary" @onclick="NavigateToAgenda">🗓️ Agenda</button>
                 <button class="button secondary" @onclick="NavigateToDashboard">📊 Dashboard</button>
                 <button class="button secondary" @onclick="NavigateToPotager">🌱 Potager</button>
+                <button class="button secondary" @onclick="NavigateToMarketplace">🛒 Marketplace</button>
+                <button class="button secondary" @onclick="NavigateToMarketplace">👁️ Vision</button>
             </div>
         </div>
         <div class="card">
@@ -151,10 +153,11 @@
         Messages.Add(new ChatMessage("AION", $"Module généré: {moduleResult.Module.Name} avec {moduleResult.Module.EntityTypes.Count} entité(s).", false));
     }
 
-    private void NavigateToModules() => Navigation.NavigateTo("/modules");
+    private void NavigateToModules() => Navigation.NavigateTo("/modules/home");
     private void NavigateToAgenda() => Navigation.NavigateTo("/agenda/global");
     private void NavigateToDashboard() => Navigation.NavigateTo("/dashboard/global");
     private void NavigateToPotager() => Navigation.NavigateTo("/potager");
+    private void NavigateToMarketplace() => Navigation.NavigateTo("/marketplace");
 
     private void ToggleDictation()
     {

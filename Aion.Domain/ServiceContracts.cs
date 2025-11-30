@@ -57,6 +57,7 @@ public interface IFileStorageService
 {
     Task<F_File> SaveAsync(string fileName, Stream content, string mimeType, CancellationToken cancellationToken = default);
     Task<Stream> OpenAsync(Guid fileId, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid fileId, CancellationToken cancellationToken = default);
     Task<F_FileLink> LinkAsync(Guid fileId, string targetType, Guid targetId, string? relation = null, CancellationToken cancellationToken = default);
     Task<IEnumerable<F_File>> GetForAsync(string targetType, Guid targetId, CancellationToken cancellationToken = default);
 }
