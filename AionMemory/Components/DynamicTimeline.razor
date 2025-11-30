@@ -2,21 +2,21 @@
 
 <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h5>@ResolvedTable?.DisplayName ?? "Timeline"</h5>
-        <button class="button secondary" @onclick="Refresh">Rafraîchir</button>
+        <h5>Timeline</h5>
+        <button class="button secondary" @onclick="RefreshInternal">Rafraîchir</button>
     </div>
     <div class="timeline">
         @if (Items is null)
         {
             <p>Chargement…</p>
         }
-        else if (!Items.Any())
+        else if (!FilteredNotes.Any())
         {
-            <p class="text-muted">Aucun élément à afficher.</p>
+            <p class="text-muted">Aucune note correspondant au contexte.</p>
         }
         else
         {
-            @foreach (var item in Items)
+            @foreach (var note in FilteredNotes.OrderByDescending(n => n.CreatedAt))
             {
                 <div class="timeline-item">
                     <strong>@item.Title</strong>
@@ -32,22 +32,19 @@
 </div>
 
 @code {
-    [Parameter] public IDataEngine? DataEngine { get; set; }
-    [Parameter] public Guid? TableId { get; set; }
-    [Parameter] public string? TableName { get; set; }
-    [Parameter] public string? TitleField { get; set; }
-    [Parameter] public int Take { get; set; } = 25;
+    [Parameter] public INoteService? NoteService { get; set; }
+    [Parameter] public string? TargetType { get; set; }
+    [Parameter] public Guid? TargetId { get; set; }
 
-    private IReadOnlyList<TimelineItem>? Items { get; set; }
-    private STable? LoadedTable { get; set; }
-    private STable? ResolvedTable => LoadedTable;
+    private IEnumerable<S_Note>? Notes { get; set; }
+    private IEnumerable<S_Note> FilteredNotes => Notes?.Where(MatchesContext) ?? Enumerable.Empty<S_Note>();
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnParametersSetAsync()
     {
-        await Refresh();
+        await RefreshInternal();
     }
 
-    private async Task Refresh()
+    public async Task RefreshInternal()
     {
         await LoadTableMetadata();
         Items = await LoadRecords();
@@ -75,7 +72,8 @@
     {
         if (DataEngine is null || ResolvedTable is null)
         {
-            return null;
+            Notes = await NoteService.GetChronologicalAsync();
+            StateHasChanged();
         }
 
         var records = await DataEngine.QueryAsync(ResolvedTable.Id, equals: null);
@@ -95,38 +93,21 @@
         return new TimelineItem(title, content, record.CreatedAt);
     }
 
-    private string ResolveTitle(IReadOnlyDictionary<string, object?> payload)
+    private bool MatchesContext(S_Note note)
     {
-        if (!string.IsNullOrWhiteSpace(TitleField) && payload.TryGetValue(TitleField, out var forced) && forced is not null)
+        if (TargetId is null && string.IsNullOrWhiteSpace(TargetType))
         {
-            return forced.ToString() ?? string.Empty;
+            return true;
         }
 
-        var textField = ResolvedTable?.Fields.FirstOrDefault(f => f.IsListVisible) ?? ResolvedTable?.Fields.FirstOrDefault();
-        if (textField is not null && payload.TryGetValue(textField.Name, out var title) && title is not null)
+        if (note.Links is null || note.Links.Count == 0)
         {
-            return title.ToString() ?? string.Empty;
+            return false;
         }
 
-        return "Enregistrement";
+        return note.Links.Any(link =>
+            (string.IsNullOrWhiteSpace(TargetType) ||
+             string.Equals(link.TargetType, TargetType, StringComparison.OrdinalIgnoreCase)) &&
+            (!TargetId.HasValue || link.TargetId == TargetId.Value));
     }
-
-    private static string ResolveContent(IReadOnlyDictionary<string, object?> payload)
-    {
-        var noteField = payload.FirstOrDefault(kv => kv.Key.Contains("note", StringComparison.OrdinalIgnoreCase) && kv.Value is not null);
-        if (!string.IsNullOrWhiteSpace(noteField.Key))
-        {
-            return noteField.Value?.ToString() ?? string.Empty;
-        }
-
-        var descriptionField = payload.FirstOrDefault(kv => kv.Key.Contains("description", StringComparison.OrdinalIgnoreCase) && kv.Value is not null);
-        if (!string.IsNullOrWhiteSpace(descriptionField.Key))
-        {
-            return descriptionField.Value?.ToString() ?? string.Empty;
-        }
-
-        return string.Empty;
-    }
-
-    private sealed record TimelineItem(string Title, string? Content, DateTimeOffset CreatedAt);
 }

@@ -1,5 +1,6 @@
 @page "/agenda/{entity}"
 @inject IAgendaService AgendaService
+@inject INoteService NoteService
 
 <h3>Agenda - @Entity</h3>
 <div class="card">
@@ -34,7 +35,7 @@
     protected override async Task OnInitializedAsync()
     {
         var now = DateTimeOffset.Now;
-        Events = (await AgendaService.GetEventsAsync(now.AddDays(-1), now.AddDays(30))).ToList();
+        Events = (await AgendaService.GetEventsAsync(now.AddDays(-1), now.AddDays(30))).Where(MatchesEntity).ToList();
     }
 
     private async Task AddEvent()
@@ -42,8 +43,46 @@
         var evt = await AgendaService.AddEventAsync(new S_Event
         {
             Title = $"Rappel {Entity}",
-            Start = DateTimeOffset.Now.AddDays(1)
+            Start = DateTimeOffset.Now.AddDays(1),
+            Links = BuildEventLinks().ToList()
         });
-        Events.Add(evt);
+        if (MatchesEntity(evt))
+        {
+            Events.Add(evt);
+        }
+
+        if (NoteService is not null && !string.IsNullOrWhiteSpace(Entity))
+        {
+            await NoteService.CreateTextNoteAsync(evt.Title, evt.Description ?? evt.Title, new[]
+            {
+                new J_Note_Link
+                {
+                    TargetType = Entity!,
+                    TargetId = Guid.Empty
+                }
+            });
+        }
+    }
+
+    private IEnumerable<J_Event_Link> BuildEventLinks()
+    {
+        if (!string.IsNullOrWhiteSpace(Entity))
+        {
+            yield return new J_Event_Link
+            {
+                TargetType = Entity!,
+                TargetId = Guid.Empty
+            };
+        }
+    }
+
+    private bool MatchesEntity(S_Event evt)
+    {
+        if (string.IsNullOrWhiteSpace(Entity))
+        {
+            return true;
+        }
+
+        return evt.Links.Any(l => string.Equals(l.TargetType, Entity, StringComparison.OrdinalIgnoreCase));
     }
 }

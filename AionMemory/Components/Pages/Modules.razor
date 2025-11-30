@@ -2,6 +2,8 @@
 @inject IMetadataService Metadata
 @inject ModuleDesignerService ModuleDesigner
 @inject NavigationManager Navigation
+@inject IDataEngine DataEngine
+@inject AionMemory.Services.ITableDefinitionService Tables
 
 <h3>Modules</h3>
 <div class="card" style="margin-bottom:12px;">
@@ -39,7 +41,7 @@
                     {
                         <div class="stat-box">
                             <div style="font-weight:600">@entity.Name</div>
-                            <small class="text-muted">@entity.Fields.Count champ(s)</small>
+                            <small class="text-muted">@entity.Fields.Count champ(s) · @GetCount(entity.Id) enregistrement(s)</small>
                         </div>
                     }
                 </div>
@@ -54,6 +56,7 @@
 
 @code {
     private IEnumerable<S_Module>? ModuleList;
+    private readonly Dictionary<Guid, int> RecordCounts = new();
     private string Search { get; set; } = string.Empty;
     private string Filter { get; set; } = "recent";
 
@@ -65,6 +68,7 @@
     protected override async Task OnInitializedAsync()
     {
         ModuleList = await Metadata.GetModulesAsync();
+        await LoadRecordCounts();
     }
 
     private void OpenModule(Guid id) => Navigation.NavigateTo($"/module/{id}");
@@ -78,7 +82,25 @@
     {
         var module = await ModuleDesigner.CreateModuleFromPromptAsync("Assistant quotidien");
         ModuleList = (ModuleList ?? Array.Empty<S_Module>()).Append(module).ToArray();
+        await LoadRecordCounts();
     }
 
     private void NavigateToBuilder() => Navigation.NavigateTo("/module-builder");
+
+    private async Task LoadRecordCounts()
+    {
+        if (ModuleList is null)
+        {
+            return;
+        }
+
+        foreach (var entity in ModuleList.SelectMany(m => m.EntityTypes))
+        {
+            await Tables.EnsureTableAsync(entity);
+            var records = await DataEngine.QueryAsync(entity.Id);
+            RecordCounts[entity.Id] = records.Count();
+        }
+    }
+
+    private int GetCount(Guid entityId) => RecordCounts.TryGetValue(entityId, out var count) ? count : 0;
 }
