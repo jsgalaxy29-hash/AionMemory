@@ -885,6 +885,33 @@ public sealed class FileStorageService : IFileStorageService
         return new MemoryStream(decrypted, writable: false);
     }
 
+    public async Task DeleteAsync(Guid fileId, CancellationToken cancellationToken = default)
+    {
+        var file = await _db.Files.FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken).ConfigureAwait(false);
+        if (file is null)
+        {
+            _logger.LogWarning("Attempted to delete missing file {FileId}", fileId);
+            return;
+        }
+
+        var links = await _db.FileLinks
+            .Where(l => l.FileId == fileId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        _db.FileLinks.RemoveRange(links);
+        _db.Files.Remove(file);
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        if (File.Exists(file.StoragePath))
+        {
+            File.Delete(file.StoragePath);
+        }
+
+        await _search.RemoveAsync("File", fileId, cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("File {FileId} deleted with {LinkCount} link(s) removed", fileId, links.Count);
+    }
+
     public async Task<F_FileLink> LinkAsync(Guid fileId, string targetType, Guid targetId, string? relation = null, CancellationToken cancellationToken = default)
     {
         var link = new F_FileLink
