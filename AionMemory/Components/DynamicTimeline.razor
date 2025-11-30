@@ -6,7 +6,7 @@
         <button class="button secondary" @onclick="RefreshInternal">Rafraîchir</button>
     </div>
     <div class="timeline">
-        @if (Notes is null)
+        @if (Items is null)
         {
             <p>Chargement…</p>
         }
@@ -19,9 +19,12 @@
             @foreach (var note in FilteredNotes.OrderByDescending(n => n.CreatedAt))
             {
                 <div class="timeline-item">
-                    <strong>@note.Title</strong>
-                    <div>@note.Content</div>
-                    <small class="text-muted">@note.CreatedAt.ToLocalTime().ToString("g") (@note.Source)</small>
+                    <strong>@item.Title</strong>
+                    @if (!string.IsNullOrWhiteSpace(item.Content))
+                    {
+                        <div>@item.Content</div>
+                    }
+                    <small class="text-muted">@item.CreatedAt.ToLocalTime().ToString("g")</small>
                 </div>
             }
         }
@@ -43,11 +46,51 @@
 
     public async Task RefreshInternal()
     {
-        if (NoteService is not null)
+        await LoadTableMetadata();
+        Items = await LoadRecords();
+    }
+
+    private async Task LoadTableMetadata()
+    {
+        if (DataEngine is null || ResolvedTable is not null)
+        {
+            return;
+        }
+
+        if (TableId.HasValue)
+        {
+            LoadedTable = await DataEngine.GetTableAsync(TableId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(TableName))
+        {
+            var tables = await DataEngine.GetTablesAsync();
+            LoadedTable = tables.FirstOrDefault(t => string.Equals(t.Name, TableName, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private async Task<IReadOnlyList<TimelineItem>?> LoadRecords()
+    {
+        if (DataEngine is null || ResolvedTable is null)
         {
             Notes = await NoteService.GetChronologicalAsync();
             StateHasChanged();
         }
+
+        var records = await DataEngine.QueryAsync(ResolvedTable.Id, equals: null);
+        return records
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(Take)
+            .Select(BuildTimelineItem)
+            .ToList();
+    }
+
+    private TimelineItem BuildTimelineItem(F_Record record)
+    {
+        var payload = DynamicListLogic.DeserializePayload(record.DataJson);
+        var title = ResolveTitle(payload);
+        var content = ResolveContent(payload);
+
+        return new TimelineItem(title, content, record.CreatedAt);
     }
 
     private bool MatchesContext(S_Note note)
