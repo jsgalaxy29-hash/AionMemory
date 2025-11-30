@@ -29,7 +29,8 @@ public static class SqliteConnectionFactory
         }
 
         // Keep referential integrity enforced explicitly for SQLCipher deployments.
-        if ((bool)!builder.ForeignKeys)
+        
+        if (builder.ForeignKeys == null || (bool)!builder.ForeignKeys)
         {
             builder.ForeignKeys = true;
         }
