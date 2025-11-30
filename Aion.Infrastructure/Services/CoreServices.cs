@@ -202,10 +202,13 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             }
         }
 
-        return await query
-            .OrderByDescending(r => r.CreatedAt.UtcDateTime)
+        var results = await query
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        return results
+            .OrderByDescending(r => r.CreatedAt)
+            .ToList();
     }
 
     public async Task<IEnumerable<ResolvedRecord>> QueryResolvedAsync(Guid entityTypeId, string? filter = null, IDictionary<string, string?>? equals = null, CancellationToken cancellationToken = default)
@@ -699,12 +702,17 @@ public sealed class NoteService : IAionNoteService, INoteService
     }
 
     public async Task<IEnumerable<S_Note>> GetChronologicalAsync(int take = 50, CancellationToken cancellationToken = default)
-        => await _db.Notes
+    {
+        var notes = await _db.Notes
             .Include(n => n.Links)
-            .OrderByDescending(n => n.CreatedAt.UtcDateTime)
-            .Take(take)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        return notes
+            .OrderByDescending(n => n.CreatedAt)
+            .Take(take)
+            .ToList();
+    }
 
     private S_Note BuildNote(string title, string content, NoteSourceType source, IEnumerable<J_Note_Link>? links, Guid? audioFileId)
     {
@@ -799,12 +807,13 @@ public sealed class AgendaService : IAionAgendaService, IAgendaService
     }
 
     public async Task<IEnumerable<S_Event>> GetEventsAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default)
-        => await _db.Events
+        => (await _db.Events
             .Where(e => e.Start >= from && e.Start <= to)
             .Include(e => e.Links)
-            .OrderBy(e => e.Start.UtcDateTime)
             .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+            .ConfigureAwait(false))
+            .OrderBy(e => e.Start)
+            .ToList();
 
     public async Task<IEnumerable<S_Event>> GetPendingRemindersAsync(DateTimeOffset asOf, CancellationToken cancellationToken = default)
         => await _db.Events.Where(e => !e.IsCompleted && e.ReminderAt.HasValue && e.ReminderAt <= asOf)
@@ -1324,10 +1333,13 @@ public sealed class LifeService : IAionLifeLogService, ILifeService
             query = query.Where(h => h.OccurredAt <= to.Value);
         }
 
-        return await query
-            .OrderByDescending(h => h.OccurredAt.UtcDateTime)
+        var results = await query
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        return results
+            .OrderByDescending(h => h.OccurredAt)
+            .ToList();
     }
 }
 
