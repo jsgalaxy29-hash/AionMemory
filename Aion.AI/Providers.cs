@@ -282,14 +282,17 @@ public sealed class IntentRecognizer : IIntentDetector
         var contextLines = request.Context.Count == 0
             ? "aucun contexte"
             : string.Join(", ", request.Context.Select(kvp => $"{kvp.Key}={kvp.Value}"));
-        var prompt = $@"Tu es l'orchestrateur d'intentions AION. Identifie l'intention principale de l'utilisateur.
-Contraintes :
-- Réponds UNIQUEMENT avec un JSON compact sans texte additionnel.
-- Schéma attendu: {{""intent"":""",""parameters"":{{}},""confidence"":0.0}}
-- Intentions typiques: chat, create, read, update, delete, design_module, report, agenda, note.
-Entrée: ""{request.Input}""
-Contexte: {contextLines}
-Locale: {request.Locale}";
+        var prompt = string.Join("\n", new[]
+        {
+            "Tu es l'orchestrateur d'intentions AION. Identifie l'intention principale de l'utilisateur.",
+            "Contraintes :",
+            "- Réponds UNIQUEMENT avec un JSON compact sans texte additionnel.",
+            "- Schéma attendu: {\"intent\":\"\",\"parameters\":{},\"confidence\":0.0}",
+            "- Intentions typiques: chat, create, read, update, delete, design_module, report, agenda, note.",
+            $"Entrée: \"{request.Input}\"",
+            $"Contexte: {contextLines}",
+            $"Locale: {request.Locale}"
+        });
 
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
         var json = JsonHelper.ExtractJson(response.Content);
