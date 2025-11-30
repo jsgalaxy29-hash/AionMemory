@@ -5,6 +5,7 @@ using Aion.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -120,6 +121,14 @@ public static class DependencyInjectionExtensions
         {
             logger.LogWarning("Modules table missing after migrations; forcing schema creation and re-running migrations.");
             await context.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
+            await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!await TableExistsAsync(context, "Modules", cancellationToken).ConfigureAwait(false))
+        {
+            logger.LogWarning("Modules table still missing; recreating tables via relational database creator.");
+            var databaseCreator = context.Database.GetService<IRelationalDatabaseCreator>();
+            await databaseCreator.CreateTablesAsync(cancellationToken).ConfigureAwait(false);
             await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
         }
 
