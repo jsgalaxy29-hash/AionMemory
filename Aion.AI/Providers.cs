@@ -282,16 +282,14 @@ public sealed class IntentRecognizer : IIntentDetector
         var contextLines = request.Context.Count == 0
             ? "aucun contexte"
             : string.Join(", ", request.Context.Select(kvp => $"{kvp.Key}={kvp.Value}"));
-        var prompt = $$"""
-Tu es l'orchestrateur d'intentions AION. Identifie l'intention principale de l'utilisateur.
+        var prompt = $@"Tu es l'orchestrateur d'intentions AION. Identifie l'intention principale de l'utilisateur.
 Contraintes :
 - Réponds UNIQUEMENT avec un JSON compact sans texte additionnel.
-- Schéma attendu: {"intent":"","parameters":{},"confidence":0.0}
+- Schéma attendu: {{""intent"":""",""parameters"":{{}},""confidence"":0.0}}
 - Intentions typiques: chat, create, read, update, delete, design_module, report, agenda, note.
-Entrée: "{{request.Input}}"
-Contexte: {{contextLines}}
-Locale: {{request.Locale}}
-""";
+Entrée: ""{request.Input}""
+Contexte: {contextLines}
+Locale: {request.Locale}";
 
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
         var json = JsonHelper.ExtractJson(response.Content);
@@ -375,23 +373,21 @@ public sealed class ModuleDesigner : IModuleDesigner
     public string? LastGeneratedJson { get; private set; }
     public async Task<ModuleDesignResult> GenerateModuleAsync(ModuleDesignRequest request, CancellationToken cancellationToken = default)
     {
-        var generationPrompt = $$"""
-Tu es l'orchestrateur AION. Génère STRICTEMENT du JSON compact sans texte additionnel avec ce schéma :
-{
-  "module": { "name": "", "pluralName": "", "icon": "" },
-  "entities": [
-    {
-      "name": "",
-      "pluralName": "",
-      "icon": "",
-      "fields": [ { "name": "", "label": "", "type": "Text|Number|Decimal|Boolean|Date|DateTime|Lookup|File|Note|Json|Tags|Calculated" } ]
-    }
+        var generationPrompt = $@"Tu es l'orchestrateur AION. Génère STRICTEMENT du JSON compact sans texte additionnel avec ce schéma :
+{{
+  ""module"": {{ ""name"": """", ""pluralName"": """", ""icon"": """" }},
+  ""entities"": [
+    {{
+      ""name"": """",
+      ""pluralName"": """",
+      ""icon"": """",
+      ""fields"": [ {{ ""name"": """", ""label"": """", ""type"": ""Text|Number|Decimal|Boolean|Date|DateTime|Lookup|File|Note|Json|Tags|Calculated"" }} ]
+    }}
   ],
-  "relations": [ { "fromEntity": "", "toEntity": "", "fromField": "", "kind": "OneToMany|ManyToMany", "isBidirectional": false } ]
-}
-Description utilisateur: {{request.Prompt}}
-Ne réponds que par du JSON valide.
-""";
+  ""relations"": [ {{ ""fromEntity"": """", ""toEntity"": """", ""fromField"": """", ""kind"": ""OneToMany|ManyToMany"", ""isBidirectional"": false }} ]
+}}
+Description utilisateur: {request.Prompt}
+Ne réponds que par du JSON valide.";
         var response = await _provider.GenerateAsync(generationPrompt, cancellationToken).ConfigureAwait(false);
         LastGeneratedJson = JsonHelper.ExtractJson(response.Content);
         try
@@ -638,13 +634,11 @@ public sealed class CrudInterpreter : ICrudInterpreter
     {
         var fieldDescriptions = request.Module.EntityTypes
             .SelectMany(e => e.Fields.Select(f => $"{e.Name}.{f.Name}:{f.DataType}"));
-        var prompt = $$"""
-Tu traduis les instructions utilisateur en opérations CRUD structurées.
-Renvoie UNIQUEMENT un JSON respectant {"action":"create|update|delete|query","filters":{},"payload":{}}.
-Module: {{request.Module.Name}}
-Champs disponibles: {{string.Join(", ", fieldDescriptions)}}
-Requête: {{request.Intent}}
-""";
+        var prompt = $@"Tu traduis les instructions utilisateur en opérations CRUD structurées.
+Renvoie UNIQUEMENT un JSON respectant {{""action"":""create|update|delete|query"",""filters"":{{}},""payload"":{{}}}}.
+Module: {request.Module.Name}
+Champs disponibles: {string.Join(", ", fieldDescriptions)}
+Requête: {request.Intent}";
 
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
         var cleaned = JsonHelper.ExtractJson(response.Content);
@@ -718,9 +712,7 @@ public sealed class AgendaInterpreter : IAgendaInterpreter
     }
     public async Task<S_Event> CreateEventAsync(string input, CancellationToken cancellationToken = default)
     {
-        var prompt = $$"""
-Génère un événement JSON {"title":"","start":"ISO","end":"ISO|null","reminder":"ISO|null"} pour: {{input}}
-""";
+        var prompt = $@"Génère un événement JSON {{""title"":"""",""start"":""ISO"",""end"":""ISO|null"",""reminder"":""ISO|null""}} pour: {input}";
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
         try
         {
@@ -762,12 +754,10 @@ public sealed class NoteInterpreter : INoteInterpreter
     }
     public async Task<S_Note> RefineNoteAsync(string title, string content, CancellationToken cancellationToken = default)
     {
-        var prompt = $$"""
-Nettoie et synthétise la note suivante. Réponds uniquement avec le texte amélioré.
-Titre: {{title}}
+        var prompt = $@"Nettoie et synthétise la note suivante. Réponds uniquement avec le texte amélioré.
+Titre: {title}
 Contenu:
-{{content}}
-""";
+{content}";
         var refined = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
         return new S_Note { Title = title, Content = refined.Content, Source = NoteSourceType.Generated, CreatedAt = DateTimeOffset.UtcNow };
     }
@@ -782,12 +772,10 @@ public sealed class ReportInterpreter : IReportInterpreter
     }
     public async Task<ReportBuildResult> BuildReportAsync(ReportBuildRequest request, CancellationToken cancellationToken = default)
     {
-        var prompt = $$"""
-Génère la définition d'un rapport AION. Réponds UNIQUEMENT en JSON compact suivant {"query":"SQL ou pseudo-SQL","visualization":"table|chart|number|list"}.
-Description: {{request.Description}}
-ModuleId: {{request.ModuleId}}
-Préférence de visualisation: {{request.PreferredVisualization ?? "none"}}
-""";
+        var prompt = $@"Génère la définition d'un rapport AION. Réponds UNIQUEMENT en JSON compact suivant {{""query"":""SQL ou pseudo-SQL"",""visualization"":""table|chart|number|list""}}.
+Description: {request.Description}
+ModuleId: {request.ModuleId}
+Préférence de visualisation: {request.PreferredVisualization ?? "none"}";
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
         var cleaned = JsonHelper.ExtractJson(response.Content);
         if (TryParseReport(request, cleaned, out var parsed))

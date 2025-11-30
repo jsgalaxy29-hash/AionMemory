@@ -21,10 +21,10 @@ public sealed class SqliteEncryptionInterceptor : DbConnectionInterceptor
         base.ConnectionOpened(connection, eventData);
     }
 
-    public override async ValueTask ConnectionOpenedAsync(DbConnection connection, ConnectionEndEventData eventData, CancellationToken cancellationToken = default)
+    public override Task ConnectionOpenedAsync(DbConnection connection, ConnectionEndEventData eventData, CancellationToken cancellationToken = default)
     {
         ApplyEncryptionPragmas(connection);
-        await base.ConnectionOpenedAsync(connection, eventData, cancellationToken).ConfigureAwait(false);
+        return base.ConnectionOpenedAsync(connection, eventData, cancellationToken);
     }
 
     private void ApplyEncryptionPragmas(DbConnection connection)
