@@ -34,6 +34,10 @@ L’application utilise des options strictement validées au démarrage :
 
 La configuration peut être passée via `appsettings.*`, variables d’environnement (`Aion:*`) ou `ConnectionStrings:Aion`. Toute valeur manquante ou chemin inexistant bloque le démarrage pour éviter une configuration partielle.
 
+### Configuration IA
+- Des exemples prêts à l’emploi sont fournis dans `appsettings.Mistral.json` et `appsettings.OpenAI.json` (à dupliquer en `appsettings.Development.json` ou en variables d’environnement).
+- Pour les fournisseurs HTTP génériques (Mistral, etc.), veille à conserver un `/` final dans `BaseEndpoint` (`https://api.mistral.ai/v1/`), sinon l’URL générée serait tronquée (`https://api.mistral.ai/chat/completions` au lieu de `https://api.mistral.ai/v1/chat/completions`).
+
 ## Structure des projets
 - **Aion.Domain** : entités, contrats et événements.
 - **Aion.Infrastructure** : EF Core + SQLite chiffré, services métiers (stockage, backup, marketplace, recherche…).
