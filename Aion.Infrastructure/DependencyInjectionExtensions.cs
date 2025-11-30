@@ -118,8 +118,14 @@ public static class DependencyInjectionExtensions
 
         if (!await TableExistsAsync(context, "Modules", cancellationToken).ConfigureAwait(false))
         {
-            logger.LogWarning("Modules table missing after migrations; forcing schema creation.");
+            logger.LogWarning("Modules table missing after migrations; forcing schema creation and re-running migrations.");
             await context.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
+            await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!await TableExistsAsync(context, "Modules", cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("Database schema could not be created; Modules table is still missing.");
         }
 
         var demoSeeder = scope.ServiceProvider.GetRequiredService<DemoModuleSeeder>();
