@@ -1,0 +1,327 @@
+@page "/marketplace"
+@using System.IO
+@inject ITemplateService Templates
+@inject IMetadataService Metadata
+@inject IFileStorageService FileStorage
+@inject IAionVisionService Vision
+@inject NavigationManager Navigation
+
+<h3>Marketplace & Templates</h3>
+<p class="text-muted">Importez ou exportez vos modules et testez rapidement la vision IA sur vos fichiers.</p>
+
+@if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <div class="card" style="border:1px solid #e74c3c; background:#fff4f2;">
+        <strong>Erreur :</strong> @ErrorMessage
+    </div>
+}
+
+<div class="grid columns-2" style="gap:12px;">
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div>
+                <h4 style="margin:0;">Marketplace locale</h4>
+                <p class="text-muted" style="margin:0;">Templates présents dans le dossier marketplace.</p>
+            </div>
+            <button class="button secondary" @onclick="LoadMarketplace" disabled="@IsLoadingMarketplace">
+                @(IsLoadingMarketplace ? "Chargement…" : "Rafraîchir")
+            </button>
+        </div>
+
+        @if (IsLoadingMarketplace)
+        {
+            <p>Chargement des templates…</p>
+        }
+        else if (MarketplaceItems.Count == 0)
+        {
+            <p>Aucun template détecté. Exportez un module ou ajoutez un fichier .json dans le dossier marketplace.</p>
+        }
+        else
+        {
+            <div class="grid columns-1" style="gap:8px;">
+                @foreach (var item in MarketplaceItems)
+                {
+                    <div class="card" style="background:#fafafa;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <div>
+                                <strong>@item.Name</strong>
+                                <p class="text-muted" style="margin:0;">@item.Category</p>
+                                <small class="text-muted">@Path.GetFileName(item.PackagePath)</small>
+                            </div>
+                            <button class="button" @onclick="() => ImportFromMarketplace(item)" disabled="@IsImporting">
+                                @(IsImporting ? "Import…" : "Importer")
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(MarketplaceStatus))
+        {
+            <p class="text-muted" style="margin-top:8px;">@MarketplaceStatus</p>
+        }
+    </div>
+
+    <div class="card" style="display:flex; flex-direction:column; gap:8px;">
+        <h4 style="margin:0;">Exporter un module</h4>
+        <p class="text-muted" style="margin:0;">Sélectionnez un module pour le transformer en template et l'ajouter au marketplace.</p>
+        <select class="select" @bind="SelectedModuleId" disabled="@(Modules.Count == 0)">
+            @foreach (var module in Modules)
+            {
+                <option value="@module.Id">@module.Name</option>
+            }
+        </select>
+        <button class="button" @onclick="ExportSelectedModule" disabled="@(IsExporting || Modules.Count == 0)">
+            @(IsExporting ? "Export en cours…" : "Exporter vers marketplace")
+        </button>
+        @if (!string.IsNullOrWhiteSpace(ExportStatus))
+        {
+            <p class="text-muted" style="margin:0;">@ExportStatus</p>
+        }
+    </div>
+</div>
+
+<div class="grid columns-2" style="gap:12px; margin-top:12px;">
+    <div class="card" style="display:flex; flex-direction:column; gap:8px;">
+        <h4 style="margin:0;">Importer un template</h4>
+        <p class="text-muted" style="margin:0;">Chargez un fichier JSON de module (export AION ou marketplace) pour l'installer.</p>
+        <InputFile OnChange="HandleTemplateUpload" />
+        @if (!string.IsNullOrWhiteSpace(ImportStatus))
+        {
+            <p class="text-muted" style="margin:0;">@ImportStatus</p>
+        }
+    </div>
+
+    <div class="card" style="display:flex; flex-direction:column; gap:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div>
+                <h4 style="margin:0;">Vision IA</h4>
+                <p class="text-muted" style="margin:0;">Envoyez une image ou un PDF pour lancer une analyse (OCR, résumé, etc.).</p>
+            </div>
+            <select class="select" @bind="SelectedAnalysisType">
+                @foreach (var type in Enum.GetValues<VisionAnalysisType>())
+                {
+                    <option value="@type">@type</option>
+                }
+            </select>
+        </div>
+        <InputFile OnChange="HandleVisionUpload" />
+        @if (!string.IsNullOrWhiteSpace(VisionStatus))
+        {
+            <p class="text-muted" style="margin:0;">@VisionStatus</p>
+        }
+        @if (!string.IsNullOrWhiteSpace(VisionResult))
+        {
+            <pre style="white-space:pre-wrap; background:#f6f6f6; padding:8px; border-radius:4px;">@VisionResult</pre>
+        }
+    </div>
+</div>
+
+<div class="card" style="margin-top:12px; display:flex; gap:12px; flex-wrap:wrap;">
+    <button class="button secondary" @onclick="NavigateToModules">Ouvrir les modules</button>
+    <button class="button secondary" @onclick="LoadModules" disabled="@IsLoadingModules">
+        @(IsLoadingModules ? "Rafraîchissement…" : "Rafraîchir les modules")
+    </button>
+</div>
+
+@code {
+    private List<MarketplaceItem> MarketplaceItems { get; } = new();
+    private List<S_Module> Modules { get; } = new();
+    private Guid SelectedModuleId { get; set; }
+    private VisionAnalysisType SelectedAnalysisType { get; set; } = VisionAnalysisType.Ocr;
+    private string? ErrorMessage { get; set; }
+    private string? ImportStatus { get; set; }
+    private string? ExportStatus { get; set; }
+    private string? MarketplaceStatus { get; set; }
+    private string? VisionStatus { get; set; }
+    private string? VisionResult { get; set; }
+    private bool IsLoadingMarketplace { get; set; }
+    private bool IsLoadingModules { get; set; }
+    private bool IsExporting { get; set; }
+    private bool IsImporting { get; set; }
+    private bool IsProcessingVision { get; set; }
+    private const long MaxUploadSize = 10 * 1024 * 1024;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadModules();
+        await LoadMarketplace();
+    }
+
+    private async Task LoadMarketplace()
+    {
+        try
+        {
+            ErrorMessage = null;
+            MarketplaceStatus = null;
+            IsLoadingMarketplace = true;
+            MarketplaceItems.Clear();
+            var items = await Templates.GetMarketplaceAsync();
+            MarketplaceItems.AddRange(items.OrderBy(i => i.Name));
+            MarketplaceStatus = $"{MarketplaceItems.Count} template(s) disponible(s).";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Marketplace: {ex.Message}";
+        }
+        finally
+        {
+            IsLoadingMarketplace = false;
+        }
+    }
+
+    private async Task LoadModules()
+    {
+        try
+        {
+            ErrorMessage = null;
+            IsLoadingModules = true;
+            Modules.Clear();
+            var modules = await Metadata.GetModulesAsync();
+            Modules.AddRange(modules.OrderBy(m => m.Name));
+            SelectedModuleId = Modules.FirstOrDefault()?.Id ?? Guid.Empty;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Modules: {ex.Message}";
+        }
+        finally
+        {
+            IsLoadingModules = false;
+        }
+    }
+
+    private async Task ExportSelectedModule()
+    {
+        if (SelectedModuleId == Guid.Empty)
+        {
+            ExportStatus = "Aucun module sélectionné.";
+            return;
+        }
+
+        try
+        {
+            ErrorMessage = null;
+            ExportStatus = null;
+            IsExporting = true;
+            var package = await Templates.ExportModuleAsync(SelectedModuleId);
+            ExportStatus = $"Template exporté : {package.Name} (v{package.Version}).";
+            await LoadMarketplace();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Export: {ex.Message}";
+        }
+        finally
+        {
+            IsExporting = false;
+        }
+    }
+
+    private async Task HandleTemplateUpload(InputFileChangeEventArgs args)
+    {
+        try
+        {
+            ErrorMessage = null;
+            ImportStatus = "Lecture du fichier…";
+            IsImporting = true;
+            var file = args.File;
+            await using var stream = new StreamReader(file.OpenReadStream(MaxUploadSize));
+            var content = await stream.ReadToEndAsync();
+            var package = new TemplatePackage
+            {
+                Name = Path.GetFileNameWithoutExtension(file.Name),
+                Description = "Import fichier",
+                Payload = content,
+                Version = "1.0.0"
+            };
+
+            await ImportTemplatePackage(package, $"{file.Name} importé.");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Import fichier: {ex.Message}";
+        }
+        finally
+        {
+            IsImporting = false;
+        }
+    }
+
+    private async Task ImportFromMarketplace(MarketplaceItem item)
+    {
+        try
+        {
+            ErrorMessage = null;
+            IsImporting = true;
+            ImportStatus = $"Lecture du package {item.Name}…";
+            var payload = await File.ReadAllTextAsync(item.PackagePath);
+            var package = new TemplatePackage
+            {
+                Id = item.Id,
+                Name = item.Name,
+                Description = item.Category,
+                Payload = payload,
+                Version = "1.0.0"
+            };
+
+            await ImportTemplatePackage(package, $"{item.Name} installé depuis la marketplace.");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Import marketplace: {ex.Message}";
+        }
+        finally
+        {
+            IsImporting = false;
+        }
+    }
+
+    private async Task ImportTemplatePackage(TemplatePackage package, string successMessage)
+    {
+        var module = await Templates.ImportModuleAsync(package);
+        ImportStatus = successMessage + $" Module créé : {module.Name}.";
+        await LoadModules();
+        await LoadMarketplace();
+    }
+
+    private async Task HandleVisionUpload(InputFileChangeEventArgs args)
+    {
+        if (IsProcessingVision)
+        {
+            return;
+        }
+
+        try
+        {
+            ErrorMessage = null;
+            VisionResult = null;
+            VisionStatus = "Traitement du fichier…";
+            IsProcessingVision = true;
+
+            var file = args.File;
+            await using var stream = file.OpenReadStream(MaxUploadSize);
+            var saved = await FileStorage.SaveAsync(file.Name, stream, file.ContentType ?? "application/octet-stream");
+
+            var analysis = await Vision.AnalyzeAsync(new VisionAnalysisRequest
+            {
+                FileId = saved.Id,
+                AnalysisType = SelectedAnalysisType
+            });
+
+            VisionStatus = $"Analyse {SelectedAnalysisType} terminée.";
+            VisionResult = analysis.ResultJson;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Vision: {ex.Message}";
+        }
+        finally
+        {
+            IsProcessingVision = false;
+        }
+    }
+
+    private void NavigateToModules() => Navigation.NavigateTo("/modules/home");
+}
