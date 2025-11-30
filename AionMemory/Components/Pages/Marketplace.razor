@@ -227,7 +227,7 @@
             ImportStatus = "Lecture du fichier…";
             IsImporting = true;
             var file = args.File;
-            await using var stream = new StreamReader(file.OpenReadStream(MaxUploadSize));
+            using var stream = new StreamReader(file.OpenReadStream(MaxUploadSize));
             var content = await stream.ReadToEndAsync();
             var package = new TemplatePackage
             {
