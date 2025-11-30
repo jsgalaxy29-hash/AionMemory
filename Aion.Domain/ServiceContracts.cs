@@ -162,6 +162,13 @@ public readonly record struct IntentDetectionRequest
     public required string Input { get; init; }
     public string Locale { get; init; } = "fr-FR";
     public IDictionary<string, string?> Context { get; init; } = new Dictionary<string, string?>();
+
+    public IntentDetectionRequest(string input, string locale = "fr-FR", IDictionary<string, string?>? context = null)
+    {
+        Input = input;
+        Locale = locale;
+        Context = context ?? new Dictionary<string, string?>();
+    }
 }
 
 public readonly record struct IntentDetectionResult(string Intent, IReadOnlyDictionary<string, string> Parameters, double Confidence, string RawResponse);
@@ -172,6 +179,14 @@ public readonly record struct ModuleDesignRequest
     public string Locale { get; init; } = "fr-FR";
     public string? ModuleNameHint { get; init; }
     public bool IncludeRelations { get; init; } = true;
+
+    public ModuleDesignRequest(string prompt, string locale = "fr-FR", string? moduleNameHint = null, bool includeRelations = true)
+    {
+        Prompt = prompt;
+        Locale = locale;
+        ModuleNameHint = moduleNameHint;
+        IncludeRelations = includeRelations;
+    }
 }
 
 public readonly record struct ModuleDesignResult(S_Module Module, string RawDesignJson);
@@ -181,6 +196,13 @@ public readonly record struct CrudQueryRequest
     public required string Intent { get; init; }
     public required S_Module Module { get; init; }
     public string Locale { get; init; } = "fr-FR";
+
+    public CrudQueryRequest(string intent, S_Module module, string locale = "fr-FR")
+    {
+        Intent = intent;
+        Module = module;
+        Locale = locale;
+    }
 }
 
 public readonly record struct CrudInterpretation(string Action, IReadOnlyDictionary<string, string?> Filters, IReadOnlyDictionary<string, string?> Payload, string RawResponse);
@@ -191,6 +213,14 @@ public readonly record struct ReportBuildRequest
     public required string Description { get; init; }
     public string? PreferredVisualization { get; init; }
     public string Locale { get; init; } = "fr-FR";
+
+    public ReportBuildRequest(Guid moduleId, string description, string? preferredVisualization = null, string locale = "fr-FR")
+    {
+        ModuleId = moduleId;
+        Description = description;
+        PreferredVisualization = preferredVisualization;
+        Locale = locale;
+    }
 }
 
 public readonly record struct ReportBuildResult(S_ReportDefinition Report, string RawResponse);
@@ -201,6 +231,14 @@ public readonly record struct VisionAnalysisRequest
     public VisionAnalysisType AnalysisType { get; init; } = VisionAnalysisType.Ocr;
     public string? Model { get; init; }
     public string Locale { get; init; } = "fr-FR";
+
+    public VisionAnalysisRequest(Guid fileId, VisionAnalysisType analysisType = VisionAnalysisType.Ocr, string? model = null, string locale = "fr-FR")
+    {
+        FileId = fileId;
+        AnalysisType = analysisType;
+        Model = model;
+        Locale = locale;
+    }
 }
 
 public interface IIntentDetector
