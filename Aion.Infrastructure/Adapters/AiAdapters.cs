@@ -64,9 +64,9 @@ public sealed class BasicIntentDetector : IIntentDetector
         _logger = logger;
     }
 
-    public async Task<IntentDetectionResult> DetectAsync(string input, CancellationToken cancellationToken = default)
+    public async Task<IntentDetectionResult> DetectAsync(IntentDetectionRequest request, CancellationToken cancellationToken = default)
     {
-        var response = await _provider.GenerateAsync($"Analyse l'intention: {input}", cancellationToken).ConfigureAwait(false);
+        var response = await _provider.GenerateAsync($"Analyse l'intention: {request.Input}", cancellationToken).ConfigureAwait(false);
         var raw = response.RawResponse ?? response.Content;
 
         if (TryParseIntent(raw, out var parsed))
@@ -74,8 +74,8 @@ public sealed class BasicIntentDetector : IIntentDetector
             return parsed with { RawResponse = raw };
         }
 
-        _logger.LogDebug("Intent not parsed, fallback to chat intent for '{Input}'", input);
-        return new IntentDetectionResult("chat", new Dictionary<string, string> { ["query"] = input }, 0.42, raw);
+        _logger.LogDebug("Intent not parsed, fallback to chat intent for '{Input}'", request.Input);
+        return new IntentDetectionResult("chat", new Dictionary<string, string> { ["query"] = request.Input }, 0.42, raw);
     }
 
     private static bool TryParseIntent(string? raw, out IntentDetectionResult result)
@@ -134,11 +134,12 @@ public sealed class SimpleModuleDesigner : IModuleDesigner
 {
     public string? LastGeneratedJson { get; private set; }
 
-    public Task<S_Module> GenerateModuleFromPromptAsync(string prompt, CancellationToken cancellationToken = default)
+    public Task<ModuleDesignResult> GenerateModuleAsync(ModuleDesignRequest request, CancellationToken cancellationToken = default)
     {
+        var prompt = request.Prompt;
         var module = new S_Module
         {
-            Name = prompt.Length > 0 ? prompt[..Math.Min(prompt.Length, 40)] : "Module IA",
+            Name = prompt.Length > 0 ? prompt[..Math.Min(prompt.Length, 40)] : (request.ModuleNameHint ?? "Module IA"),
             Description = $"Module généré à partir de: {prompt}",
             EntityTypes =
             [
@@ -148,25 +149,25 @@ public sealed class SimpleModuleDesigner : IModuleDesigner
                     PluralName = "Items",
                     Fields =
                     [
-                        new S_Field { Name = "Title", Label = "Titre", DataType = FieldDataType.Text },
-                        new S_Field { Name = "Notes", Label = "Notes", DataType = FieldDataType.Note }
+                        new S_Field { Name = "Title", Label = "Titre", DataType = EnumSFieldType.String },
+                        new S_Field { Name = "Notes", Label = "Notes", DataType = EnumSFieldType.String }
                     ]
                 }
             ]
         };
 
         LastGeneratedJson = JsonSerializer.Serialize(module);
-        return Task.FromResult(module);
+        return Task.FromResult(new ModuleDesignResult(module, LastGeneratedJson));
     }
 }
 
 public sealed class SimpleCrudInterpreter : ICrudInterpreter
 {
-    public Task<CrudInterpretation> GenerateQueryAsync(string intent, S_Module module, CancellationToken cancellationToken = default)
+    public Task<CrudInterpretation> GenerateQueryAsync(CrudQueryRequest request, CancellationToken cancellationToken = default)
     {
-        var filters = new Dictionary<string, string?> { ["intent"] = intent };
-        var payload = new Dictionary<string, string?> { ["module"] = module.Name };
-        return Task.FromResult(new CrudInterpretation("query", filters, payload, intent));
+        var filters = new Dictionary<string, string?> { ["intent"] = request.Intent };
+        var payload = new Dictionary<string, string?> { ["module"] = request.Module.Name };
+        return Task.FromResult(new CrudInterpretation("query", filters, payload, request.Intent));
     }
 }
 
@@ -193,13 +194,17 @@ public sealed class SimpleNoteInterpreter : INoteInterpreter
 
 public sealed class SimpleReportInterpreter : IReportInterpreter
 {
-    public Task<S_ReportDefinition> BuildReportAsync(string description, Guid moduleId, CancellationToken cancellationToken = default)
+    public Task<ReportBuildResult> BuildReportAsync(ReportBuildRequest request, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(new S_ReportDefinition
+        var definition = new S_ReportDefinition
         {
-            ModuleId = moduleId,
-            Name = description.Length > 0 ? description[..Math.Min(description.Length, 80)] : "Rapport IA",
-            Query = "{}"
-        });
+            ModuleId = request.ModuleId,
+            Name = request.Description.Length > 0 ? request.Description[..Math.Min(request.Description.Length, 80)] : "Rapport IA",
+            QueryDefinition = "{}",
+            Visualization = request.PreferredVisualization
+        };
+
+        var raw = JsonSerializer.Serialize(new { request.Description, request.ModuleId, request.PreferredVisualization });
+        return Task.FromResult(new ReportBuildResult(definition, raw));
     }
 }
