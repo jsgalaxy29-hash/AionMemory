@@ -26,7 +26,7 @@
                     <tr><th>Champ</th><th>Valeur</th></tr>
                 </thead>
                 <tbody>
-                    @foreach (var field in ResolvedRecord.Value.Data)
+                    @foreach (var field in ResolvedRecord.Data)
                     {
                         <tr>
                             <td>@field.Key</td>
@@ -36,7 +36,7 @@
                 </tbody>
             </table>
         }
-        <DynamicTimeline NoteService="NoteService"
+        <DynamicTimeline NoteService="@NoteService"
                         TargetType="@Entity"
                         TargetId="@ParsedRecordId"
                         @ref="Timeline" />

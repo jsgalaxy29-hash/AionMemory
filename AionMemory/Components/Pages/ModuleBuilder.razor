@@ -57,7 +57,7 @@
                         <ul>
                             @foreach (var relation in entity.Relations)
                             {
-                                <li>@relation.Kind vers @relation.ToEntity (@relation.FromField)</li>
+                                <li>@relation.Kind vers @GetEntityName(relation.ToEntityTypeId) (@GetRoleName(relation))</li>
                             }
                         </ul>
                     </div>
@@ -73,6 +73,15 @@
     private string? Status { get; set; }
     private bool IsLoading { get; set; }
     private S_Module? Module { get; set; }
+
+    private string GetEntityName(Guid entityTypeId)
+    {
+        return Module?.EntityTypes.FirstOrDefault(e => e.Id == entityTypeId)?.Name
+               ?? entityTypeId.ToString();
+    }
+
+    private static string GetRoleName(S_Relation relation)
+        => string.IsNullOrWhiteSpace(relation.RoleName) ? "Relation" : relation.RoleName;
 
     private async Task Generate()
     {

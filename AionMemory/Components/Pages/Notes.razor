@@ -1,5 +1,6 @@
 @page "/notes/{entity}/{recordId}"
 @inject IDataEngine DataEngine
+@inject INoteService NoteService
 
 <h3>Notes pour @Entity</h3>
 <div class="card" style="margin-bottom:12px;">
@@ -20,7 +21,7 @@
     }
 </div>
 
-<DynamicTimeline NoteService="NoteService"
+<DynamicTimeline NoteService="@NoteService"
                 TargetType="@Entity"
                 TargetId="@RecordGuid"
                 @ref="Timeline" />
