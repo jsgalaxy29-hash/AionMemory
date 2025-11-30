@@ -1,3 +1,5 @@
+@using Aion.Domain
+@using Microsoft.AspNetCore.Components
 @inherits OwningComponentBase
 
 <div class="card">
@@ -6,7 +8,7 @@
         <button class="button secondary" @onclick="RefreshInternal">Rafraîchir</button>
     </div>
     <div class="timeline">
-        @if (Items is null)
+        @if (IsLoading)
         {
             <p>Chargement…</p>
         }
@@ -19,12 +21,15 @@
             @foreach (var note in FilteredNotes.OrderByDescending(n => n.CreatedAt))
             {
                 <div class="timeline-item">
-                    <strong>@item.Title</strong>
-                    @if (!string.IsNullOrWhiteSpace(item.Content))
-                    {
-                        <div>@item.Content</div>
-                    }
-                    <small class="text-muted">@item.CreatedAt.ToLocalTime().ToString("g")</small>
+                    <!-- TODO : adapter l’affichage au modèle réel de S_Note -->
+                    <strong>Note</strong>
+
+                    <!-- Si tu as un champ texte (ex : note.Text, note.Title, note.Content), remplace ici -->
+                    @* <div>@note.Content</div> *@
+
+                    <small class="text-muted">
+                        @note.CreatedAt.ToLocalTime().ToString("g")
+                    </small>
                 </div>
             }
         }
@@ -32,12 +37,21 @@
 </div>
 
 @code {
+    // Tu peux passer le service via DI ou en paramètre.
+    // DI (standard)
+    [Inject] public INoteService? InjectedNoteService { get; set; }
+
+    // Paramètre optionnel si tu veux surcharger le service
     [Parameter] public INoteService? NoteService { get; set; }
+
     [Parameter] public string? TargetType { get; set; }
     [Parameter] public Guid? TargetId { get; set; }
 
-    private IEnumerable<S_Note>? Notes { get; set; }
-    private IEnumerable<S_Note> FilteredNotes => Notes?.Where(MatchesContext) ?? Enumerable.Empty<S_Note>();
+    private bool IsLoading { get; set; } = true;
+    private IReadOnlyList<S_Note> Notes { get; set; } = Array.Empty<S_Note>();
+
+    private IEnumerable<S_Note> FilteredNotes =>
+        Notes.Where(MatchesContext);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -46,65 +60,40 @@
 
     public async Task RefreshInternal()
     {
-        await LoadTableMetadata();
-        Items = await LoadRecords();
-    }
-
-    private async Task LoadTableMetadata()
-    {
-        if (DataEngine is null || ResolvedTable is not null)
+        var service = NoteService ?? InjectedNoteService;
+        if (service is null)
         {
+            // Aucun service disponible : on arrête proprement
+            IsLoading = false;
+            Notes = Array.Empty<S_Note>();
             return;
         }
 
-        if (TableId.HasValue)
-        {
-            LoadedTable = await DataEngine.GetTableAsync(TableId.Value);
-        }
-        else if (!string.IsNullOrWhiteSpace(TableName))
-        {
-            var tables = await DataEngine.GetTablesAsync();
-            LoadedTable = tables.FirstOrDefault(t => string.Equals(t.Name, TableName, StringComparison.OrdinalIgnoreCase));
-        }
-    }
+        IsLoading = true;
 
-    private async Task<IReadOnlyList<TimelineItem>?> LoadRecords()
-    {
-        if (DataEngine is null || ResolvedTable is null)
-        {
-            Notes = await NoteService.GetChronologicalAsync();
-            StateHasChanged();
-        }
+        // On réutilise ton contrat existant
+        IEnumerable<S_Note> enumerable = await service.GetChronologicalAsync();
+        Notes = (IReadOnlyList<S_Note>)enumerable;
 
-        var records = await DataEngine.QueryAsync(ResolvedTable.Id, equals: null);
-        return records
-            .OrderByDescending(r => r.CreatedAt)
-            .Take(Take)
-            .Select(BuildTimelineItem)
-            .ToList();
-    }
-
-    private TimelineItem BuildTimelineItem(F_Record record)
-    {
-        var payload = DynamicListLogic.DeserializePayload(record.DataJson);
-        var title = ResolveTitle(payload);
-        var content = ResolveContent(payload);
-
-        return new TimelineItem(title, content, record.CreatedAt);
+        IsLoading = false;
+        StateHasChanged();
     }
 
     private bool MatchesContext(S_Note note)
     {
+        // Cas général : aucun filtre => tout passe
         if (TargetId is null && string.IsNullOrWhiteSpace(TargetType))
         {
             return true;
         }
 
+        // Si la note n’a aucun lien associé, elle ne peut pas correspondre au contexte
         if (note.Links is null || note.Links.Count == 0)
         {
             return false;
         }
 
+        // On vérifie si au moins un lien correspond au contexte demandé
         return note.Links.Any(link =>
             (string.IsNullOrWhiteSpace(TargetType) ||
              string.Equals(link.TargetType, TargetType, StringComparison.OrdinalIgnoreCase)) &&

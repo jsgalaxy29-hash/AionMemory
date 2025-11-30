@@ -768,10 +768,12 @@ Contenu:
 public sealed class ReportInterpreter : IReportInterpreter
 {
     private readonly ILLMProvider _provider;
+    private readonly ILogger<HttpTextGenerationProvider> _logger;
 
-    public ReportInterpreter(ILLMProvider provider)
+    public ReportInterpreter(ILLMProvider provider, ILogger<HttpTextGenerationProvider> logger)
     {
         _provider = provider;
+        _logger = logger;
     }
     public async Task<ReportBuildResult> BuildReportAsync(ReportBuildRequest request, CancellationToken cancellationToken = default)
     {

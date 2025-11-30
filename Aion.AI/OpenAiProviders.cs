@@ -33,8 +33,8 @@ public sealed class OpenAiTextGenerationProvider : ILLMProvider
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("OpenAI endpoint not configured; returning stub response");
-            var content = $"[openai-stub] {prompt}";
-            return new LlmResponse(content, content, opts.LlmModel);
+            var content3 = $"[openai-stub] {prompt}";
+            return new LlmResponse(content3, content3, opts.LlmModel);
         }
 
         var payload = new
@@ -53,8 +53,8 @@ public sealed class OpenAiTextGenerationProvider : ILLMProvider
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("OpenAI call failed with status {Status}; returning stub", response.StatusCode);
-            var content = $"[openai-fallback] {prompt}";
-            return new LlmResponse(content, content, opts.LlmModel);
+            var content4 = $"[openai-fallback] {prompt}";
+            return new LlmResponse(content4, content4, opts.LlmModel);
         }
 
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -116,8 +116,8 @@ public sealed class OpenAiEmbeddingProvider : IEmbeddingProvider
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("OpenAI embeddings endpoint not configured; returning stub");
-            var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
-            return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
+            var vector1 = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            return new EmbeddingResult(vector1, opts.EmbeddingModel ?? opts.LlmModel);
         }
 
         var payload = new { model = opts.EmbeddingModel ?? "text-embedding-3-small", input = text };
@@ -129,8 +129,8 @@ public sealed class OpenAiEmbeddingProvider : IEmbeddingProvider
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("OpenAI embeddings failed with status {Status}; returning stub", response.StatusCode);
-            var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
-            return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
+            var vector2 = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            return new EmbeddingResult(vector2, opts.EmbeddingModel ?? opts.LlmModel);
         }
 
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);

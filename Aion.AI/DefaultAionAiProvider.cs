@@ -33,8 +33,8 @@ public sealed class DefaultAionAiProvider : ILLMProvider, IEmbeddingProvider, IA
         if (string.IsNullOrWhiteSpace(endpoint))
         {
             _logger.LogWarning("Endpoint IA non configuré, retour d'une réponse stub.");
-            var content = $"[stub] {_options.LlmModel ?? "model"}: {prompt}";
-            return new LlmResponse(content, content, _options.LlmModel);
+            var content1 = $"[stub] {_options.LlmModel ?? "model"}: {prompt}";
+            return new LlmResponse(content1, content1, _options.LlmModel);
         }
 
         var client = CreateClient();
@@ -53,8 +53,8 @@ public sealed class DefaultAionAiProvider : ILLMProvider, IEmbeddingProvider, IA
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("Appel IA non réussi ({Status}) - bascule en mode stub", response.StatusCode);
-            var content = $"[stub-fallback] {prompt}";
-            return new LlmResponse(content, content, _options.LlmModel);
+            var content2 = $"[stub-fallback] {prompt}";
+            return new LlmResponse(content2, content2, _options.LlmModel);
         }
 
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
