@@ -1,10 +1,14 @@
 using System.IO;
+using System.Data;
 using Aion.Domain;
 using Aion.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Aion.Infrastructure;
@@ -109,11 +113,58 @@ public static class DependencyInjectionExtensions
     public static async Task EnsureAionDatabaseAsync(this IServiceProvider serviceProvider, CancellationToken cancellationToken = default)
     {
         await using var scope = serviceProvider.CreateAsyncScope();
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(DependencyInjectionExtensions));
         var context = scope.ServiceProvider.GetRequiredService<AionDbContext>();
         await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
 
+        if (!await TableExistsAsync(context, "Modules", cancellationToken).ConfigureAwait(false))
+        {
+            logger.LogWarning("Modules table missing after migrations; forcing schema creation and re-running migrations.");
+            await context.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
+            await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!await TableExistsAsync(context, "Modules", cancellationToken).ConfigureAwait(false))
+        {
+            logger.LogWarning("Modules table still missing; recreating tables via relational database creator.");
+            var databaseCreator = context.Database.GetService<IRelationalDatabaseCreator>();
+            await databaseCreator.CreateTablesAsync(cancellationToken).ConfigureAwait(false);
+            await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!await TableExistsAsync(context, "Modules", cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("Database schema could not be created; Modules table is still missing.");
+        }
+
         var demoSeeder = scope.ServiceProvider.GetRequiredService<DemoModuleSeeder>();
         await demoSeeder.EnsureDemoDataAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<bool> TableExistsAsync(AionDbContext context, string tableName, CancellationToken cancellationToken)
+    {
+        var connection = context.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = $name;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$name";
+        parameter.Value = tableName;
+        command.Parameters.Add(parameter);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+        if (shouldClose)
+        {
+            await connection.CloseAsync().ConfigureAwait(false);
+        }
+
+        return result is string;
     }
 
     private static string ChooseValue(string current, params string?[] candidates)
