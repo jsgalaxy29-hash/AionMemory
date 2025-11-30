@@ -116,6 +116,7 @@ public class S_EntityType
     public string? Icon { get; set; }
     public ICollection<S_Field> Fields { get; set; } = new List<S_Field>();
     public ICollection<S_Relation> Relations { get; set; } = new List<S_Relation>();
+    public string Description { get; set; } = string.Empty;
 }
 
 public class S_Field
