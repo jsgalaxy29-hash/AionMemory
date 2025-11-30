@@ -2,14 +2,44 @@
 @inject IDataEngine DataEngine
 @inject IAgendaService AgendaService
 @inject INoteService NoteService
+@inject IMetadataService Metadata
+@inject AionMemory.Services.ITableDefinitionService Tables
 
 <h3>Enregistrement</h3>
 <div class="grid columns-2">
     <div class="card">
         <p><strong>Entité :</strong> @Entity</p>
         <p><strong>Identifiant :</strong> @RecordId</p>
-        <p class="text-muted">Données dynamiques affichées depuis la mémoire AION.</p>
-        <DynamicTimeline NoteService="NoteService" />
+        @if (!string.IsNullOrWhiteSpace(LoadError))
+        {
+            <p class="text-muted">@LoadError</p>
+        }
+        else if (ResolvedRecord is null)
+        {
+            <p class="text-muted">Chargement…</p>
+        }
+        else
+        {
+            <p class="text-muted">Données dynamiques affichées depuis la mémoire AION.</p>
+            <table class="table">
+                <thead>
+                    <tr><th>Champ</th><th>Valeur</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var field in ResolvedRecord.Value.Data)
+                    {
+                        <tr>
+                            <td>@field.Key</td>
+                            <td>@field.Value</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        <DynamicTimeline NoteService="NoteService"
+                        TargetType="@Entity"
+                        TargetId="@ParsedRecordId"
+                        @ref="Timeline" />
     </div>
     <div class="card">
         <h4>Agenda associé</h4>
@@ -29,11 +59,16 @@
     [Parameter] public string? RecordId { get; set; }
 
     private IList<S_Event> Events { get; set; } = new List<S_Event>();
+    private S_EntityType? EntityType { get; set; }
+    private ResolvedRecord? ResolvedRecord { get; set; }
+    private string? LoadError { get; set; }
+    private DynamicTimeline? Timeline { get; set; }
+    private Guid? ParsedRecordId => Guid.TryParse(RecordId, out var guid) ? guid : null;
 
     protected override async Task OnInitializedAsync()
     {
-        var now = DateTimeOffset.Now;
-        Events = (await AgendaService.GetEventsAsync(now.AddDays(-2), now.AddDays(10))).ToList();
+        await LoadRecord();
+        await LoadAgenda();
     }
 
     private async Task Schedule()
@@ -42,8 +77,97 @@
         {
             Title = $"Suivi {Entity}",
             Description = "Action à réaliser",
-            Start = DateTimeOffset.Now.AddHours(4)
+            Start = DateTimeOffset.Now.AddHours(4),
+            Links = BuildLinks().ToList()
         });
-        Events.Add(evt);
+        if (MatchesContext(evt))
+        {
+            Events.Add(evt);
+        }
+
+        if (Timeline is not null)
+        {
+            await NoteService.CreateTextNoteAsync(evt.Title, evt.Description ?? evt.Title, BuildNoteLinks());
+            await Timeline.RefreshInternal();
+        }
+    }
+
+    private async Task LoadRecord()
+    {
+        if (string.IsNullOrWhiteSpace(Entity) || ParsedRecordId is null)
+        {
+            LoadError = "Contexte incomplet pour charger l'enregistrement.";
+            return;
+        }
+
+        var modules = await Metadata.GetModulesAsync();
+        EntityType = modules.SelectMany(m => m.EntityTypes)
+            .FirstOrDefault(e => string.Equals(e.Name, Entity, StringComparison.OrdinalIgnoreCase));
+
+        if (EntityType is null)
+        {
+            LoadError = $"Entité {Entity} introuvable.";
+            return;
+        }
+
+        await Tables.EnsureTableAsync(EntityType);
+        ResolvedRecord = await DataEngine.GetResolvedAsync(EntityType.Id, ParsedRecordId.Value);
+        if (ResolvedRecord is null)
+        {
+            LoadError = "Enregistrement non trouvé.";
+        }
+    }
+
+    private async Task LoadAgenda()
+    {
+        var now = DateTimeOffset.Now;
+        var events = await AgendaService.GetEventsAsync(now.AddDays(-2), now.AddDays(10));
+        Events = events.Where(MatchesContext).ToList();
+    }
+
+    private IEnumerable<J_Event_Link> BuildLinks()
+    {
+        if (ParsedRecordId is null || string.IsNullOrWhiteSpace(Entity))
+        {
+            return Array.Empty<J_Event_Link>();
+        }
+
+        return new[]
+        {
+            new J_Event_Link
+            {
+                TargetType = Entity!,
+                TargetId = ParsedRecordId.Value
+            }
+        };
+    }
+
+    private IEnumerable<J_Note_Link> BuildNoteLinks()
+    {
+        if (ParsedRecordId is null || string.IsNullOrWhiteSpace(Entity))
+        {
+            return Array.Empty<J_Note_Link>();
+        }
+
+        return new[]
+        {
+            new J_Note_Link
+            {
+                TargetType = Entity!,
+                TargetId = ParsedRecordId.Value
+            }
+        };
+    }
+
+    private bool MatchesContext(S_Event evt)
+    {
+        if (ParsedRecordId is null || string.IsNullOrWhiteSpace(Entity))
+        {
+            return true;
+        }
+
+        return evt.Links.Any(l =>
+            string.Equals(l.TargetType, Entity, StringComparison.OrdinalIgnoreCase) &&
+            l.TargetId == ParsedRecordId.Value);
     }
 }

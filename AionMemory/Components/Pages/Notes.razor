@@ -2,9 +2,69 @@
 @inject INoteService NoteService
 
 <h3>Notes pour @Entity</h3>
-<DynamicTimeline NoteService="NoteService" />
+<div class="card" style="margin-bottom:12px;">
+    <div class="module-header">
+        <div>
+            <strong>Ajouter une note</strong>
+            <p class="text-muted">Enregistrer un texte lié à l'entité.</p>
+        </div>
+        <button class="button" @onclick="CreateNote">Enregistrer</button>
+    </div>
+    <div class="grid columns-2" style="gap:12px;">
+        <input class="input" placeholder="Titre" @bind="Title" />
+        <textarea class="input" placeholder="Contenu" rows="3" @bind="Content"></textarea>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(Status))
+    {
+        <p class="text-muted" style="margin-top:8px;">@Status</p>
+    }
+</div>
+
+<DynamicTimeline NoteService="NoteService"
+                TargetType="@Entity"
+                TargetId="@RecordGuid"
+                @ref="Timeline" />
 
 @code {
     [Parameter] public string? Entity { get; set; }
     [Parameter] public string? RecordId { get; set; }
+
+    private string Title { get; set; } = string.Empty;
+    private string Content { get; set; } = string.Empty;
+    private string? Status { get; set; }
+    private DynamicTimeline? Timeline { get; set; }
+    private Guid? RecordGuid => Guid.TryParse(RecordId, out var guid) ? guid : null;
+
+    private async Task CreateNote()
+    {
+        if (NoteService is null || string.IsNullOrWhiteSpace(Entity) || RecordGuid is null)
+        {
+            Status = "Impossible de créer la note : contexte incomplet.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(Title) || string.IsNullOrWhiteSpace(Content))
+        {
+            Status = "Merci de renseigner un titre et un contenu.";
+            return;
+        }
+
+        var links = new List<J_Note_Link>
+        {
+            new()
+            {
+                TargetType = Entity!,
+                TargetId = RecordGuid.Value
+            }
+        };
+
+        var note = await NoteService.CreateTextNoteAsync(Title, Content, links);
+        Status = $"Note {note.Id} enregistrée.";
+        Title = string.Empty;
+        Content = string.Empty;
+        if (Timeline is not null)
+        {
+            await Timeline.RefreshInternal();
+        }
+    }
 }
