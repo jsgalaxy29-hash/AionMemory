@@ -279,39 +279,82 @@ public sealed class IntentRecognizer : IIntentDetector
 
     public async Task<IntentDetectionResult> DetectAsync(IntentDetectionRequest request, CancellationToken cancellationToken = default)
     {
+        var contextLines = request.Context.Count == 0
+            ? "aucun contexte"
+            : string.Join(", ", request.Context.Select(kvp => $"{kvp.Key}={kvp.Value}"));
         var prompt = $$"""
-Analyse l'intention utilisateur pour l'entrée suivante et réponds uniquement en JSON compact :
-{"intent":"<type>","parameters":{...},"confidence":0.0}
-Message: "{{request.Input}}"
+Tu es l'orchestrateur d'intentions AION. Identifie l'intention principale de l'utilisateur.
+Contraintes :
+- Réponds UNIQUEMENT avec un JSON compact sans texte additionnel.
+- Schéma attendu: {"intent":"","parameters":{},"confidence":0.0}
+- Intentions typiques: chat, create, read, update, delete, design_module, report, agenda, note.
+Entrée: "{{request.Input}}"
+Contexte: {{contextLines}}
+Locale: {{request.Locale}}
 """;
 
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
         var json = JsonHelper.ExtractJson(response.Content);
 
+        if (TryParseIntent(json, out var parsed))
+        {
+            return parsed with { RawResponse = response.RawResponse ?? json };
+        }
+
+        _logger.LogWarning("Intent parsing failed, returning fallback intent for input '{Input}'", request.Input);
+        return new IntentDetectionResult("unknown", new Dictionary<string, string> { ["raw"] = request.Input }, 0.1, response.RawResponse ?? json);
+    }
+    private bool TryParseIntent(string json, out IntentDetectionResult result)
+    {
+        result = default;
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return false;
+        }
+
         try
         {
-            var result = JsonSerializer.Deserialize<IntentRecognitionResultInternal>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-            if (result is not null)
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0)
             {
-                return new IntentDetectionResult(
-                    result.Intent ?? "unknown",
-                    result.Parameters ?? new Dictionary<string, string>(),
-                    result.Confidence ?? 0.5,
-                    response.RawResponse ?? json);
+                root = root[0];
             }
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
+            {
+                var content = choices[0].GetProperty("message").GetProperty("content").GetString();
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    return TryParseIntent(JsonHelper.ExtractJson(content), out result);
+                }
+            }
+
+            var intent = root.TryGetProperty("intent", out var intentProp) ? intentProp.GetString() : null;
+            var confidence = root.TryGetProperty("confidence", out var confidenceProp) ? confidenceProp.GetDouble() : 0.5;
+            Dictionary<string, string> parameters = new(StringComparer.OrdinalIgnoreCase);
+            if (root.TryGetProperty("parameters", out var parametersProp) && parametersProp.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var parameter in parametersProp.EnumerateObject())
+                {
+                    parameters[parameter.Name] = parameter.Value.ValueKind == JsonValueKind.String
+                        ? parameter.Value.GetString() ?? string.Empty
+                        : parameter.Value.GetRawText();
+                }
+            }
+
+            if (intent is null)
+            {
+                return false;
+            }
+
+            result = new IntentDetectionResult(intent, parameters, confidence, json);
+            return true;
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Failed to parse intent response, returning fallback structure");
+            _logger.LogWarning(ex, "Unable to parse intent JSON");
+            return false;
         }
-
-        return new IntentDetectionResult("unknown", new Dictionary<string, string> { ["raw"] = request.Input }, 0.1, response.RawResponse ?? json);
-    }
-    private sealed class IntentRecognitionResultInternal
-    {
-        public string? Intent { get; set; }
-        public Dictionary<string, string>? Parameters { get; set; }
-        public double? Confidence { get; set; }
     }
 }
 public sealed class ModuleDesigner : IModuleDesigner
@@ -391,7 +434,7 @@ Ne réponds que par du JSON valide.
                 Fields = new List<S_Field>(),
                 Relations = new List<S_Relation>()
             };
-            var fields = entity.Fields?.Count > 0 ? BuildFields(entityType, entity.Fields) : BuildDefaultFields(entityType);
+            var fields = entity.Fields?.Count > 0 ? BuildFields(module, entityType, entity.Fields) : BuildDefaultFields(entityType);
             foreach (var field in fields)
             {
                 entityType.Fields.Add(field);
@@ -449,7 +492,7 @@ Ne réponds que par du JSON valide.
             });
         }
     }
-    private static IEnumerable<S_Field> BuildFields(S_EntityType entityType, IEnumerable<DesignField> fields)
+    private static IEnumerable<S_Field> BuildFields(S_Module module, S_EntityType entityType, IEnumerable<DesignField> fields)
     {
         foreach (var field in fields)
         {
@@ -593,36 +636,52 @@ public sealed class CrudInterpreter : ICrudInterpreter
 
     public async Task<CrudInterpretation> GenerateQueryAsync(CrudQueryRequest request, CancellationToken cancellationToken = default)
     {
-        var fieldNames = string.Join(", ", request.Module.EntityTypes.SelectMany(e => e.Fields.Select(f => f.Name)));
-        var prompt = $$$"""
-Tu es un assistant qui traduit les requêtes utilisateur en opérations CRUD pour le module suivant:
+        var fieldDescriptions = request.Module.EntityTypes
+            .SelectMany(e => e.Fields.Select(f => $"{e.Name}.{f.Name}:{f.DataType}"));
+        var prompt = $$"""
+Tu traduis les instructions utilisateur en opérations CRUD structurées.
+Renvoie UNIQUEMENT un JSON respectant {"action":"create|update|delete|query","filters":{},"payload":{}}.
 Module: {{request.Module.Name}}
-Champs: {{fieldNames}}
-Réponds par une instruction JSON avec {"action":"create|update|delete|query","filters":{},"payload":{}} pour: {{request.Intent}}
+Champs disponibles: {{string.Join(", ", fieldDescriptions)}}
+Requête: {{request.Intent}}
 """;
 
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
         var cleaned = JsonHelper.ExtractJson(response.Content);
 
+        if (TryParseCrud(cleaned, out var interpretation))
+        {
+            return interpretation with { RawResponse = response.RawResponse ?? cleaned };
+        }
+
+        _logger.LogWarning("Unable to parse CRUD interpretation, returning fallback");
+        return new CrudInterpretation("query", new Dictionary<string, string?> { ["raw"] = request.Intent }, new Dictionary<string, string?>(), response.RawResponse ?? cleaned);
+    }
+
+    private bool TryParseCrud(string cleaned, out CrudInterpretation interpretation)
+    {
+        interpretation = default;
         if (string.IsNullOrWhiteSpace(cleaned))
         {
-            _logger.LogWarning("Empty CRUD interpretation, returning stub query");
-            return new CrudInterpretation("query", new Dictionary<string, string?> { ["raw"] = request.Intent }, new Dictionary<string, string?>(), response.RawResponse ?? string.Empty);
+            return false;
         }
 
         try
         {
             using var doc = JsonDocument.Parse(cleaned);
-            var root = doc.RootElement;
+            var root = doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0
+                ? doc.RootElement[0]
+                : doc.RootElement;
             var action = root.TryGetProperty("action", out var actionProperty) ? actionProperty.GetString() ?? "query" : "query";
             var filters = ExtractStringDictionary(root, "filters");
             var payload = ExtractStringDictionary(root, "payload");
-            return new CrudInterpretation(action, filters, payload, response.RawResponse ?? cleaned);
+            interpretation = new CrudInterpretation(action, filters, payload, cleaned);
+            return true;
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Unable to parse CRUD interpretation, returning fallback");
-            return new CrudInterpretation("query", new Dictionary<string, string?> { ["raw"] = request.Intent }, new Dictionary<string, string?>(), response.RawResponse ?? cleaned);
+            _logger.LogDebug(ex, "CRUD interpretation parse error");
+            return false;
         }
     }
 
@@ -724,29 +783,62 @@ public sealed class ReportInterpreter : IReportInterpreter
     public async Task<ReportBuildResult> BuildReportAsync(ReportBuildRequest request, CancellationToken cancellationToken = default)
     {
         var prompt = $$"""
-Construis une requête JSON {"query":"...","visualization":"table|chart"} pour un rapport: {{description}}
+Génère la définition d'un rapport AION. Réponds UNIQUEMENT en JSON compact suivant {"query":"SQL ou pseudo-SQL","visualization":"table|chart|number|list"}.
+Description: {{request.Description}}
+ModuleId: {{request.ModuleId}}
+Préférence de visualisation: {{request.PreferredVisualization ?? "none"}}
 """;
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
+        var cleaned = JsonHelper.ExtractJson(response.Content);
+        if (TryParseReport(request, cleaned, out var parsed))
+        {
+            return parsed with { RawResponse = response.RawResponse ?? cleaned };
+        }
+
+        return new ReportBuildResult(new S_ReportDefinition { ModuleId = request.ModuleId, Name = request.Description, QueryDefinition = "select *", Visualization = request.PreferredVisualization }, response.RawResponse ?? response.Content);
+    }
+
+    private bool TryParseReport(ReportBuildRequest request, string cleaned, out ReportBuildResult result)
+    {
+        result = default;
+        if (string.IsNullOrWhiteSpace(cleaned))
+        {
+            return false;
+        }
+
         try
         {
-            var report = JsonSerializer.Deserialize<ReportResponse>(JsonHelper.ExtractJson(response.Content), new JsonSerializerOptions(JsonSerializerDefaults.Web));
-            if (report is not null)
+            using var doc = JsonDocument.Parse(cleaned);
+            var root = doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0
+                ? doc.RootElement[0]
+                : doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
             {
-                return new ReportBuildResult(
-                    new S_ReportDefinition
-                    {
-                        ModuleId = request.ModuleId,
-                        Name = request.Description,
-                        QueryDefinition = report.Query ?? "select *",
-                        Visualization = report.Visualization ?? request.PreferredVisualization
-                    },
-                    response.RawResponse ?? response.Content);
+                var content = choices[0].GetProperty("message").GetProperty("content").GetString();
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    return TryParseReport(request, JsonHelper.ExtractJson(content), out result);
+                }
             }
+
+            var query = root.TryGetProperty("query", out var queryProp) ? queryProp.GetString() : null;
+            var visualization = root.TryGetProperty("visualization", out var vizProp) ? vizProp.GetString() : null;
+            var reportDefinition = new S_ReportDefinition
+            {
+                ModuleId = request.ModuleId,
+                Name = request.Description,
+                QueryDefinition = string.IsNullOrWhiteSpace(query) ? "select *" : query,
+                Visualization = string.IsNullOrWhiteSpace(visualization) ? request.PreferredVisualization : visualization
+            };
+
+            result = new ReportBuildResult(reportDefinition, cleaned);
+            return true;
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            _logger.LogDebug(ex, "Failed to parse report response");
+            return false;
         }
-        return new ReportBuildResult(new S_ReportDefinition { ModuleId = request.ModuleId, Name = request.Description, QueryDefinition = "select *", Visualization = request.PreferredVisualization }, response.RawResponse ?? response.Content);
     }
     private sealed class ReportResponse
     {
