@@ -113,7 +113,7 @@
 
         Messages.Add(new ChatMessage("Moi", CurrentInput, true));
         IsSearching = true;
-        var intent = await IntentDetector.DetectAsync(CurrentInput);
+        var intent = await IntentDetector.DetectAsync(new IntentDetectionRequest { Input = CurrentInput });
         IntentPreview = $"{intent.Intent} (score {intent.Confidence:P0})";
 
         try
