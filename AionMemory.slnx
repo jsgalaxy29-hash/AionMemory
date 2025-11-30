@@ -8,6 +8,7 @@
   <Project Path="Aion.Tests/Aion.Tests.csproj" />
   <Project Path="AionMemory.Logic/AionMemory.Logic.csproj" />
   <Project Path="AionMemory.Logic.Tests/AionMemory.Logic.Tests.csproj" />
+  <Project Path="AionMemory.UI.Tests/AionMemory.UI.Tests.csproj" />
   <Project Path="AionMemory/AionMemory.csproj">
     <Deploy Solution="Debug|*" />
   </Project>
