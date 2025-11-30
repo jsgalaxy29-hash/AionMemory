@@ -522,7 +522,7 @@ Ne réponds que par du JSON valide.
                 EntityTypeId = entityType?.Id ?? Guid.Empty,
                 Name = "Titre",
                 Label = "Titre",
-                DataType = EnumSFieldType.String,
+                DataType = FieldDataType.Text,
                 IsRequired = true,
                 IsSearchable = true,
                 IsListVisible = true
@@ -532,7 +532,7 @@ Ne réponds que par du JSON valide.
                 EntityTypeId = entityType?.Id ?? Guid.Empty,
                 Name = "Créé le",
                 Label = "Créé le",
-                DataType = EnumSFieldType.Date
+                DataType = FieldDataType.Date
             }
         ];
     private static S_Module BuildFallbackModule(string prompt, string? moduleNameHint)
@@ -557,16 +557,16 @@ Ne réponds que par du JSON valide.
         module.EntityTypes.Add(entity);
         return module;
     }
-    private static EnumSFieldType MapFieldType(string? type) => type?.ToLowerInvariant() switch
+    private static FieldDataType MapFieldType(string? type) => type?.ToLowerInvariant() switch
     {
-        "number" or "int" or "integer" => EnumSFieldType.Int,
-        "decimal" or "float" or "double" => EnumSFieldType.Decimal,
-        "bool" or "boolean" => EnumSFieldType.Bool,
-        "date" or "datetime" or "timestamp" => EnumSFieldType.Date,
-        "lookup" or "relation" => EnumSFieldType.Relation,
-        "file" or "image" or "photo" => EnumSFieldType.File,
-        "enum" => EnumSFieldType.Enum,
-        _ => EnumSFieldType.String
+        "number" or "int" or "integer" => FieldDataType.Number,
+        "decimal" or "float" or "double" => FieldDataType.Decimal,
+        "bool" or "boolean" => FieldDataType.Boolean,
+        "date" or "datetime" or "timestamp" => FieldDataType.Date,
+        "lookup" or "relation" => FieldDataType.Lookup,
+        "file" or "image" or "photo" => FieldDataType.File,
+        "enum" => FieldDataType.Enum,
+        _ => FieldDataType.Text
     };
     private static string? NormalizeName(string? value)
     {

@@ -198,7 +198,9 @@
     private async Task<string> BuildAgendaAsync(string input, CancellationToken cancellationToken)
     {
         var evt = await AgendaInterpreter.CreateEventAsync(input, cancellationToken);
-        return $"Événement proposé: {evt.Title} de {evt.StartsAt:t} à {evt.EndsAt:t}.";
+        var start = evt.Start.ToString("t");
+        var end = evt.End?.ToString("t") ?? "?";
+        return $"Événement proposé: {evt.Title} de {start} à {end}.";
     }
 
     private async Task<string> BuildNoteAsync(string input, CancellationToken cancellationToken)
@@ -270,8 +272,8 @@
 
         noteType.Fields = new List<S_Field>
         {
-            new() { EntityTypeId = noteType.Id, Name = "Titre", Label = "Titre", DataType = EnumSFieldType.String, IsRequired = true },
-            new() { EntityTypeId = noteType.Id, Name = "Contenu", Label = "Contenu", DataType = EnumSFieldType.String }
+            new() { EntityTypeId = noteType.Id, Name = "Titre", Label = "Titre", DataType = FieldDataType.Text, IsRequired = true },
+            new() { EntityTypeId = noteType.Id, Name = "Contenu", Label = "Contenu", DataType = FieldDataType.Text }
         };
 
         module.EntityTypes = new List<S_EntityType> { noteType };
