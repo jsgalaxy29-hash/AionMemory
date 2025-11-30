@@ -21,7 +21,7 @@
         <div class="chat-window">
             @foreach (var message in Messages)
             {
-                <div class=$"chat-bubble {(message.IsUser ? "me" : "bot")}">
+                <div class="@($"chat-bubble {(message.IsUser ? "me" : "bot")})">
                     <strong>@message.Author</strong>
                     <div>@message.Content</div>
                     <small class="text-muted">@message.Timestamp.ToLocalTime().ToString("t")</small>
