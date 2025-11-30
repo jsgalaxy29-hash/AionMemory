@@ -22,6 +22,20 @@ public class IntentRecognizerIntegrationTests
         Assert.Equal(payload, result.RawResponse);
     }
 
+    [Fact]
+    public async Task IntentRecognizer_ignores_non_json_payload()
+    {
+        const string payload = "simple string response";
+        var provider = new StubLlmProvider(payload);
+        var recognizer = new BasicIntentDetector(provider, NullLogger<BasicIntentDetector>.Instance);
+
+        var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "conversation" });
+
+        Assert.Equal("chat", result.Intent);
+        Assert.Equal("conversation", result.Parameters["query"]);
+        Assert.Equal(payload, result.RawResponse);
+    }
+
     private sealed class StubLlmProvider : ILLMProvider
     {
         public StubLlmProvider(string payload)

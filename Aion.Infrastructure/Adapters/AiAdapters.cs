@@ -92,6 +92,18 @@ public sealed class BasicIntentDetector : IIntentDetector
             normalized = normalized.Trim('`', '\n', '\r');
         }
 
+        var trimmedStart = normalized.TrimStart();
+        if (trimmedStart.Length == 0)
+        {
+            return false;
+        }
+
+        var firstChar = trimmedStart[0];
+        if (firstChar is not ('{' or '[' or '"'))
+        {
+            return false;
+        }
+
         try
         {
             var json = JsonDocument.Parse(normalized);
