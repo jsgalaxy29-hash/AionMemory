@@ -15,15 +15,15 @@ public enum FieldDataType
     Enum,
     Relation,
     File,
+    Note,
+    Tags,
+    Json,
+    DateTime,
     // Aliases for richer UI needs
     Text = String,
     Number = Int,
     Boolean = Bool,
     Lookup = Relation,
-    Note,
-    Tags,
-    Json,
-    DateTime
 }
 
 public enum RelationKind

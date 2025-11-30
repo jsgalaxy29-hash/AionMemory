@@ -565,7 +565,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
     private async Task<ResolvedRecord> BuildResolvedRecordAsync(F_Record record, STable table, CancellationToken cancellationToken)
     {
         var values = ParseJsonPayload(record.DataJson);
-        var lookups = await ResolveLookupValuesAsync(table, values, cancellationToken).ConfigureAwait(false);
+        var lookups = await ResolveLookupValuesAsync(table, (IReadOnlyDictionary<string, object?>)values, cancellationToken).ConfigureAwait(false);
         return new ResolvedRecord(record, new ReadOnlyDictionary<string, object?>(values), new ReadOnlyDictionary<string, LookupResolution>(lookups));
     }
 
@@ -608,7 +608,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             }
 
             var targetValues = ParseJsonPayload(targetRecord.DataJson);
-            var label = ResolveLabel(targetTable, targetValues, field);
+            var label = ResolveLabel(targetTable, (IReadOnlyDictionary<string, object?>)targetValues, field);
             resolved[field.Name] = new LookupResolution(lookupId.Value, label, targetTable.Id, targetTable.Name);
         }
 

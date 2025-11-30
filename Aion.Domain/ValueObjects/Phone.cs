@@ -5,7 +5,7 @@ namespace Aion.Domain.ValueObjects;
 
 public sealed class Phone : IEquatable<Phone>
 {
-    private static readonly Regex PhonePattern = new("^\+?[1-9]\d{7,14}$", RegexOptions.Compiled);
+    private static readonly Regex PhonePattern = new(@"^\+?[1-9]\d{7,14}$", RegexOptions.Compiled);
 
     public string Number { get; }
 
