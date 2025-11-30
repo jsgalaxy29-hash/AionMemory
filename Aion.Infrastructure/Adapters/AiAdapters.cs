@@ -149,8 +149,8 @@ public sealed class SimpleModuleDesigner : IModuleDesigner
                     PluralName = "Items",
                     Fields =
                     [
-                        new S_Field { Name = "Title", Label = "Titre", DataType = EnumSFieldType.String },
-                        new S_Field { Name = "Notes", Label = "Notes", DataType = EnumSFieldType.String }
+                        new S_Field { Name = "Title", Label = "Titre", DataType = FieldDataType.Text },
+                        new S_Field { Name = "Notes", Label = "Notes", DataType = FieldDataType.Text }
                     ]
                 }
             ]
@@ -178,8 +178,8 @@ public sealed class SimpleAgendaInterpreter : IAgendaInterpreter
         return Task.FromResult(new S_Event
         {
             Title = input,
-            StartsAt = DateTimeOffset.Now.AddHours(1),
-            EndsAt = DateTimeOffset.Now.AddHours(2)
+            Start = DateTimeOffset.Now.AddHours(1),
+            End = DateTimeOffset.Now.AddHours(2)
         });
     }
 }

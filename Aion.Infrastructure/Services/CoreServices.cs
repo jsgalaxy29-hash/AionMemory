@@ -347,19 +347,20 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
                     throw new InvalidOperationException($"Field '{field.Name}' expects an integer number");
                 }
                 break;
-            case EnumSFieldType.Decimal:
+            case FieldDataType.Decimal:
                 if (value is not double && value is not decimal && value is not float)
                 {
                     throw new InvalidOperationException($"Field '{field.Name}' expects a decimal number");
                 }
                 break;
-            case EnumSFieldType.Bool:
+            case FieldDataType.Boolean:
                 if (value is not bool)
                 {
                     throw new InvalidOperationException($"Field '{field.Name}' expects a boolean value");
                 }
                 break;
-            case EnumSFieldType.Date:
+            case FieldDataType.Date:
+            case FieldDataType.DateTime:
                 if (value is not string dateString || !DateTimeOffset.TryParse(dateString, out _))
                 {
                     throw new InvalidOperationException($"Field '{field.Name}' expects an ISO-8601 date/time string");
