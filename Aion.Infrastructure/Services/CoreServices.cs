@@ -202,7 +202,10 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             }
         }
 
-        return await query.OrderByDescending(r => r.CreatedAt).ToListAsync(cancellationToken).ConfigureAwait(false);
+        return await query
+            .OrderByDescending(r => r.CreatedAt.UtcDateTime)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task<IEnumerable<ResolvedRecord>> QueryResolvedAsync(Guid entityTypeId, string? filter = null, IDictionary<string, string?>? equals = null, CancellationToken cancellationToken = default)
@@ -698,7 +701,7 @@ public sealed class NoteService : IAionNoteService, INoteService
     public async Task<IEnumerable<S_Note>> GetChronologicalAsync(int take = 50, CancellationToken cancellationToken = default)
         => await _db.Notes
             .Include(n => n.Links)
-            .OrderByDescending(n => n.CreatedAt)
+            .OrderByDescending(n => n.CreatedAt.UtcDateTime)
             .Take(take)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -799,7 +802,7 @@ public sealed class AgendaService : IAionAgendaService, IAgendaService
         => await _db.Events
             .Where(e => e.Start >= from && e.Start <= to)
             .Include(e => e.Links)
-            .OrderBy(e => e.Start)
+            .OrderBy(e => e.Start.UtcDateTime)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -1321,7 +1324,10 @@ public sealed class LifeService : IAionLifeLogService, ILifeService
             query = query.Where(h => h.OccurredAt <= to.Value);
         }
 
-        return await query.OrderByDescending(h => h.OccurredAt).ToListAsync(cancellationToken).ConfigureAwait(false);
+        return await query
+            .OrderByDescending(h => h.OccurredAt.UtcDateTime)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 }
 
