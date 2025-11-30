@@ -1,7 +1,6 @@
 @page "/records/{entity}/{recordId}"
 @inject IDataEngine DataEngine
 @inject IAgendaService AgendaService
-@inject INoteService NoteService
 
 <h3>Enregistrement</h3>
 <div class="grid columns-2">
@@ -9,7 +8,10 @@
         <p><strong>Entité :</strong> @Entity</p>
         <p><strong>Identifiant :</strong> @RecordId</p>
         <p class="text-muted">Données dynamiques affichées depuis la mémoire AION.</p>
-        <DynamicTimeline NoteService="NoteService" />
+        @if (!string.IsNullOrWhiteSpace(Entity))
+        {
+            <DynamicTimeline DataEngine="DataEngine" TableName="@Entity" TitleField="Title" />
+        }
     </div>
     <div class="card">
         <h4>Agenda associé</h4>

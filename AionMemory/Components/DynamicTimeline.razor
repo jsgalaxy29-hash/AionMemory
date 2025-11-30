@@ -2,22 +2,29 @@
 
 <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h5>Timeline</h5>
+        <h5>@ResolvedTable?.DisplayName ?? "Timeline"</h5>
         <button class="button secondary" @onclick="Refresh">Rafraîchir</button>
     </div>
     <div class="timeline">
-        @if (Notes is null)
+        @if (Items is null)
         {
             <p>Chargement…</p>
         }
+        else if (!Items.Any())
+        {
+            <p class="text-muted">Aucun élément à afficher.</p>
+        }
         else
         {
-            @foreach (var note in Notes.OrderByDescending(n => n.CreatedAt))
+            @foreach (var item in Items)
             {
                 <div class="timeline-item">
-                    <strong>@note.Title</strong>
-                    <div>@note.Content</div>
-                    <small class="text-muted">@note.CreatedAt.ToLocalTime().ToString("g") (@note.Source)</small>
+                    <strong>@item.Title</strong>
+                    @if (!string.IsNullOrWhiteSpace(item.Content))
+                    {
+                        <div>@item.Content</div>
+                    }
+                    <small class="text-muted">@item.CreatedAt.ToLocalTime().ToString("g")</small>
                 </div>
             }
         }
@@ -25,9 +32,15 @@
 </div>
 
 @code {
-    [Parameter] public INoteService? NoteService { get; set; }
+    [Parameter] public IDataEngine? DataEngine { get; set; }
+    [Parameter] public Guid? TableId { get; set; }
+    [Parameter] public string? TableName { get; set; }
+    [Parameter] public string? TitleField { get; set; }
+    [Parameter] public int Take { get; set; } = 25;
 
-    private IEnumerable<S_Note>? Notes { get; set; }
+    private IReadOnlyList<TimelineItem>? Items { get; set; }
+    private STable? LoadedTable { get; set; }
+    private STable? ResolvedTable => LoadedTable;
 
     protected override async Task OnInitializedAsync()
     {
@@ -36,9 +49,84 @@
 
     private async Task Refresh()
     {
-        if (NoteService is not null)
+        await LoadTableMetadata();
+        Items = await LoadRecords();
+    }
+
+    private async Task LoadTableMetadata()
+    {
+        if (DataEngine is null || ResolvedTable is not null)
         {
-            Notes = await NoteService.GetChronologicalAsync();
+            return;
+        }
+
+        if (TableId.HasValue)
+        {
+            LoadedTable = await DataEngine.GetTableAsync(TableId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(TableName))
+        {
+            var tables = await DataEngine.GetTablesAsync();
+            LoadedTable = tables.FirstOrDefault(t => string.Equals(t.Name, TableName, StringComparison.OrdinalIgnoreCase));
         }
     }
+
+    private async Task<IReadOnlyList<TimelineItem>?> LoadRecords()
+    {
+        if (DataEngine is null || ResolvedTable is null)
+        {
+            return null;
+        }
+
+        var records = await DataEngine.QueryAsync(ResolvedTable.Id, equals: null);
+        return records
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(Take)
+            .Select(BuildTimelineItem)
+            .ToList();
+    }
+
+    private TimelineItem BuildTimelineItem(F_Record record)
+    {
+        var payload = DynamicListLogic.DeserializePayload(record.DataJson);
+        var title = ResolveTitle(payload);
+        var content = ResolveContent(payload);
+
+        return new TimelineItem(title, content, record.CreatedAt);
+    }
+
+    private string ResolveTitle(IReadOnlyDictionary<string, object?> payload)
+    {
+        if (!string.IsNullOrWhiteSpace(TitleField) && payload.TryGetValue(TitleField, out var forced) && forced is not null)
+        {
+            return forced.ToString() ?? string.Empty;
+        }
+
+        var textField = ResolvedTable?.Fields.FirstOrDefault(f => f.IsListVisible) ?? ResolvedTable?.Fields.FirstOrDefault();
+        if (textField is not null && payload.TryGetValue(textField.Name, out var title) && title is not null)
+        {
+            return title.ToString() ?? string.Empty;
+        }
+
+        return "Enregistrement";
+    }
+
+    private static string ResolveContent(IReadOnlyDictionary<string, object?> payload)
+    {
+        var noteField = payload.FirstOrDefault(kv => kv.Key.Contains("note", StringComparison.OrdinalIgnoreCase) && kv.Value is not null);
+        if (!string.IsNullOrWhiteSpace(noteField.Key))
+        {
+            return noteField.Value?.ToString() ?? string.Empty;
+        }
+
+        var descriptionField = payload.FirstOrDefault(kv => kv.Key.Contains("description", StringComparison.OrdinalIgnoreCase) && kv.Value is not null);
+        if (!string.IsNullOrWhiteSpace(descriptionField.Key))
+        {
+            return descriptionField.Value?.ToString() ?? string.Empty;
+        }
+
+        return string.Empty;
+    }
+
+    private sealed record TimelineItem(string Title, string? Content, DateTimeOffset CreatedAt);
 }

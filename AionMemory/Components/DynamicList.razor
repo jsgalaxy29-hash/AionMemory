@@ -5,21 +5,22 @@
 
 <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <h5>@Table?.DisplayName</h5>
+        <h5>@ResolvedTable?.DisplayName</h5>
         <button class="button secondary" @onclick="Refresh">Actualiser</button>
     </div>
     <table class="table">
         <thead>
             <tr>
                 <th>Titre</th>
-                @if (Table is not null)
+                @if (ResolvedTable is not null)
                 {
-                    @foreach (var field in Table.Fields.Take(3))
+                    @foreach (var field in ResolvedTable.Fields.Where(f => f.IsListVisible).Take(3))
                     {
                         <th>@field.Label</th>
                     }
                 }
                 <th>Créé le</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -34,14 +35,17 @@
                     var payload = DynamicListLogic.DeserializePayload(item.DataJson);
                     <tr @onclick="() => OnSelect.InvokeAsync(item)" style="cursor:pointer;">
                         <td>@item.Id</td>
-                        @if (Table is not null)
+                        @if (ResolvedTable is not null)
                         {
-                            @foreach (var field in Table.Fields.Take(3))
+                            @foreach (var field in ResolvedTable.Fields.Where(f => f.IsListVisible).Take(3))
                             {
                                 <td>@(payload.TryGetValue(field.Name, out var value) ? value : null)</td>
                             }
                         }
                         <td>@item.CreatedAt.ToLocalTime().ToString("g")</td>
+                        <td style="text-align:right;">
+                            <button class="button danger" @onclick="() => DeleteRecord(item)" @onclick:stopPropagation="true">Supprimer</button>
+                        </td>
                     </tr>
                 }
             }
@@ -51,11 +55,16 @@
 
 @code {
     [Parameter] public STable? Table { get; set; }
+    [Parameter] public Guid? TableId { get; set; }
+    [Parameter] public string? TableName { get; set; }
     [Parameter] public IDataEngine? DataEngine { get; set; }
     [Parameter] public string? Filter { get; set; }
     [Parameter] public EventCallback<F_Record> OnSelect { get; set; }
+    [Parameter] public EventCallback<Guid> OnDeleted { get; set; }
 
     private IEnumerable<F_Record>? Items { get; set; }
+    private STable? LoadedTable { get; set; }
+    private STable? ResolvedTable => Table ?? LoadedTable;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -64,11 +73,53 @@
 
     private async Task Refresh()
     {
-        if (DataEngine is not null && Table is not null)
+        if (DataEngine is null)
         {
-            Items = await DataEngine.QueryAsync(Table.Id, Filter);
-            StateHasChanged();
+            return;
         }
+
+        if (ResolvedTable is null)
+        {
+            await LoadTableMetadata();
+        }
+
+        if (ResolvedTable is null)
+        {
+            return;
+        }
+
+        Items = await DataEngine!.QueryAsync(ResolvedTable.Id, Filter);
+        StateHasChanged();
+    }
+
+    private async Task LoadTableMetadata()
+    {
+        if (DataEngine is null)
+        {
+            return;
+        }
+
+        if (TableId.HasValue)
+        {
+            LoadedTable = await DataEngine.GetTableAsync(TableId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(TableName))
+        {
+            var tables = await DataEngine.GetTablesAsync();
+            LoadedTable = tables.FirstOrDefault(t => string.Equals(t.Name, TableName, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private async Task DeleteRecord(F_Record record)
+    {
+        if (DataEngine is null || ResolvedTable is null)
+        {
+            return;
+        }
+
+        await DataEngine.DeleteAsync(ResolvedTable.Id, record.Id);
+        await Refresh();
+        await OnDeleted.InvokeAsync(record.Id);
     }
 
 }

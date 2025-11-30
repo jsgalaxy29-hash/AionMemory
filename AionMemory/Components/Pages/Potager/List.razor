@@ -3,7 +3,6 @@
 @inject IMetadataService Metadata
 @inject IDataEngine DataEngine
 @inject AionMemory.Services.ITableDefinitionService Tables
-@inject INoteService NoteService
 @inject NavigationManager Navigation
 
 <h3>Potager</h3>
@@ -27,7 +26,10 @@
     </div>
     <div class="card">
         <h4>Timeline des soins</h4>
-        <DynamicTimeline NoteService="NoteService" />
+        @if (PotagerTable is not null)
+        {
+            <DynamicTimeline DataEngine="DataEngine" TableId="PotagerTable.Id" TitleField="Name" />
+        }
     </div>
 </div>
 
