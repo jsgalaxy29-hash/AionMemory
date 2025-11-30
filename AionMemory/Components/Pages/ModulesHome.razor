@@ -1,0 +1,66 @@
+@page "/modules/home"
+@inject IMetadataService Metadata
+@inject NavigationManager Navigation
+
+<div class="card" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <div>
+        <h3 style="margin:0;">Vos modules</h3>
+        <p class="text-muted" style="margin:0;">Accédez rapidement aux modules existants ou créez-en un nouveau.</p>
+    </div>
+    <button class="button" style="min-width:48px;" title="Créer un module" @onclick="OpenBuilder">+</button>
+</div>
+
+@if (Modules is null)
+{
+    <p>Chargement des modules…</p>
+}
+else if (Modules.Count == 0)
+{
+    <div class="card" style="text-align:center;">
+        <p style="margin-bottom:8px;">Aucun module pour le moment.</p>
+        <button class="button" @onclick="OpenBuilder">Créer votre premier module</button>
+    </div>
+}
+else
+{
+    <div class="grid columns-3">
+        @foreach (var module in Modules)
+        {
+            <div class="card module-card" @onclick="() => OpenModule(module.Id)" style="cursor:pointer;">
+                <div class="module-header">
+                    <div>
+                        <strong>@module.Name</strong>
+                        <p class="text-muted">@module.Description</p>
+                    </div>
+                    <span class="badge">@module.EntityTypes.Count entités</span>
+                </div>
+                <div class="grid columns-2">
+                    @foreach (var entity in module.EntityTypes.Take(4))
+                    {
+                        <div class="stat-box">
+                            <div style="font-weight:600">@entity.Name</div>
+                            <small class="text-muted">@entity.Fields.Count champ(s)</small>
+                        </div>
+                    }
+                </div>
+                @if (module.EntityTypes.Count > 4)
+                {
+                    <small class="text-muted">+@((module.EntityTypes.Count) - 4) autre(s)</small>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<S_Module>? Modules { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Modules = (await Metadata.GetModulesAsync()).ToList();
+    }
+
+    private void OpenModule(Guid moduleId) => Navigation.NavigateTo($"/module/{moduleId}");
+
+    private void OpenBuilder() => Navigation.NavigateTo("/module-builder");
+}
