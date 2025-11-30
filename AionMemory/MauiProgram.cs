@@ -72,7 +72,11 @@ public static class MauiProgram
             options.EncryptionKey = ResolveDatabaseKey(builder.Configuration);
         });
 
-        builder.Services.Configure<StorageOptions>(options => options.RootPath = storagePath);
+        builder.Services.Configure<StorageOptions>(options =>
+        {
+            options.RootPath = storagePath;
+            options.EncryptionKey = ResolveStorageKey(builder.Configuration);
+        });
         builder.Services.Configure<MarketplaceOptions>(options => options.MarketplaceFolder = marketplacePath);
         builder.Services.Configure<BackupOptions>(options => options.BackupFolder = backupPath);
     }
@@ -95,6 +99,27 @@ public static class MauiProgram
 
         var generated = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         SecureStorage.Default.SetAsync("aion_db_key", generated).Wait();
+        return generated;
+    }
+
+    private static string ResolveStorageKey(IConfiguration configuration)
+    {
+        var configured = configuration["AION_STORAGE_KEY"];
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        var keyTask = SecureStorage.Default.GetAsync("aion_storage_key");
+        keyTask.Wait();
+        var stored = keyTask.Result;
+        if (!string.IsNullOrWhiteSpace(stored))
+        {
+            return stored;
+        }
+
+        var generated = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        SecureStorage.Default.SetAsync("aion_storage_key", generated).Wait();
         return generated;
     }
 
