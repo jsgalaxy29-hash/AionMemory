@@ -28,6 +28,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<OpenAiTextGenerationProvider>();
         services.AddSingleton<OpenAiEmbeddingProvider>();
         services.AddScoped<OpenAiAudioTranscriptionProvider>();
+        services.AddSingleton<MistralTextGenerationProvider>();
+        services.AddSingleton<MistralEmbeddingProvider>();
+        services.AddScoped<MistralAudioTranscriptionProvider>();
 
         services.AddSingleton<ILLMProvider>(ResolveTextProvider);
         services.AddSingleton<IEmbeddingProvider>(ResolveEmbeddingProvider);
@@ -49,25 +52,49 @@ public static class ServiceCollectionExtensions
     private static ILLMProvider ResolveTextProvider(IServiceProvider sp)
     {
         var options = sp.GetRequiredService<IOptionsMonitor<AionAiOptions>>().CurrentValue;
-        return string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase)
-            ? sp.GetRequiredService<OpenAiTextGenerationProvider>()
-            : sp.GetRequiredService<HttpTextGenerationProvider>();
+        if (string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase))
+        {
+            return sp.GetRequiredService<OpenAiTextGenerationProvider>();
+        }
+
+        if (string.Equals(options.Provider, "mistral", StringComparison.OrdinalIgnoreCase))
+        {
+            return sp.GetRequiredService<MistralTextGenerationProvider>();
+        }
+
+        return sp.GetRequiredService<HttpTextGenerationProvider>();
     }
 
     private static IEmbeddingProvider ResolveEmbeddingProvider(IServiceProvider sp)
     {
         var options = sp.GetRequiredService<IOptionsMonitor<AionAiOptions>>().CurrentValue;
-        return string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase)
-            ? sp.GetRequiredService<OpenAiEmbeddingProvider>()
-            : sp.GetRequiredService<HttpEmbeddingProvider>();
+        if (string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase))
+        {
+            return sp.GetRequiredService<OpenAiEmbeddingProvider>();
+        }
+
+        if (string.Equals(options.Provider, "mistral", StringComparison.OrdinalIgnoreCase))
+        {
+            return sp.GetRequiredService<MistralEmbeddingProvider>();
+        }
+
+        return sp.GetRequiredService<HttpEmbeddingProvider>();
     }
 
     private static IAudioTranscriptionProvider ResolveTranscriptionProvider(IServiceProvider sp)
     {
         var options = sp.GetRequiredService<IOptionsMonitor<AionAiOptions>>().CurrentValue;
-        return string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase)
-            ? sp.GetRequiredService<OpenAiAudioTranscriptionProvider>()
-            : sp.GetRequiredService<HttpAudioTranscriptionProvider>();
+        if (string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase))
+        {
+            return sp.GetRequiredService<OpenAiAudioTranscriptionProvider>();
+        }
+
+        if (string.Equals(options.Provider, "mistral", StringComparison.OrdinalIgnoreCase))
+        {
+            return sp.GetRequiredService<MistralAudioTranscriptionProvider>();
+        }
+
+        return sp.GetRequiredService<HttpAudioTranscriptionProvider>();
     }
 
     private static Action<IServiceProvider, HttpClient> ConfigureClient(string clientName)
