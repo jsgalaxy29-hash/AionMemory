@@ -58,8 +58,16 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Aion.Domain\Aion.Domain.csproj" />
+    <ProjectReference Include="..\Aion.AI\Aion.AI.csproj" />
     <ProjectReference Include="..\Aion.Infrastructure\Aion.Infrastructure.csproj" />
     <ProjectReference Include="..\AionMemory.Logic\AionMemory.Logic.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\appsettings*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
