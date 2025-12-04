@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Threading;
 using Aion.Domain;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -11,9 +12,11 @@ public sealed class SemanticSearchService : ISearchService
 {
     private static readonly JsonSerializerOptions EmbeddingSerializerOptions = new(JsonSerializerDefaults.Web);
 
+    private readonly SemaphoreSlim _keywordIndexGate = new(1, 1);
     private readonly AionDbContext _db;
     private readonly IEmbeddingProvider? _embeddingProvider;
     private readonly ILogger<SemanticSearchService> _logger;
+    private bool _keywordIndexesReady;
 
     public SemanticSearchService(AionDbContext db, ILogger<SemanticSearchService> logger, IServiceProvider serviceProvider)
     {
@@ -214,7 +217,42 @@ public sealed class SemanticSearchService : ISearchService
         catch (SqliteException ex) when (ex.SqliteErrorCode == 1 && ex.Message.Contains("no such table", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning(ex, "Skipping {Source} keyword search because the index is missing.", source);
-            return new List<T>();
+            await EnsureKeywordIndexesAsync(cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                return await query().ConfigureAwait(false);
+            }
+            catch (Exception retryEx)
+            {
+                _logger.LogWarning(retryEx, "Unable to run {Source} keyword search even after ensuring indexes exist.", source);
+                return new List<T>();
+            }
+        }
+    }
+
+    private async Task EnsureKeywordIndexesAsync(CancellationToken cancellationToken)
+    {
+        if (_keywordIndexesReady)
+        {
+            return;
+        }
+
+        await _keywordIndexGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            if (_keywordIndexesReady)
+            {
+                return;
+            }
+
+            await _db.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+            _keywordIndexesReady = true;
+        }
+        finally
+        {
+            _keywordIndexGate.Release();
         }
     }
 
