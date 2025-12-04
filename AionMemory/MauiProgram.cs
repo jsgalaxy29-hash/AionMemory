@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Aion.AI;
 using Aion.Domain;
 using Aion.Infrastructure;
 using Aion.Infrastructure.Adapters;
@@ -27,6 +28,11 @@ public static class MauiProgram
                 fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
                 fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
             });
+
+        builder.Configuration
+            .AddJsonFile("appsettings.json", optional: true)
+            .AddJsonFile("appsettings.OpenAI.json", optional: true)
+            .AddJsonFile("appsettings.Mistral.json", optional: true);
 
         builder.Services.AddMauiBlazorWebView();
 #if DEBUG
@@ -126,8 +132,21 @@ public static class MauiProgram
     private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddAionInfrastructure(configuration);
-        services.AddAiAdapters();
+        if (HasAiProviderConfigured(configuration))
+        {
+            services.AddAionAi(configuration);
+        }
+        else
+        {
+            services.AddAiAdapters();
+        }
         services.AddScoped<ITableDefinitionService, TableDefinitionService>();
+    }
+
+    private static bool HasAiProviderConfigured(IConfiguration configuration)
+    {
+        var aiSection = configuration.GetSection("Aion:Ai");
+        return aiSection.Exists() && !string.IsNullOrWhiteSpace(aiSection["ApiKey"]);
     }
 
     private static void RestoreFromBackupIfRequested(IServiceProvider serviceProvider)
