@@ -23,6 +23,17 @@ public class OrchestratorTests
     }
 
     [Fact]
+    public async Task IntentRecognizer_handles_missing_context()
+    {
+        var provider = new StubLlmProvider("{\"intent\":\"chat\",\"parameters\":{},\"confidence\":0.5}");
+        var recognizer = new IntentRecognizer(provider, NullLogger<IntentRecognizer>.Instance);
+
+        var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "bonjour", Context = null! });
+
+        Assert.Equal("chat", result.Intent);
+    }
+
+    [Fact]
     public async Task CrudInterpreter_returns_structured_instruction()
     {
         var module = new S_Module
