@@ -30,4 +30,25 @@ public class SemanticSearchServiceTests
 
         Assert.Empty(results);
     }
+
+    [Fact]
+    public async Task Search_async_applies_migrations_when_keyword_indexes_are_absent()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<AionDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        await using var context = new AionDbContext(options);
+
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var service = new SemanticSearchService(context, NullLogger<SemanticSearchService>.Instance, serviceProvider);
+
+        var results = await service.SearchAsync("hello");
+
+        Assert.Empty(results);
+        Assert.Equal(0, await context.NoteSearch.CountAsync());
+    }
 }
