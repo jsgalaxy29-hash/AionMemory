@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Aion.AI;
+using Aion.AI.OpenAI;
 using Aion.Domain;
 using Aion.Infrastructure;
 using Aion.Infrastructure.Adapters;
@@ -135,6 +136,7 @@ public static class MauiProgram
         if (HasAiProviderConfigured(configuration))
         {
             services.AddAionAi(configuration);
+            services.AddAionOpenAi();
         }
         else
         {

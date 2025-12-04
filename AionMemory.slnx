@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="Aion.AI/Aion.AI.csproj" />
-  <Project Path="Aion.Domain/Aion.Domain.csproj" />
+  <Project Path="Aion.AI.OpenAI/Aion.AI.OpenAI.csproj" />
+  <Project Path="Aion.Core/Aion.Core.csproj" />
   <Project Path="Aion.Infrastructure/Aion.Infrastructure.csproj" />
   <Project Path="Aion.Infrastructure.Tests/Aion.Infrastructure.Tests.csproj" />
   <Project Path="Aion.Domain.Tests/Aion.Domain.Tests.csproj" />

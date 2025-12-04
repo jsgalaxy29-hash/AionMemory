@@ -1,4 +1,3 @@
-using Aion.Domain;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -25,9 +24,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<HttpTextGenerationProvider>();
         services.AddSingleton<HttpEmbeddingProvider>();
         services.AddScoped<HttpAudioTranscriptionProvider>();
-        services.AddSingleton<OpenAiTextGenerationProvider>();
-        services.AddSingleton<OpenAiEmbeddingProvider>();
-        services.AddScoped<OpenAiAudioTranscriptionProvider>();
         services.AddSingleton<MistralTextGenerationProvider>();
         services.AddSingleton<MistralEmbeddingProvider>();
         services.AddScoped<MistralAudioTranscriptionProvider>();
@@ -52,11 +48,6 @@ public static class ServiceCollectionExtensions
     private static ILLMProvider ResolveTextProvider(IServiceProvider sp)
     {
         var options = sp.GetRequiredService<IOptionsMonitor<AionAiOptions>>().CurrentValue;
-        if (string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase))
-        {
-            return sp.GetRequiredService<OpenAiTextGenerationProvider>();
-        }
-
         if (string.Equals(options.Provider, "mistral", StringComparison.OrdinalIgnoreCase))
         {
             return sp.GetRequiredService<MistralTextGenerationProvider>();
@@ -68,11 +59,6 @@ public static class ServiceCollectionExtensions
     private static IEmbeddingProvider ResolveEmbeddingProvider(IServiceProvider sp)
     {
         var options = sp.GetRequiredService<IOptionsMonitor<AionAiOptions>>().CurrentValue;
-        if (string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase))
-        {
-            return sp.GetRequiredService<OpenAiEmbeddingProvider>();
-        }
-
         if (string.Equals(options.Provider, "mistral", StringComparison.OrdinalIgnoreCase))
         {
             return sp.GetRequiredService<MistralEmbeddingProvider>();
@@ -84,11 +70,6 @@ public static class ServiceCollectionExtensions
     private static IAudioTranscriptionProvider ResolveTranscriptionProvider(IServiceProvider sp)
     {
         var options = sp.GetRequiredService<IOptionsMonitor<AionAiOptions>>().CurrentValue;
-        if (string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase))
-        {
-            return sp.GetRequiredService<OpenAiAudioTranscriptionProvider>();
-        }
-
         if (string.Equals(options.Provider, "mistral", StringComparison.OrdinalIgnoreCase))
         {
             return sp.GetRequiredService<MistralAudioTranscriptionProvider>();
