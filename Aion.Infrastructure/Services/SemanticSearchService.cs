@@ -1,5 +1,7 @@
 using System.Text.Json;
+using System.Threading;
 using Aion.Domain;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -10,9 +12,11 @@ public sealed class SemanticSearchService : ISearchService
 {
     private static readonly JsonSerializerOptions EmbeddingSerializerOptions = new(JsonSerializerDefaults.Web);
 
+    private readonly SemaphoreSlim _keywordIndexGate = new(1, 1);
     private readonly AionDbContext _db;
     private readonly IEmbeddingProvider? _embeddingProvider;
     private readonly ILogger<SemanticSearchService> _logger;
+    private bool _keywordIndexesReady;
 
     public SemanticSearchService(AionDbContext db, ILogger<SemanticSearchService> logger, IServiceProvider serviceProvider)
     {
@@ -81,30 +85,36 @@ public sealed class SemanticSearchService : ISearchService
     {
         var hits = new List<SearchHit>();
 
-        var notes = await _db.NoteSearch
-            .Where(n => n.Content.Contains(query))
-            .Select(n => new { n.NoteId, n.Content })
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        var notes = await SafeQueryAsync(
+            () => _db.NoteSearch
+                .Where(n => n.Content.Contains(query))
+                .Select(n => new { n.NoteId, n.Content })
+                .ToListAsync(cancellationToken),
+            "NoteSearch",
+            cancellationToken).ConfigureAwait(false);
 
         hits.AddRange(notes.Select(n => new SearchHit("Note", n.NoteId, $"Note {n.NoteId:N}", BuildSnippet(n.Content), 0.6)));
 
-        var records = await _db.RecordSearch
-            .Where(r => r.Content.Contains(query))
-            .Select(r => new { r.RecordId, r.EntityTypeId, r.Content })
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        var records = await SafeQueryAsync(
+            () => _db.RecordSearch
+                .Where(r => r.Content.Contains(query))
+                .Select(r => new { r.RecordId, r.EntityTypeId, r.Content })
+                .ToListAsync(cancellationToken),
+            "RecordSearch",
+            cancellationToken).ConfigureAwait(false);
 
         foreach (var record in records)
         {
             hits.Add(new SearchHit("Record", record.RecordId, $"Enregistrement {record.EntityTypeId:N}", BuildSnippet(record.Content), 0.5));
         }
 
-        var files = await _db.FileSearch
-            .Where(f => f.Content.Contains(query))
-            .Select(f => new { f.FileId, f.Content })
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        var files = await SafeQueryAsync(
+            () => _db.FileSearch
+                .Where(f => f.Content.Contains(query))
+                .Select(f => new { f.FileId, f.Content })
+                .ToListAsync(cancellationToken),
+            "FileSearch",
+            cancellationToken).ConfigureAwait(false);
 
         hits.AddRange(files.Select(f => new SearchHit("File", f.FileId, $"Fichier {f.FileId:N}", BuildSnippet(f.Content), 0.4)));
 
@@ -195,6 +205,54 @@ public sealed class SemanticSearchService : ISearchService
         {
             _logger.LogWarning(ex, "Unable to generate embedding for {Target}", title);
             return null;
+        }
+    }
+
+    private async Task<List<T>> SafeQueryAsync<T>(Func<Task<List<T>>> query, string source, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await query().ConfigureAwait(false);
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 1 && ex.Message.Contains("no such table", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(ex, "Skipping {Source} keyword search because the index is missing.", source);
+            await EnsureKeywordIndexesAsync(cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                return await query().ConfigureAwait(false);
+            }
+            catch (Exception retryEx)
+            {
+                _logger.LogWarning(retryEx, "Unable to run {Source} keyword search even after ensuring indexes exist.", source);
+                return new List<T>();
+            }
+        }
+    }
+
+    private async Task EnsureKeywordIndexesAsync(CancellationToken cancellationToken)
+    {
+        if (_keywordIndexesReady)
+        {
+            return;
+        }
+
+        await _keywordIndexGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            if (_keywordIndexesReady)
+            {
+                return;
+            }
+
+            await _db.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+            _keywordIndexesReady = true;
+        }
+        finally
+        {
+            _keywordIndexGate.Release();
         }
     }
 
