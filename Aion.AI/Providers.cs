@@ -279,9 +279,10 @@ public sealed class IntentRecognizer : IIntentDetector
 
     public async Task<IntentDetectionResult> DetectAsync(IntentDetectionRequest request, CancellationToken cancellationToken = default)
     {
-        var contextLines = request.Context.Count == 0
+        var context = request.Context ?? new Dictionary<string, string?>();
+        var contextLines = context.Count == 0
             ? "aucun contexte"
-            : string.Join(", ", request.Context.Select(kvp => $"{kvp.Key}={kvp.Value}"));
+            : string.Join(", ", context.Select(kvp => $"{kvp.Key}={kvp.Value}"));
         var prompt = string.Join("\n", new[]
         {
             "Tu es l'orchestrateur d'intentions AION. Identifie l'intention principale de l'utilisateur.",
