@@ -260,7 +260,7 @@
           "buildTransitive/net8.0/_._": {}
         }
       },
-      "Aion.Domain/1.0.0": {
+      "Aion.Core/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v10.0",
         "dependencies": {
@@ -269,10 +269,10 @@
           "Microsoft.Extensions.Options": "10.0.0"
         },
         "compile": {
-          "bin/placeholder/Aion.Domain.dll": {}
+          "bin/placeholder/Aion.Core.dll": {}
         },
         "runtime": {
-          "bin/placeholder/Aion.Domain.dll": {}
+          "bin/placeholder/Aion.Core.dll": {}
         }
       }
     }
@@ -730,15 +730,15 @@
         "useSharedDesignerContext.txt"
       ]
     },
-    "Aion.Domain/1.0.0": {
+    "Aion.Core/1.0.0": {
       "type": "project",
-      "path": "../Aion.Domain/Aion.Domain.csproj",
-      "msbuildProject": "../Aion.Domain/Aion.Domain.csproj"
+      "path": "../Aion.Core/Aion.Core.csproj",
+      "msbuildProject": "../Aion.Core/Aion.Core.csproj"
     }
   },
   "projectFileDependencyGroups": {
     "net10.0": [
-      "Aion.Domain >= 1.0.0",
+      "Aion.Core >= 1.0.0",
       "Microsoft.Extensions.Http >= 10.0.0",
       "Microsoft.Extensions.Logging.Abstractions >= 10.0.0"
     ]
@@ -776,8 +776,8 @@
         "net10.0": {
           "targetAlias": "net10.0",
           "projectReferences": {
-            "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Domain\\Aion.Domain.csproj": {
-              "projectPath": "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Domain\\Aion.Domain.csproj"
+            "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Core\\Aion.Core.csproj": {
+              "projectPath": "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Core\\Aion.Core.csproj"
             }
           }
         }

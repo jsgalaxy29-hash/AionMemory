@@ -4,14 +4,14 @@
     "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Infrastructure\\Aion.Infrastructure.csproj": {}
   },
   "projects": {
-    "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Domain\\Aion.Domain.csproj": {
+    "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Core\\Aion.Core.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Domain\\Aion.Domain.csproj",
-        "projectName": "Aion.Domain",
-        "projectPath": "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Domain\\Aion.Domain.csproj",
+        "projectUniqueName": "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Core\\Aion.Core.csproj",
+        "projectName": "Aion.Core",
+        "projectPath": "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Core\\Aion.Core.csproj",
         "packagesPath": "C:\\Users\\jsgalaxy\\.nuget\\packages\\",
-        "outputPath": "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Domain\\obj\\",
+        "outputPath": "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Core\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -387,8 +387,8 @@
           "net10.0": {
             "targetAlias": "net10.0",
             "projectReferences": {
-              "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Domain\\Aion.Domain.csproj": {
-                "projectPath": "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Domain\\Aion.Domain.csproj"
+              "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Core\\Aion.Core.csproj": {
+                "projectPath": "C:\\Developpement\\AionMemory\\AionMemory\\Aion.Core\\Aion.Core.csproj"
               }
             }
           }
