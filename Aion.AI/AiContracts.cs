@@ -138,6 +138,10 @@ public interface IReportInterpreter
     Task<ReportBuildResult> BuildReportAsync(ReportBuildRequest request, CancellationToken cancellationToken = default);
 }
 
+public interface IAionVisionService : IVisionService
+{
+}
+
 public interface IVisionService
 {
     Task<S_VisionAnalysis> AnalyzeAsync(VisionAnalysisRequest request, CancellationToken cancellationToken = default);
