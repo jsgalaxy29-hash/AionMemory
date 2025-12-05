@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Aion.AI;
+using Aion.AI;
 using Aion.Domain;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;

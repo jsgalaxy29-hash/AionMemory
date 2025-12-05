@@ -7,7 +7,7 @@ using Aion.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 namespace Aion.AI;
-internal static class HttpClientNames
+public static class HttpClientNames
 {
     public const string Llm = "aion-ai-llm";
     public const string Embeddings = "aion-ai-embeddings";

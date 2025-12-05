@@ -16,6 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Aion.AI\Aion.AI.csproj" />
-    <ProjectReference Include="..\Aion.Domain\Aion.Domain.csproj" />
+    <ProjectReference Include="..\Aion.Core\Aion.Core.csproj" />
   </ItemGroup>
 </Project>
