@@ -1,3 +1,4 @@
+using System.Data;
 using System.Text.Json;
 using System.Threading;
 using Aion.AI;
@@ -249,6 +250,9 @@ public sealed class SemanticSearchService : ISearchService
             }
 
             await _db.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+            await EnsureKeywordIndexExistsAsync("NoteSearch", NoteSearchSql, cancellationToken).ConfigureAwait(false);
+            await EnsureKeywordIndexExistsAsync("RecordSearch", RecordSearchSql, cancellationToken).ConfigureAwait(false);
+            await EnsureKeywordIndexExistsAsync("FileSearch", FileSearchSql, cancellationToken).ConfigureAwait(false);
             _keywordIndexesReady = true;
         }
         finally
@@ -256,6 +260,102 @@ public sealed class SemanticSearchService : ISearchService
             _keywordIndexGate.Release();
         }
     }
+
+    private async Task EnsureKeywordIndexExistsAsync(string tableName, string creationSql, CancellationToken cancellationToken)
+    {
+        if (await TableExistsAsync(tableName, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        await _db.Database.ExecuteSqlRawAsync(creationSql, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> TableExistsAsync(string tableName, CancellationToken cancellationToken)
+    {
+        var connection = _db.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = $name;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$name";
+        parameter.Value = tableName;
+        command.Parameters.Add(parameter);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+        if (shouldClose)
+        {
+            await connection.CloseAsync().ConfigureAwait(false);
+        }
+
+        return result is string;
+    }
+
+    private const string NoteSearchSql = """
+DROP TRIGGER IF EXISTS NoteSearch_ai;
+DROP TRIGGER IF EXISTS NoteSearch_au;
+DROP TRIGGER IF EXISTS NoteSearch_ad;
+CREATE VIRTUAL TABLE IF NOT EXISTS NoteSearch USING fts5(NoteId UNINDEXED, Content);
+CREATE TRIGGER NoteSearch_ai AFTER INSERT ON Notes BEGIN
+    DELETE FROM NoteSearch WHERE NoteId = new.Id;
+    INSERT INTO NoteSearch(NoteId, Content) VALUES (new.Id, COALESCE(new.Title,'') || ' ' || COALESCE(new.Content,''));
+END;
+CREATE TRIGGER NoteSearch_au AFTER UPDATE ON Notes BEGIN
+    DELETE FROM NoteSearch WHERE NoteId = new.Id;
+    INSERT INTO NoteSearch(NoteId, Content) VALUES (new.Id, COALESCE(new.Title,'') || ' ' || COALESCE(new.Content,''));
+END;
+CREATE TRIGGER NoteSearch_ad AFTER DELETE ON Notes BEGIN
+    DELETE FROM NoteSearch WHERE NoteId = old.Id;
+END;
+INSERT INTO NoteSearch(NoteId, Content)
+SELECT Id, COALESCE(Title,'') || ' ' || COALESCE(Content,'') FROM Notes;
+""";
+
+    private const string RecordSearchSql = """
+DROP TRIGGER IF EXISTS RecordSearch_ai;
+DROP TRIGGER IF EXISTS RecordSearch_au;
+DROP TRIGGER IF EXISTS RecordSearch_ad;
+CREATE VIRTUAL TABLE IF NOT EXISTS RecordSearch USING fts5(RecordId UNINDEXED, EntityTypeId UNINDEXED, Content);
+CREATE TRIGGER RecordSearch_ai AFTER INSERT ON Records BEGIN
+    DELETE FROM RecordSearch WHERE RecordId = new.Id;
+    INSERT INTO RecordSearch(RecordId, EntityTypeId, Content) VALUES (new.Id, new.EntityTypeId, COALESCE(new.DataJson,''));
+END;
+CREATE TRIGGER RecordSearch_au AFTER UPDATE ON Records BEGIN
+    DELETE FROM RecordSearch WHERE RecordId = new.Id;
+    INSERT INTO RecordSearch(RecordId, EntityTypeId, Content) VALUES (new.Id, new.EntityTypeId, COALESCE(new.DataJson,''));
+END;
+CREATE TRIGGER RecordSearch_ad AFTER DELETE ON Records BEGIN
+    DELETE FROM RecordSearch WHERE RecordId = old.Id;
+END;
+INSERT INTO RecordSearch(RecordId, EntityTypeId, Content)
+SELECT Id, EntityTypeId, COALESCE(DataJson,'') FROM Records;
+""";
+
+    private const string FileSearchSql = """
+DROP TRIGGER IF EXISTS FileSearch_ai;
+DROP TRIGGER IF EXISTS FileSearch_au;
+DROP TRIGGER IF EXISTS FileSearch_ad;
+CREATE VIRTUAL TABLE IF NOT EXISTS FileSearch USING fts5(FileId UNINDEXED, Content);
+CREATE TRIGGER FileSearch_ai AFTER INSERT ON Files BEGIN
+    DELETE FROM FileSearch WHERE FileId = new.Id;
+    INSERT INTO FileSearch(FileId, Content) VALUES (new.Id, COALESCE(new.FileName,'') || ' ' || COALESCE(new.MimeType,'') || ' ' || COALESCE(new.StoragePath,''));
+END;
+CREATE TRIGGER FileSearch_au AFTER UPDATE ON Files BEGIN
+    DELETE FROM FileSearch WHERE FileId = new.Id;
+    INSERT INTO FileSearch(FileId, Content) VALUES (new.Id, COALESCE(new.FileName,'') || ' ' || COALESCE(new.MimeType,'') || ' ' || COALESCE(new.StoragePath,''));
+END;
+CREATE TRIGGER FileSearch_ad AFTER DELETE ON Files BEGIN
+    DELETE FROM FileSearch WHERE FileId = old.Id;
+END;
+INSERT INTO FileSearch(FileId, Content)
+SELECT Id, COALESCE(FileName,'') || ' ' || COALESCE(MimeType,'') || ' ' || COALESCE(StoragePath,'') FROM Files;
+""";
 
     private static float[]? ParseEmbedding(string? serialized)
     {
