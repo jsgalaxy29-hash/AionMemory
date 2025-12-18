@@ -20,7 +20,7 @@ Application MAUI Blazor qui orchestre l’agent mémoire AION (domaine, infrastr
    ```
 3. Lancer l’application MAUI sur la plateforme souhaitée (exemple Android) :
    ```bash
-   dotnet build AionMemory/AionMemory.csproj -t:Run -f net10.0-android
+   dotnet build src/Aion.AppHost/Aion.AppHost.csproj -t:Run -f net10.0-android
    ```
 
 ## Configuration
@@ -35,12 +35,19 @@ L’application utilise des options strictement validées au démarrage :
 La configuration peut être passée via `appsettings.*`, variables d’environnement (`Aion:*`) ou `ConnectionStrings:Aion`. Toute valeur manquante ou chemin inexistant bloque le démarrage pour éviter une configuration partielle.
 
 ## Structure des projets
-- **Aion.Domain** : entités, contrats et événements.
-- **Aion.Infrastructure** : EF Core + SQLite chiffré, services métiers (stockage, backup, marketplace, recherche…).
-- **Aion.AI** : implémentations factices pour les fournisseurs IA.
-- **AionMemory** : application MAUI Blazor hybride qui consomme les couches ci-dessus.
+- `/src/Aion.Domain` : entités, contrats et invariants.
+- `/src/Aion.Infrastructure` : EF Core + SQLite chiffré, services métiers (stockage, backup, marketplace, recherche…).
+- `/src/Aion.AI` : moteur IA générique (contrats, implémentations HTTP par défaut) et adaptateurs factices.
+- `/src/Aion.AI/Providers.OpenAI` & `/src/Aion.AI/Providers.Mistral` : fournisseurs IA interchangeables.
+- `/src/Aion.AppHost` : hôte MAUI Blazor Hybrid, uniquement pour l’UI/DI/navigation.
+- `/tests` : batteries de tests unitaires par couche.
+
+## Configuration & sécurité
+- **Ne pas versionner de secrets** : les exemples `appsettings.OpenAI.example.json` et `appsettings.Mistral.example.json` servent de modèles. Les vrais fichiers sont ignorés par Git.
+- En développement, utiliser `dotnet user-secrets` pour injecter les clés (`Aion:Ai:ApiKey`, `AION_DB_KEY`, etc.).
+- En CI/production, préférer les variables d’environnement (`Aion:*`) ou les coffres-forts secrets.
 
 ## Notes supplémentaires
 - La base de données et les dossiers sont créés dans le répertoire de données applicatif (`FileSystem.AppDataDirectory`).
 - Pour changer l’emplacement du stockage ou des sauvegardes, fournir des chemins absolus et existants via la configuration (sinon la validation échoue).
-- Une roadmap produit ainsi que les consignes de configuration/sécurité et les scénarios IA supportés sont documentés dans `AionDoc/README.md`.
+- La documentation produit est rangée dans `/docs` avec les sous-dossiers `AION_Vision`, `AION_Specification` et `AION_Prompts`.

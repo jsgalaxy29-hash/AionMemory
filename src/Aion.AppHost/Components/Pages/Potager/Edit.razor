@@ -1,0 +1,45 @@
+@page "/potager/edit/{recordId?}"
+@using Aion.Domain
+@inject IMetadataService Metadata
+@inject IDataEngine DataEngine
+@inject Aion.AppHost.Services.ITableDefinitionService Tables
+@inject NavigationManager Navigation
+
+<h3>Nouvelle culture</h3>
+@if (PotagerTable is null)
+{
+    <p>Module Potager non disponible.</p>
+}
+else
+{
+    <DynamicForm Table="PotagerTable" RecordId="EditingRecordId" DataEngine="DataEngine" OnSaved="Saved" />
+}
+
+@code {
+    [Parameter] public string? RecordId { get; set; }
+    private S_EntityType? PotagerEntity { get; set; }
+    private STable? PotagerTable { get; set; }
+    private Guid? EditingRecordId { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var modules = await Metadata.GetModulesAsync();
+        PotagerEntity = modules.FirstOrDefault(m => m.Name.Contains("Potager", StringComparison.OrdinalIgnoreCase))?.EntityTypes.FirstOrDefault();
+        if (PotagerEntity is not null)
+        {
+            PotagerTable = await Tables.EnsureTableAsync(PotagerEntity);
+        }
+
+        if (Guid.TryParse(RouteParamToGuid(RecordId), out var guid))
+        {
+            EditingRecordId = guid;
+        }
+    }
+
+    private static string? RouteParamToGuid(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private void Saved(F_Record record)
+    {
+        Navigation.NavigateTo($"/records/{PotagerEntity?.Name}/{record.Id}");
+    }
+}

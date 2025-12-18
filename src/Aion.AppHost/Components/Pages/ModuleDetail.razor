@@ -1,0 +1,168 @@
+@page "/module/{id}"
+@inject IMetadataService Metadata
+@inject IDataEngine DataEngine
+@inject Aion.AppHost.Services.ITableDefinitionService Tables
+@inject NavigationManager Navigation
+
+<h3>Module</h3>
+@if (Module is null)
+{
+    <p>Chargement du module…</p>
+}
+else
+{
+    <div class="module-header" style="margin-bottom:12px;">
+        <div>
+            <h4>@Module.Name</h4>
+            <p class="text-muted">@Module.Description</p>
+        </div>
+        <button class="button secondary" @onclick="NavigateToDashboard">Dashboard</button>
+    </div>
+
+    <div class="grid columns-3" style="margin-bottom:12px;">
+        <div class="card">
+            <h5>Entités</h5>
+            <ul class="module-entities">
+                @foreach (var entity in Module.EntityTypes)
+                {
+                    <li class="@(SelectedEntity == entity ? "active" : string.Empty)" @onclick="() => SelectEntity(entity)">
+                        <div><strong>@entity.Name</strong></div>
+                        <small class="text-muted">@entity.Fields.Count champ(s)</small>
+                    </li>
+                }
+            </ul>
+        </div>
+        <div class="card">
+            <h5>Vues enregistrées</h5>
+            @if (SelectedTableViews.Any())
+            {
+                <select class="select" @onchange="OnViewChanged" value="@SelectedView">
+                    <option value="">Toutes les données</option>
+                    @foreach (var view in SelectedTableViews)
+                    {
+                        <option value="@view.Name">@view.Name</option>
+                    }
+                </select>
+            }
+            else
+            {
+                <p class="text-muted">Aucune vue filtrée pour cette entité.</p>
+            }
+        </div>
+        <div class="card">
+            <h5>Rapports</h5>
+            @if (Module.Reports.Any())
+            {
+                <ul class="module-entities">
+                    @foreach (var report in Module.Reports)
+                    {
+                        <li>
+                            <div><strong>@report.Name</strong></div>
+                            <small class="text-muted">@report.Visualization ?? "Requête"</small>
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="text-muted">Pas encore de rapports pour ce module.</p>
+            }
+        </div>
+    </div>
+
+    <div class="grid columns-2">
+        <div class="card">
+            @if (SelectedTable is not null)
+            {
+                <DynamicList Table="SelectedTable" Filter="@SelectedView" DataEngine="DataEngine" OnSelect="OpenRecord" />
+            }
+        </div>
+        <div class="card">
+            <h4>Créer un enregistrement</h4>
+            @if (SelectedTable is not null)
+            {
+                <DynamicForm Table="SelectedTable" DataEngine="DataEngine" OnSaved="HandleSaved" />
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Id { get; set; }
+    private S_Module? Module { get; set; }
+    private S_EntityType? SelectedEntity { get; set; }
+    private readonly Dictionary<Guid, STable> TablesByEntity = new();
+    private string? SelectedView { get; set; }
+    private IEnumerable<SViewDefinition> SelectedTableViews
+        => SelectedTable?.Views ?? Enumerable.Empty<SViewDefinition>();
+    private STable? SelectedTable
+        => SelectedEntity is not null && TablesByEntity.TryGetValue(SelectedEntity.Id, out var table) ? table : null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadModule();
+    }
+
+    private void OpenRecord(F_Record record)
+    {
+        Navigation.NavigateTo($"/records/{SelectedEntity?.Name}/{record.Id}");
+    }
+
+    private void HandleSaved(F_Record record)
+    {
+        OpenRecord(record);
+    }
+
+    private async Task LoadModule()
+    {
+        var modules = await Metadata.GetModulesAsync();
+        if (!Guid.TryParse(Id, out var guid))
+        {
+            return;
+        }
+
+        Module = modules.FirstOrDefault(m => m.Id == guid);
+        if (Module is null)
+        {
+            return;
+        }
+
+        await EnsureTablesAreLoaded(Module);
+        SelectedEntity ??= Module.EntityTypes.FirstOrDefault();
+        SelectedView = null;
+    }
+
+    private async Task EnsureTablesAreLoaded(S_Module module)
+    {
+        foreach (var entity in module.EntityTypes)
+        {
+            if (TablesByEntity.ContainsKey(entity.Id))
+            {
+                continue;
+            }
+
+            var table = await Tables.EnsureTableAsync(entity);
+            TablesByEntity[entity.Id] = table;
+        }
+    }
+
+    private void SelectEntity(S_EntityType entity)
+    {
+        SelectedEntity = entity;
+        SelectedView = null;
+    }
+
+    private async Task OnViewChanged(ChangeEventArgs args)
+    {
+        SelectedView = args.Value?.ToString();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void NavigateToDashboard()
+    {
+        if (Module is not null)
+        {
+            Navigation.NavigateTo($"/dashboard/{Module.Name.ToLowerInvariant()}");
+        }
+    }
+}

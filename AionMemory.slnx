@@ -1,16 +1,15 @@
 <Solution>
-  <Project Path="Aion.AI/Aion.AI.csproj" />
-  <Project Path="Aion.AI.OpenAI/Aion.AI.OpenAI.csproj" />
-  <Project Path="Aion.Core/Aion.Core.csproj" />
-  <Project Path="Aion.Infrastructure/Aion.Infrastructure.csproj" />
-  <Project Path="Aion.Infrastructure.Tests/Aion.Infrastructure.Tests.csproj" />
-  <Project Path="Aion.Domain.Tests/Aion.Domain.Tests.csproj" />
-  <Project Path="Aion.AI.Tests/Aion.AI.Tests.csproj" />
-  <Project Path="Aion.Tests/Aion.Tests.csproj" />
-  <Project Path="AionMemory.Logic/AionMemory.Logic.csproj" />
-  <Project Path="AionMemory.Logic.Tests/AionMemory.Logic.Tests.csproj" />
-  <Project Path="AionMemory.UI.Tests/AionMemory.UI.Tests.csproj" />
-  <Project Path="AionMemory/AionMemory.csproj">
+  <Project Path="src/Aion.Domain/Aion.Domain.csproj" />
+  <Project Path="src/Aion.Infrastructure/Aion.Infrastructure.csproj" />
+  <Project Path="src/Aion.AI/Aion.AI.csproj" />
+  <Project Path="src/Aion.AI/Providers.OpenAI/Aion.AI.Providers.OpenAI.csproj" />
+  <Project Path="src/Aion.AI/Providers.Mistral/Aion.AI.Providers.Mistral.csproj" />
+  <Project Path="src/Aion.AppHost/Aion.AppHost.csproj">
     <Deploy Solution="Debug|*" />
   </Project>
+  <Project Path="tests/Aion.Domain.Tests/Aion.Domain.Tests.csproj" />
+  <Project Path="tests/Aion.Infrastructure.Tests/Aion.Infrastructure.Tests.csproj" />
+  <Project Path="tests/Aion.AI.Tests/Aion.AI.Tests.csproj" />
+  <Project Path="tests/Aion.Tests/Aion.Tests.csproj" />
+  <Project Path="tests/Aion.AppHost.UI.Tests/Aion.AppHost.UI.Tests.csproj" />
 </Solution>
