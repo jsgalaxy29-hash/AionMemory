@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
+    <RootNamespace>Aion.AppHost</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="bunit" Version="1.26.65" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Aion.Domain\Aion.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Aion.AppHost\Aion.AppHost.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <RazorComponent Include="..\..\src\Aion.AppHost\Components\Pages\ModulesHome.razor" Link="Components/Pages/ModulesHome.razor" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="_Imports.razor" />
+  </ItemGroup>
+</Project>
