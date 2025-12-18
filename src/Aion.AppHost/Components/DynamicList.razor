@@ -88,7 +88,8 @@
             return;
         }
 
-        Items = await DataEngine!.QueryAsync(ResolvedTable.Id, Filter);
+        var spec = string.IsNullOrWhiteSpace(Filter) ? null : new QuerySpec { View = Filter };
+        Items = await DataEngine!.QueryAsync(ResolvedTable.Id, spec);
         StateHasChanged();
     }
 

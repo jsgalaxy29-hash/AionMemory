@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq;
 
 namespace Aion.Domain;
@@ -273,11 +274,18 @@ public class J_Event_Link
 public class F_Record
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public Guid EntityTypeId { get; set; }
+
+    [Column("EntityTypeId")]
+    public Guid TableId { get; set; }
+
     [Required]
     public string DataJson { get; set; } = string.Empty;
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
     public DateTimeOffset? UpdatedAt { get; set; }
+
+    public DateTimeOffset? DeletedAt { get; set; }
 }
 
 public sealed record LookupResolution(Guid TargetId, string? Label, Guid? TableId = null, string? TableName = null);
