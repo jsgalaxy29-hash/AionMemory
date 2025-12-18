@@ -219,15 +219,19 @@ namespace Aion.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("EntityTypeId")
+                    b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TableId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("EntityTypeId");
 
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("EntityTypeId", "CreatedAt");
+                    b.HasIndex("TableId", "CreatedAt");
 
                     b.ToTable("Records");
                 });

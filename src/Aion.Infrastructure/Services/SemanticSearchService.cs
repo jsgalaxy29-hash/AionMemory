@@ -51,12 +51,12 @@ public sealed class SemanticSearchService : ISearchService
 
     public async Task IndexRecordAsync(F_Record record, CancellationToken cancellationToken = default)
     {
-        var entity = await _db.EntityTypes
+        var table = await _db.Tables
             .AsNoTracking()
-            .FirstOrDefaultAsync(e => e.Id == record.EntityTypeId, cancellationToken)
+            .FirstOrDefaultAsync(e => e.Id == record.TableId, cancellationToken)
             .ConfigureAwait(false);
 
-        var title = entity?.Name ?? $"Enregistrement {record.Id}";
+        var title = table?.DisplayName ?? table?.Name ?? $"Enregistrement {record.Id}";
         await UpsertSemanticEntryAsync("Record", record.Id, title, record.DataJson ?? string.Empty, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -100,14 +100,14 @@ public sealed class SemanticSearchService : ISearchService
         var records = await SafeQueryAsync(
             () => _db.RecordSearch
                 .Where(r => r.Content.Contains(query))
-                .Select(r => new { r.RecordId, r.EntityTypeId, r.Content })
+                .Select(r => new { r.RecordId, r.TableId, r.Content })
                 .ToListAsync(cancellationToken),
             "RecordSearch",
             cancellationToken).ConfigureAwait(false);
 
         foreach (var record in records)
         {
-            hits.Add(new SearchHit("Record", record.RecordId, $"Enregistrement {record.EntityTypeId:N}", BuildSnippet(record.Content), 0.5));
+            hits.Add(new SearchHit("Record", record.RecordId, $"Enregistrement {record.TableId:N}", BuildSnippet(record.Content), 0.5));
         }
 
         var files = await SafeQueryAsync(

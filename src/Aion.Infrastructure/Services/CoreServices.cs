@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Aion.AI;
 using Aion.Domain;
 using Microsoft.EntityFrameworkCore;
@@ -110,13 +111,19 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-    public async Task<F_Record?> GetAsync(Guid entityTypeId, Guid id, CancellationToken cancellationToken = default)
-        => await _db.Records.AsNoTracking().FirstOrDefaultAsync(r => r.EntityTypeId == entityTypeId && r.Id == id, cancellationToken)
-            .ConfigureAwait(false);
-
-    public async Task<ResolvedRecord?> GetResolvedAsync(Guid entityTypeId, Guid id, CancellationToken cancellationToken = default)
+    public async Task<F_Record?> GetAsync(Guid tableId, Guid id, CancellationToken cancellationToken = default)
     {
-        var record = await GetAsync(entityTypeId, id, cancellationToken).ConfigureAwait(false);
+        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
+
+        return await FilterByTable(_db.Records.AsNoTracking(), table)
+            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<ResolvedRecord?> GetResolvedAsync(Guid tableId, Guid id, CancellationToken cancellationToken = default)
+    {
+        var record = await GetAsync(tableId, id, cancellationToken).ConfigureAwait(false);
         if (record is null)
         {
             return null;
@@ -125,99 +132,111 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         return await BuildResolvedRecordAsync(record, cancellationToken).ConfigureAwait(false);
     }
 
-    public Task<F_Record> InsertAsync(Guid entityTypeId, string dataJson, CancellationToken cancellationToken = default)
-        => InsertAsync(entityTypeId, ParseJsonPayload(dataJson), cancellationToken);
+    public Task<F_Record> InsertAsync(Guid tableId, string dataJson, CancellationToken cancellationToken = default)
+        => InsertAsync(tableId, ParseJsonPayload(dataJson), cancellationToken);
 
-    public async Task<F_Record> InsertAsync(Guid entityTypeId, IDictionary<string, object?> data, CancellationToken cancellationToken = default)
+    public async Task<F_Record> InsertAsync(Guid tableId, IDictionary<string, object?> data, CancellationToken cancellationToken = default)
     {
         var record = new F_Record
         {
-            EntityTypeId = entityTypeId,
-            DataJson = await ValidateRecordAsync(entityTypeId, data, cancellationToken).ConfigureAwait(false),
+            TableId = tableId,
+            DataJson = await ValidateRecordAsync(tableId, data, null, cancellationToken).ConfigureAwait(false),
             CreatedAt = DateTimeOffset.UtcNow
         };
         await _db.Records.AddAsync(record, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Record {RecordId} inserted for entity {EntityTypeId}", record.Id, entityTypeId);
+        _logger.LogInformation("Record {RecordId} inserted for table {TableId}", record.Id, tableId);
         await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
         return record;
     }
 
-    public Task<F_Record> UpdateAsync(Guid entityTypeId, Guid id, string dataJson, CancellationToken cancellationToken = default)
-        => UpdateAsync(entityTypeId, id, ParseJsonPayload(dataJson), cancellationToken);
+    public Task<F_Record> UpdateAsync(Guid tableId, Guid id, string dataJson, CancellationToken cancellationToken = default)
+        => UpdateAsync(tableId, id, ParseJsonPayload(dataJson), cancellationToken);
 
-    public async Task<F_Record> UpdateAsync(Guid entityTypeId, Guid id, IDictionary<string, object?> data, CancellationToken cancellationToken = default)
+    public async Task<F_Record> UpdateAsync(Guid tableId, Guid id, IDictionary<string, object?> data, CancellationToken cancellationToken = default)
     {
-        var record = await _db.Records.FirstOrDefaultAsync(r => r.EntityTypeId == entityTypeId && r.Id == id, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Record {id} not found for entity {entityTypeId}");
+        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
 
-        record.DataJson = await ValidateRecordAsync(entityTypeId, data, cancellationToken).ConfigureAwait(false);
+        var record = await FilterByTable(_db.Records, table).FirstOrDefaultAsync(r => r.Id == id, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Record {id} not found for table {tableId}");
+
+        record.DataJson = await ValidateRecordAsync(tableId, data, id, cancellationToken).ConfigureAwait(false);
         record.UpdatedAt = DateTimeOffset.UtcNow;
         _db.Records.Update(record);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Record {RecordId} updated for entity {EntityTypeId}", id, entityTypeId);
+        _logger.LogInformation("Record {RecordId} updated for table {TableId}", id, tableId);
         await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
         return record;
     }
 
-    public async Task DeleteAsync(Guid entityTypeId, Guid id, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(Guid tableId, Guid id, CancellationToken cancellationToken = default)
     {
-        var record = await _db.Records.FirstOrDefaultAsync(r => r.EntityTypeId == entityTypeId && r.Id == id, cancellationToken).ConfigureAwait(false);
+        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
+
+        var record = await FilterByTable(_db.Records, table).FirstOrDefaultAsync(r => r.Id == id, cancellationToken).ConfigureAwait(false);
         if (record is null)
         {
             return;
         }
 
-        _db.Records.Remove(record);
+        if (table.SupportsSoftDelete)
+        {
+            record.DeletedAt = DateTimeOffset.UtcNow;
+            _db.Records.Update(record);
+        }
+        else
+        {
+            _db.Records.Remove(record);
+        }
+
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Record {RecordId} deleted for entity {EntityTypeId}", id, entityTypeId);
+        _logger.LogInformation("Record {RecordId} deleted for table {TableId}", id, tableId);
         await _search.RemoveAsync("Record", id, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<IEnumerable<F_Record>> QueryAsync(Guid entityTypeId, string? filter = null, IDictionary<string, string?>? equals = null, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<F_Record>> QueryAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default)
     {
-        var query = _db.Records.AsQueryable().Where(r => r.EntityTypeId == entityTypeId);
-        var table = await GetTableAsync(entityTypeId, cancellationToken).ConfigureAwait(false);
+        spec ??= new QuerySpec();
+        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
 
-        if (table is not null)
+        var query = FilterByTable(_db.Records.AsQueryable(), table);
+        query = ApplyViewFilters(query, table, spec.View);
+        query = ApplyStructuredFilters(query, table, spec.Filters);
+
+        if (!string.IsNullOrWhiteSpace(spec.FullText))
         {
-            var viewFilter = ResolveViewFilter(filter, table);
-            equals = MergeEqualsFilters(equals, viewFilter);
+            var fts = _db.RecordSearch.FromSqlRaw(
+                "SELECT RecordId, EntityTypeId, Content FROM RecordSearch WHERE EntityTypeId = {0} AND RecordSearch MATCH {1}",
+                tableId,
+                spec.FullText);
+
+            query = query.Where(r => fts.Select(s => s.RecordId).Contains(r.Id));
         }
 
-        if (!string.IsNullOrWhiteSpace(filter))
+        query = ApplyOrdering(query, table, spec);
+
+        if (spec.Skip.HasValue)
         {
-            query = query.Where(r => _db.RecordSearch
-                .Where(s => s.EntityTypeId == entityTypeId && s.Content.Contains(filter))
-                .Select(s => s.RecordId)
-                .Contains(r.Id));
+            query = query.Skip(spec.Skip.Value);
         }
 
-        if (equals is not null)
+        if (spec.Take.HasValue)
         {
-            foreach (var clause in equals.Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value)))
-            {
-                EnsureFieldExists(table, clause.Key);
-                var searchText = $"\"{clause.Key}\":\"{clause.Value}\"";
-                query = query.Where(r => r.DataJson != null && r.DataJson.Contains(searchText));
-            }
+            query = query.Take(spec.Take.Value);
         }
 
-        var results = await query
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        return results
-            .OrderByDescending(r => r.CreatedAt)
-            .ToList();
+        return await query.ToListAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<IEnumerable<ResolvedRecord>> QueryResolvedAsync(Guid entityTypeId, string? filter = null, IDictionary<string, string?>? equals = null, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<ResolvedRecord>> QueryResolvedAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default)
     {
-        var table = await GetTableAsync(entityTypeId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Table {entityTypeId} not found");
+        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
 
-        var results = await QueryAsync(entityTypeId, filter, equals, cancellationToken).ConfigureAwait(false);
+        var results = await QueryAsync(tableId, spec, cancellationToken).ConfigureAwait(false);
         var resolved = new List<ResolvedRecord>();
 
         foreach (var record in results)
@@ -227,6 +246,124 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         }
 
         return resolved;
+    }
+
+    private static IQueryable<F_Record> FilterByTable(IQueryable<F_Record> query, STable table)
+    {
+        query = query.Where(r => r.TableId == table.Id);
+
+        if (table.SupportsSoftDelete)
+        {
+            query = query.Where(r => r.DeletedAt == null);
+        }
+
+        return query;
+    }
+
+    private IQueryable<F_Record> ApplyViewFilters(IQueryable<F_Record> query, STable table, string? viewName)
+    {
+        var equals = ResolveViewFilter(viewName, table);
+        if (equals is null)
+        {
+            return query;
+        }
+
+        var filters = equals
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
+            .Select(kv => new QueryFilter(kv.Key, QueryFilterOperator.Equals, kv.Value));
+
+        return ApplyStructuredFilters(query, table, filters);
+    }
+
+    private IQueryable<F_Record> ApplyStructuredFilters(IQueryable<F_Record> query, STable table, IEnumerable<QueryFilter>? filters)
+    {
+        if (filters is null)
+        {
+            return query;
+        }
+
+        foreach (var filter in filters)
+        {
+            if (string.IsNullOrWhiteSpace(filter.Field))
+            {
+                continue;
+            }
+
+            var field = table.Fields.FirstOrDefault(f => string.Equals(f.Name, filter.Field, StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException($"Field '{filter.Field}' is not defined for table {table.Name}");
+
+            query = ApplyFilter(query, field, filter);
+        }
+
+        return query;
+    }
+
+    private IQueryable<F_Record> ApplyFilter(IQueryable<F_Record> query, SFieldDefinition field, QueryFilter filter)
+    {
+        var path = BuildJsonPath(field.Name);
+        var stringValue = filter.Value?.ToString();
+
+        switch (field.DataType)
+        {
+            case FieldDataType.Number:
+            case FieldDataType.Decimal:
+                if (filter.Value is null)
+                {
+                    return query;
+                }
+
+                var numeric = Convert.ToDouble(filter.Value);
+                query = filter.Operator switch
+                {
+                    QueryFilterOperator.Equals => query.Where(r => EF.Functions.JsonExtract<double?>(r.DataJson, path) == numeric),
+                    QueryFilterOperator.GreaterThan => query.Where(r => EF.Functions.JsonExtract<double?>(r.DataJson, path) > numeric),
+                    QueryFilterOperator.GreaterThanOrEqual => query.Where(r => EF.Functions.JsonExtract<double?>(r.DataJson, path) >= numeric),
+                    QueryFilterOperator.LessThan => query.Where(r => EF.Functions.JsonExtract<double?>(r.DataJson, path) < numeric),
+                    QueryFilterOperator.LessThanOrEqual => query.Where(r => EF.Functions.JsonExtract<double?>(r.DataJson, path) <= numeric),
+                    _ => query
+                };
+                break;
+            default:
+                if (string.IsNullOrWhiteSpace(stringValue))
+                {
+                    return query;
+                }
+
+                query = filter.Operator switch
+                {
+                    QueryFilterOperator.Equals => query.Where(r => EF.Functions.JsonExtract<string?>(r.DataJson, path) == stringValue),
+                    QueryFilterOperator.Contains => query.Where(r => EF.Functions.JsonExtract<string?>(r.DataJson, path) != null && EF.Functions.JsonExtract<string?>(r.DataJson, path)!.Contains(stringValue)),
+                    _ => query
+                };
+                break;
+        }
+
+        return query;
+    }
+
+    private static string BuildJsonPath(string fieldName) => $"$.{fieldName}";
+
+    private IQueryable<F_Record> ApplyOrdering(IQueryable<F_Record> query, STable table, QuerySpec spec)
+    {
+        if (string.IsNullOrWhiteSpace(spec.OrderBy))
+        {
+            return query.OrderByDescending(r => r.CreatedAt);
+        }
+
+        var field = table.Fields.FirstOrDefault(f => string.Equals(f.Name, spec.OrderBy, StringComparison.OrdinalIgnoreCase));
+        if (field is null || !field.IsSortable)
+        {
+            return query.OrderByDescending(r => r.CreatedAt);
+        }
+
+        var path = BuildJsonPath(field.Name);
+        return field.DataType switch
+        {
+            FieldDataType.Number or FieldDataType.Decimal when spec.Descending => query.OrderByDescending(r => EF.Functions.JsonExtract<double?>(r.DataJson, path)),
+            FieldDataType.Number or FieldDataType.Decimal => query.OrderBy(r => EF.Functions.JsonExtract<double?>(r.DataJson, path)),
+            _ when spec.Descending => query.OrderByDescending(r => EF.Functions.JsonExtract<string?>(r.DataJson, path)),
+            _ => query.OrderBy(r => EF.Functions.JsonExtract<string?>(r.DataJson, path))
+        };
     }
 
     private static void NormalizeTableDefinition(STable table)
@@ -301,9 +438,10 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         }
     }
 
-    private async Task<string> ValidateRecordAsync(Guid tableId, IDictionary<string, object?> values, CancellationToken cancellationToken)
+    private async Task<string> ValidateRecordAsync(Guid tableId, IDictionary<string, object?> values, Guid? recordId, CancellationToken cancellationToken)
     {
         var validated = await NormalizePayloadAsync(tableId, values, cancellationToken).ConfigureAwait(false);
+        await EnforceConstraintsAsync(tableId, validated, recordId, cancellationToken).ConfigureAwait(false);
         return SerializeValues(validated);
     }
 
@@ -375,6 +513,80 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(field.DataType), $"Unsupported data type {field.DataType}");
+        }
+
+        if (value is string str)
+        {
+            if (field.MinLength.HasValue && str.Length < field.MinLength.Value)
+            {
+                throw new InvalidOperationException($"Field '{field.Name}' must be at least {field.MinLength} characters");
+            }
+
+            if (field.MaxLength.HasValue && str.Length > field.MaxLength.Value)
+            {
+                throw new InvalidOperationException($"Field '{field.Name}' must be at most {field.MaxLength} characters");
+            }
+
+            if (!string.IsNullOrWhiteSpace(field.ValidationPattern) && !Regex.IsMatch(str, field.ValidationPattern))
+            {
+                throw new InvalidOperationException($"Field '{field.Name}' does not match the expected pattern");
+            }
+
+            if (!string.IsNullOrWhiteSpace(field.EnumValues))
+            {
+                var allowed = field.EnumValues.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (!allowed.Contains(str, StringComparer.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Field '{field.Name}' must be one of: {string.Join(", ", allowed)}");
+                }
+            }
+        }
+
+        if ((field.DataType == FieldDataType.Number || field.DataType == FieldDataType.Decimal) && value is IConvertible convertible)
+        {
+            var numeric = Convert.ToDecimal(convertible);
+            if (field.MinValue.HasValue && numeric < field.MinValue.Value)
+            {
+                throw new InvalidOperationException($"Field '{field.Name}' must be greater than or equal to {field.MinValue}");
+            }
+
+            if (field.MaxValue.HasValue && numeric > field.MaxValue.Value)
+            {
+                throw new InvalidOperationException($"Field '{field.Name}' must be less than or equal to {field.MaxValue}");
+            }
+        }
+    }
+
+    private async Task EnforceConstraintsAsync(Guid tableId, IDictionary<string, object?> values, Guid? recordId, CancellationToken cancellationToken)
+    {
+        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
+
+        foreach (var uniqueField in table.Fields.Where(f => f.IsUnique))
+        {
+            if (!values.TryGetValue(uniqueField.Name, out var uniqueValue) || uniqueValue is null)
+            {
+                continue;
+            }
+
+            var path = BuildJsonPath(uniqueField.Name);
+            var scoped = FilterByTable(_db.Records.AsQueryable(), table);
+
+            scoped = uniqueField.DataType switch
+            {
+                FieldDataType.Number or FieldDataType.Decimal when uniqueValue is IConvertible convertible => scoped.Where(r => EF.Functions.JsonExtract<double?>(r.DataJson, path) == Convert.ToDouble(convertible)),
+                _ => scoped.Where(r => EF.Functions.JsonExtract<string?>(r.DataJson, path) == uniqueValue.ToString())
+            };
+
+            if (recordId.HasValue)
+            {
+                scoped = scoped.Where(r => r.Id != recordId.Value);
+            }
+
+            if (await scoped.AnyAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException($"Field '{uniqueField.Name}' must be unique in table {table.Name}");
+            }
         }
     }
 
@@ -535,7 +747,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         var targetTable = await FindLookupTableAsync(field, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Lookup target '{field.LookupTarget}' not found for field {field.Name}");
 
-        var exists = await _db.Records.AnyAsync(r => r.EntityTypeId == targetTable.Id && r.Id == lookupId, cancellationToken).ConfigureAwait(false);
+        var exists = await FilterByTable(_db.Records.AsQueryable(), targetTable).AnyAsync(r => r.Id == lookupId, cancellationToken).ConfigureAwait(false);
         if (!exists)
         {
             throw new InvalidOperationException($"Lookup value {lookupId} not found in table {targetTable.Name}");
@@ -563,8 +775,8 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
     private async Task<ResolvedRecord> BuildResolvedRecordAsync(F_Record record, CancellationToken cancellationToken)
     {
-        var table = await GetTableAsync(record.EntityTypeId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Table {record.EntityTypeId} not found");
+        var table = await GetTableAsync(record.TableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {record.TableId} not found");
 
         return await BuildResolvedRecordAsync(record, table, cancellationToken).ConfigureAwait(false);
     }
@@ -605,8 +817,8 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
                 continue;
             }
 
-            var targetRecord = await _db.Records.AsNoTracking()
-                .FirstOrDefaultAsync(r => r.EntityTypeId == targetTable.Id && r.Id == lookupId.Value, cancellationToken)
+            var targetRecord = await FilterByTable(_db.Records.AsNoTracking(), targetTable)
+                .FirstOrDefaultAsync(r => r.Id == lookupId.Value, cancellationToken)
                 .ConfigureAwait(false);
 
             if (targetRecord is null)

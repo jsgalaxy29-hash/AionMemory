@@ -161,7 +161,9 @@ public class AionDbContext : DbContext
         modelBuilder.Entity<F_Record>(builder =>
         {
             builder.Property(r => r.DataJson).IsRequired();
-            builder.HasIndex(r => new { r.EntityTypeId, r.CreatedAt });
+            builder.Property(r => r.TableId).HasColumnName("EntityTypeId");
+            builder.Property(r => r.DeletedAt);
+            builder.HasIndex(r => new { r.TableId, r.CreatedAt });
         });
 
         modelBuilder.Entity<S_VisionAnalysis>(builder =>

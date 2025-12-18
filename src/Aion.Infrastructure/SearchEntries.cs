@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace Aion.Infrastructure;
 
 public sealed class NoteSearchEntry
@@ -9,7 +11,8 @@ public sealed class NoteSearchEntry
 public sealed class RecordSearchEntry
 {
     public Guid RecordId { get; set; }
-    public Guid EntityTypeId { get; set; }
+    [Column("EntityTypeId")]
+    public Guid TableId { get; set; }
     public string Content { get; set; } = string.Empty;
 }
 
