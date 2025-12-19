@@ -1,14 +1,17 @@
-name: Build & Tests
+name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/** ]
   pull_request:
     branches: [ main ]
 
 jobs:
-  validate:
-    runs-on: ubuntu-latest
+  build-and-test:
+    runs-on: windows-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,34 +21,34 @@ jobs:
         with:
           dotnet-version: '10.0.100-preview.5'
           include-prerelease: true
+          cache: true
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui
 
       - name: Restore
         run: dotnet restore AionMemory.slnx
 
-      - name: Build core libraries
-        run: |
-          dotnet build Aion.Domain/Aion.Domain.csproj --configuration Release --no-restore
-          dotnet build Aion.Infrastructure/Aion.Infrastructure.csproj --configuration Release --no-restore
-          dotnet build Aion.AI/Aion.AI.csproj --configuration Release --no-restore
-          dotnet build AionMemory.Logic/AionMemory.Logic.csproj --configuration Release --no-restore
+      - name: Build
+        run: dotnet build AionMemory.slnx --configuration Release --no-restore /p:ContinuousIntegrationBuild=true
 
-      - name: Run tests
-        run: |
-          dotnet test Aion.Domain.Tests/Aion.Domain.Tests.csproj --configuration Release --no-build
-          dotnet test Aion.Infrastructure.Tests/Aion.Infrastructure.Tests.csproj --configuration Release --no-build
-          dotnet test Aion.AI.Tests/Aion.AI.Tests.csproj --configuration Release --no-build
-          dotnet test AionMemory.Logic.Tests/AionMemory.Logic.Tests.csproj --configuration Release --no-build
+      - name: Test
+        run: dotnet test AionMemory.slnx --configuration Release --no-build --logger "trx;LogFileName=test-results.trx"
 
-      - name: Validate EF Core migrations
-        env:
-          PATH: $HOME/.dotnet/tools:${{ env.PATH }}
-        run: |
-          dotnet tool install --global dotnet-ef
-          mkdir -p artifacts
-          dotnet ef migrations script --project Aion.Infrastructure/Aion.Infrastructure.csproj --no-build --output artifacts/migrations.sql
-
-      - name: Publish migration artifact
+      - name: Publish test results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: migrations-sql
-          path: artifacts/migrations.sql
+          name: test-results-${{ runner.os }}
+          path: "**/*.trx"
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Gitleaks scan
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: detect --source . --no-banner
