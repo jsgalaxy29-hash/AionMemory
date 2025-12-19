@@ -295,7 +295,21 @@ public sealed class IntentRecognizer : IIntentDetector
             $"Locale: {request.Locale}"
         });
 
-        var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
+        LlmResponse response;
+        try
+        {
+            response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException oce) when (cancellationToken.IsCancellationRequested && oce.CancellationToken == cancellationToken)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Intent detection failed for input '{Input}'", request.Input);
+            return BuildFallback(request.Input, null, ex.Message, 0.05);
+        }
+
         var json = JsonHelper.ExtractJson(response.Content);
 
         if (TryParseIntent(json, out var parsed))
@@ -304,7 +318,7 @@ public sealed class IntentRecognizer : IIntentDetector
         }
 
         _logger.LogWarning("Intent parsing failed, returning fallback intent for input '{Input}'", request.Input);
-        return new IntentDetectionResult("unknown", new Dictionary<string, string> { ["raw"] = request.Input }, 0.1, response.RawResponse ?? json);
+        return BuildFallback(request.Input, response.RawResponse ?? json);
     }
     private bool TryParseIntent(string json, out IntentDetectionResult result)
     {
@@ -359,6 +373,17 @@ public sealed class IntentRecognizer : IIntentDetector
             _logger.LogWarning(ex, "Unable to parse intent JSON");
             return false;
         }
+    }
+
+    private static IntentDetectionResult BuildFallback(string input, string? rawResponse, string? error = null, double confidence = 0.1)
+    {
+        var parameters = new Dictionary<string, string> { ["raw"] = input };
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            parameters["error"] = error;
+        }
+
+        return new IntentDetectionResult("unknown", parameters, confidence, rawResponse);
     }
 }
 public sealed class ModuleDesigner : IModuleDesigner

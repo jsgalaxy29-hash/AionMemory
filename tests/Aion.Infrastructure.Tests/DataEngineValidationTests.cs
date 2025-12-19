@@ -81,11 +81,21 @@ public class DataEngineValidationTests
         await engine.InsertAsync(table.Id, "{ \"Title\": \"A\", \"Category\": \"work\" }");
         await engine.InsertAsync(table.Id, "{ \"Title\": \"B\", \"Category\": \"home\" }");
 
-        var filtered = await engine.QueryAsync(table.Id, filter: "byCategory");
+        var filtered = await engine.QueryAsync(table.Id, new QuerySpec { View = "byCategory" });
         Assert.Single(filtered);
 
-        var combined = await engine.QueryAsync(table.Id, equals: new Dictionary<string, string?> { ["Category"] = "home" });
-        Assert.Single(combined);
+        var combined = await engine.QueryAsync(table.Id, new QuerySpec
+        {
+            View = "byCategory",
+            Filters = { new QueryFilter("Category", QueryFilterOperator.Equals, "home") }
+        });
+        Assert.Empty(combined);
+
+        var byEqualsOnly = await engine.QueryAsync(table.Id, new QuerySpec
+        {
+            Filters = { new QueryFilter("Category", QueryFilterOperator.Equals, "home") }
+        });
+        Assert.Single(byEqualsOnly);
     }
 }
 
