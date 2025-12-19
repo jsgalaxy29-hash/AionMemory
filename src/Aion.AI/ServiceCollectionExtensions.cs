@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Aion.AI;
@@ -21,14 +22,28 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient(HttpClientNames.Transcription, ConfigureClient(HttpClientNames.Transcription));
         services.AddHttpClient(HttpClientNames.Vision, ConfigureClient(HttpClientNames.Vision));
 
+        services.AddSingleton<AiProviderSelector>();
+
         services.AddSingleton<HttpTextGenerationProvider>();
         services.AddSingleton<HttpEmbeddingProvider>();
         services.AddScoped<HttpAudioTranscriptionProvider>();
-
-        services.AddSingleton<ILLMProvider>(sp => sp.GetRequiredService<HttpTextGenerationProvider>());
-        services.AddSingleton<IEmbeddingProvider>(sp => sp.GetRequiredService<HttpEmbeddingProvider>());
-        services.AddScoped<IAudioTranscriptionProvider>(sp => sp.GetRequiredService<HttpAudioTranscriptionProvider>());
         services.AddSingleton<HttpVisionProvider>();
+
+        services.AddSingleton<EchoLlmProvider>();
+        services.AddSingleton<DeterministicEmbeddingProvider>();
+        services.AddScoped<StubAudioTranscriptionProvider>();
+
+        services.AddKeyedSingleton<ILLMProvider>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpTextGenerationProvider>());
+        services.AddKeyedSingleton<IEmbeddingProvider>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpEmbeddingProvider>());
+        services.AddKeyedScoped<IAudioTranscriptionProvider>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpAudioTranscriptionProvider>());
+
+        services.AddKeyedSingleton<ILLMProvider>(AiProviderNames.Local, sp => sp.GetRequiredService<EchoLlmProvider>());
+        services.AddKeyedSingleton<IEmbeddingProvider>(AiProviderNames.Local, sp => sp.GetRequiredService<DeterministicEmbeddingProvider>());
+        services.AddKeyedScoped<IAudioTranscriptionProvider>(AiProviderNames.Local, sp => sp.GetRequiredService<StubAudioTranscriptionProvider>());
+
+        services.AddSingleton<ILLMProvider>(ResolveProvider<ILLMProvider>);
+        services.AddSingleton<IEmbeddingProvider>(ResolveProvider<IEmbeddingProvider>);
+        services.AddScoped<IAudioTranscriptionProvider>(ResolveProvider<IAudioTranscriptionProvider>);
         services.AddScoped<IAionVisionService, VisionEngine>();
         services.AddScoped<IVisionService>(sp => sp.GetRequiredService<IAionVisionService>());
 
@@ -73,4 +88,21 @@ public static class ServiceCollectionExtensions
                 client.DefaultRequestHeaders.Add(header.Key, header.Value);
             }
         };
+
+    private static T ResolveProvider<T>(IServiceProvider serviceProvider)
+    {
+        var providerName = serviceProvider.GetRequiredService<AiProviderSelector>().ResolveProviderName();
+        var resolved = serviceProvider.GetKeyedService<T>(providerName);
+        if (resolved is not null)
+        {
+            return resolved;
+        }
+
+        if (!string.Equals(providerName, AiProviderNames.Http, StringComparison.OrdinalIgnoreCase))
+        {
+            serviceProvider.GetService<ILogger<AiProviderSelector>>()?.LogWarning("AI provider '{Provider}' not registered; falling back to HTTP provider", providerName);
+        }
+
+        return serviceProvider.GetRequiredKeyedService<T>(AiProviderNames.Http);
+    }
 }

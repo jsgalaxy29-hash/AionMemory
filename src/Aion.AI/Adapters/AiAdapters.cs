@@ -2,6 +2,7 @@ using System.Text.Json;
 using Aion.AI;
 using Aion.Domain;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Aion.AI.Adapters;
@@ -10,16 +11,16 @@ public static class AiAdapterServiceCollectionExtensions
 {
     public static IServiceCollection AddAiAdapters(this IServiceCollection services)
     {
-        services.AddSingleton<ILLMProvider, EchoLlmProvider>();
-        services.AddSingleton<IEmbeddingProvider, DeterministicEmbeddingProvider>();
-        services.AddScoped<IAudioTranscriptionProvider, StubAudioTranscriptionProvider>();
+        services.TryAddSingleton<EchoLlmProvider>();
+        services.TryAddSingleton<DeterministicEmbeddingProvider>();
+        services.TryAddScoped<StubAudioTranscriptionProvider>();
 
-        services.AddScoped<IIntentDetector, BasicIntentDetector>();
-        services.AddScoped<IModuleDesigner, SimpleModuleDesigner>();
-        services.AddScoped<ICrudInterpreter, SimpleCrudInterpreter>();
-        services.AddScoped<IAgendaInterpreter, SimpleAgendaInterpreter>();
-        services.AddScoped<INoteInterpreter, SimpleNoteInterpreter>();
-        services.AddScoped<IReportInterpreter, SimpleReportInterpreter>();
+        services.TryAddScoped<IIntentDetector, BasicIntentDetector>();
+        services.TryAddScoped<IModuleDesigner, SimpleModuleDesigner>();
+        services.TryAddScoped<ICrudInterpreter, SimpleCrudInterpreter>();
+        services.TryAddScoped<IAgendaInterpreter, SimpleAgendaInterpreter>();
+        services.TryAddScoped<INoteInterpreter, SimpleNoteInterpreter>();
+        services.TryAddScoped<IReportInterpreter, SimpleReportInterpreter>();
 
         return services;
     }
