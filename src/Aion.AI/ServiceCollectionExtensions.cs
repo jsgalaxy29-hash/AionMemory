@@ -1,3 +1,5 @@
+using Aion.AI.ModuleBuilder;
+using Aion.Domain.ModuleBuilder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -49,6 +51,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IIntentDetector, IntentRecognizer>();
         services.AddScoped<IModuleDesigner, ModuleDesigner>();
+        services.AddScoped<IModuleSpecDesigner, ModuleSpecDesigner>();
         services.AddScoped<ICrudInterpreter, CrudInterpreter>();
         services.AddScoped<IAgendaInterpreter, AgendaInterpreter>();
         services.AddScoped<INoteInterpreter, NoteInterpreter>();
