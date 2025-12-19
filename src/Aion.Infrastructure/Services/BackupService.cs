@@ -304,17 +304,25 @@ public sealed class BackupSchedulerService : BackgroundService
 {
     private readonly IBackupService _backupService;
     private readonly ILogger<BackupSchedulerService> _logger;
+    private readonly BackupOptions _options;
     private readonly TimeSpan _interval;
 
     public BackupSchedulerService(IBackupService backupService, IOptions<BackupOptions> options, ILogger<BackupSchedulerService> logger)
     {
         _backupService = backupService;
         _logger = logger;
-        _interval = TimeSpan.FromMinutes(Math.Max(1, options.Value.BackupIntervalMinutes));
+        _options = options.Value;
+        _interval = TimeSpan.FromMinutes(Math.Max(1, _options.BackupIntervalMinutes));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!_options.EnableBackgroundServices)
+        {
+            _logger.LogInformation("Automated backups disabled on this platform/configuration.");
+            return;
+        }
+
         await RunBackupAsync(stoppingToken).ConfigureAwait(false);
 
         using var timer = new PeriodicTimer(_interval);

@@ -60,8 +60,7 @@ public static class SqliteCipherDevelopmentDefaults
         {
             DataSource = databasePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Private,
-            Password = DevelopmentKey
+            Cache = SqliteCacheMode.Private
         };
 
         // Foreign keys are enforced by default when using SQLCipher >= 4; keep explicit for clarity.

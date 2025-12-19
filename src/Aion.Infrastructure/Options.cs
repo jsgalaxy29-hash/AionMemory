@@ -1,3 +1,5 @@
+using System;
+
 namespace Aion.Infrastructure;
 
 public sealed record AionDatabaseOptions
@@ -29,4 +31,5 @@ public sealed record BackupOptions
     public bool AutoRestoreLatest { get; set; }
     public bool RequireIntegrityCheck { get; set; } = true;
     public int BackupIntervalMinutes { get; set; } = 24 * 60;
+    public bool EnableBackgroundServices { get; set; } = !(OperatingSystem.IsAndroid() || OperatingSystem.IsIOS());
 }
