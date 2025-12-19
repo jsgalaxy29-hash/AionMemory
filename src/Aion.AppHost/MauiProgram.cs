@@ -1,18 +1,19 @@
+using System.IO;
 using System.Security.Cryptography;
+using System.Threading.Tasks;
 using Aion.AI;
 using Aion.AI.Adapters;
 using Aion.AI.Providers.Mistral;
 using Aion.AI.Providers.OpenAI;
+using Aion.AppHost.Services;
 using Aion.Domain;
 using Aion.Infrastructure;
-using Aion.AppHost.Services;
 using CommunityToolkit.Maui;
 using Microsoft.AspNetCore.Components.WebView.Maui;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Microsoft.Maui.Storage;
 
 namespace Aion.AppHost;
@@ -48,8 +49,8 @@ public static class MauiProgram
         ConfigureServices(builder.Services, builder.Configuration);
 
         var app = builder.Build();
-        RestoreFromBackupIfRequested(app.Services);
-        app.Services.EnsureAionDatabaseAsync().GetAwaiter().GetResult();
+        var initializer = app.Services.GetRequiredService<IAppInitializationService>();
+        initializer.Warmup();
 
         return app;
     }
@@ -90,46 +91,10 @@ public static class MauiProgram
     }
 
     private static string ResolveDatabaseKey(IConfiguration configuration)
-    {
-        var configured = configuration["AION_DB_KEY"];
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            return configured;
-        }
-
-        var keyTask = SecureStorage.Default.GetAsync("aion_db_key");
-        keyTask.Wait();
-        var stored = keyTask.Result;
-        if (!string.IsNullOrWhiteSpace(stored))
-        {
-            return stored;
-        }
-
-        var generated = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-        SecureStorage.Default.SetAsync("aion_db_key", generated).Wait();
-        return generated;
-    }
+        => SecureStorageKeyResolver.ResolveAsync(configuration, "aion_db_key", "AION_DB_KEY").GetAwaiter().GetResult();
 
     private static string ResolveStorageKey(IConfiguration configuration)
-    {
-        var configured = configuration["AION_STORAGE_KEY"];
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            return configured;
-        }
-
-        var keyTask = SecureStorage.Default.GetAsync("aion_storage_key");
-        keyTask.Wait();
-        var stored = keyTask.Result;
-        if (!string.IsNullOrWhiteSpace(stored))
-        {
-            return stored;
-        }
-
-        var generated = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-        SecureStorage.Default.SetAsync("aion_storage_key", generated).Wait();
-        return generated;
-    }
+        => SecureStorageKeyResolver.ResolveAsync(configuration, "aion_storage_key", "AION_STORAGE_KEY").GetAwaiter().GetResult();
 
     private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
@@ -140,25 +105,31 @@ public static class MauiProgram
         services.AddAionOpenAi();
         services.AddAionMistral();
         services.AddScoped<ITableDefinitionService, TableDefinitionService>();
+        services.AddSingleton<IAppInitializationService, AppInitializationService>();
+        services.AddScoped<IRecordQueryService, RecordQueryService>();
+        services.AddScoped<IModuleViewService, ModuleViewService>();
+        services.AddScoped<UiState>();
     }
+}
 
-    private static void RestoreFromBackupIfRequested(IServiceProvider serviceProvider)
+internal static class SecureStorageKeyResolver
+{
+    public static async Task<string> ResolveAsync(IConfiguration configuration, string storageKeyName, string environmentVariableName)
     {
-        using var scope = serviceProvider.CreateScope();
-        var options = scope.ServiceProvider.GetRequiredService<IOptions<BackupOptions>>().Value;
-        if (!options.AutoRestoreLatest)
+        var configured = configuration[environmentVariableName];
+        if (!string.IsNullOrWhiteSpace(configured))
         {
-            return;
+            return configured;
         }
 
-        var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-        var logger = loggerFactory.CreateLogger(typeof(MauiProgram));
-        var databaseOptions = scope.ServiceProvider.GetRequiredService<IOptions<AionDatabaseOptions>>().Value;
-        var connectionBuilder = new SqliteConnectionStringBuilder(databaseOptions.ConnectionString);
-        var destination = Path.GetFullPath(connectionBuilder.DataSource);
+        var stored = await SecureStorage.Default.GetAsync(storageKeyName).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(stored))
+        {
+            return stored;
+        }
 
-        var backupService = scope.ServiceProvider.GetRequiredService<ICloudBackupService>();
-        backupService.RestoreAsync(destination).GetAwaiter().GetResult();
-        logger.LogInformation("Latest backup restored to {Destination}", destination);
+        var generated = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        await SecureStorage.Default.SetAsync(storageKeyName, generated).ConfigureAwait(false);
+        return generated;
     }
 }

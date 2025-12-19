@@ -2,7 +2,9 @@
 @inject IDashboardService DashboardService
 @inject IAgendaService AgendaService
 @inject INoteService NoteService
-@inject IDataEngine DataEngine
+@inject IRecordQueryService RecordQueries
+@inject IModuleViewService ModuleViews
+@implements IDisposable
 
 <h3>Dashboard - @Entity</h3>
 <div class="grid columns-3" style="gap:12px;">
@@ -50,6 +52,7 @@
     private List<(string Name, int Count)> TableSummaries { get; set; } = new();
     private IEnumerable<S_Event> UpcomingEvents { get; set; } = Array.Empty<S_Event>();
     private IEnumerable<S_Note> RecentNotes { get; set; } = Array.Empty<S_Note>();
+    private CancellationTokenSource? _loadCts;
 
     protected override async Task OnInitializedAsync()
     {
@@ -60,23 +63,34 @@
 
     private async Task LoadTables()
     {
-        var tables = await DataEngine.GetTablesAsync();
+        _loadCts?.Cancel();
+        _loadCts = new CancellationTokenSource();
+
+        var tables = await ModuleViews.GetTablesAsync(_loadCts.Token);
         TableSummaries = new List<(string Name, int Count)>();
         foreach (var table in tables)
         {
-            var records = await DataEngine.QueryAsync(table.Id);
-            TableSummaries.Add((table.DisplayName ?? table.Name, records.Count()));
+            var total = await RecordQueries.CountAsync(table.Id, new QuerySpec { Projection = QueryProjection.List }, _loadCts.Token);
+            TableSummaries.Add((table.DisplayName ?? table.Name, total));
         }
     }
 
     private async Task LoadAgenda()
     {
         var now = DateTimeOffset.Now;
-        UpcomingEvents = await AgendaService.GetEventsAsync(now, now.AddDays(7));
+        _loadCts ??= new CancellationTokenSource();
+        UpcomingEvents = await AgendaService.GetEventsAsync(now, now.AddDays(7), _loadCts.Token);
     }
 
     private async Task LoadNotes()
     {
-        RecentNotes = await NoteService.GetChronologicalAsync(10);
+        _loadCts ??= new CancellationTokenSource();
+        RecentNotes = await NoteService.GetChronologicalAsync(10, _loadCts.Token);
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
     }
 }

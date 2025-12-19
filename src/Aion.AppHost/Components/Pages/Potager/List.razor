@@ -1,9 +1,11 @@
 @page "/potager"
 @using Aion.Domain
 @inject IMetadataService Metadata
-@inject IDataEngine DataEngine
+@inject IRecordQueryService RecordQueries
+@inject IModuleViewService ModuleViews
 @inject Aion.AppHost.Services.ITableDefinitionService Tables
 @inject NavigationManager Navigation
+@implements IDisposable
 
 <h3>Potager</h3>
 <div class="grid columns-2">
@@ -21,14 +23,14 @@
         }
         else
         {
-            <DynamicList Table="PotagerTable" DataEngine="DataEngine" OnSelect="OpenRecord" />
+            <DynamicList Table="PotagerTable" RecordService="RecordQueries" ViewService="ModuleViews" OnSelect="OpenRecord" />
         }
     </div>
     <div class="card">
         <h4>Timeline des soins</h4>
         @if (PotagerTable is not null)
         {
-            <DynamicTimeline DataEngine="DataEngine" TableId="PotagerTable.Id" TitleField="Name" />
+            <DynamicTimeline TargetType="@PotagerEntity?.Name" />
         }
     </div>
 </div>
@@ -36,24 +38,38 @@
 @code {
     private S_EntityType? PotagerEntity { get; set; }
     private STable? PotagerTable { get; set; }
+    private CancellationTokenSource? _loadCts;
 
     protected override async Task OnInitializedAsync()
     {
-        var modules = await Metadata.GetModulesAsync();
+        _loadCts?.Cancel();
+        _loadCts = new CancellationTokenSource();
+        var modules = await Metadata.GetModulesAsync(_loadCts.Token);
         PotagerEntity = modules.FirstOrDefault(m => m.Name.Contains("Potager", StringComparison.OrdinalIgnoreCase))?.EntityTypes.FirstOrDefault();
         if (PotagerEntity is not null)
         {
-            PotagerTable = await Tables.EnsureTableAsync(PotagerEntity);
+            PotagerTable = await Tables.EnsureTableAsync(PotagerEntity, _loadCts.Token);
         }
     }
 
     private void OpenRecord(F_Record record)
     {
-        Navigation.NavigateTo($"/records/{PotagerEntity?.Name}/{record.Id}");
+        if (PotagerTable is null)
+        {
+            return;
+        }
+
+        Navigation.NavigateTo(UiRoutes.RecordDetail(PotagerTable.Id, record.Id));
     }
 
     private void NewCulture()
     {
         Navigation.NavigateTo($"/potager/edit");
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
     }
 }

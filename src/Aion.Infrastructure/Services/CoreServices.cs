@@ -196,6 +196,29 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         await _search.RemoveAsync("Record", id, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<int> CountAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default)
+    {
+        spec ??= new QuerySpec();
+        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
+
+        var query = FilterByTable(_db.Records.AsQueryable(), table);
+        query = ApplyViewFilters(query, table, spec.View);
+        query = ApplyStructuredFilters(query, table, spec.Filters);
+
+        if (!string.IsNullOrWhiteSpace(spec.FullText))
+        {
+            var fts = _db.RecordSearch.FromSqlRaw(
+                "SELECT RecordId, EntityTypeId, Content FROM RecordSearch WHERE EntityTypeId = {0} AND RecordSearch MATCH {1}",
+                tableId,
+                spec.FullText);
+
+            query = query.Where(r => fts.Select(s => s.RecordId).Contains(r.Id));
+        }
+
+        return await query.CountAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IEnumerable<F_Record>> QueryAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default)
     {
         spec ??= new QuerySpec();

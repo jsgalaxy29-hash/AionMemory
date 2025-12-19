@@ -1,8 +1,12 @@
+@page "/ModuleHost/{id:guid}"
 @page "/module/{id}"
 @inject IMetadataService Metadata
-@inject IDataEngine DataEngine
-@inject Aion.AppHost.Services.ITableDefinitionService Tables
 @inject NavigationManager Navigation
+@inject IRecordQueryService RecordQueries
+@inject IModuleViewService ModuleViews
+@inject Aion.AppHost.Services.ITableDefinitionService Tables
+@inject UiState State
+@implements IDisposable
 
 <h3>Module</h3>
 @if (Module is null)
@@ -74,14 +78,14 @@ else
         <div class="card">
             @if (SelectedTable is not null)
             {
-                <DynamicList Table="SelectedTable" Filter="@SelectedView" DataEngine="DataEngine" OnSelect="OpenRecord" />
+                <DynamicList Table="SelectedTable" Filter="@SelectedView" RecordService="RecordQueries" ViewService="ModuleViews" OnSelect="OpenRecord" />
             }
         </div>
         <div class="card">
             <h4>Créer un enregistrement</h4>
             @if (SelectedTable is not null)
             {
-                <DynamicForm Table="SelectedTable" DataEngine="DataEngine" OnSaved="HandleSaved" />
+                <DynamicForm Table="SelectedTable" RecordService="RecordQueries" ViewService="ModuleViews" OnSaved="HandleSaved" />
             }
         </div>
     </div>
@@ -97,6 +101,7 @@ else
         => SelectedTable?.Views ?? Enumerable.Empty<SViewDefinition>();
     private STable? SelectedTable
         => SelectedEntity is not null && TablesByEntity.TryGetValue(SelectedEntity.Id, out var table) ? table : null;
+    private CancellationTokenSource? _loadCts;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -105,7 +110,12 @@ else
 
     private void OpenRecord(F_Record record)
     {
-        Navigation.NavigateTo($"/records/{SelectedEntity?.Name}/{record.Id}");
+        if (SelectedTable is null)
+        {
+            return;
+        }
+
+        Navigation.NavigateTo(UiRoutes.RecordDetail(SelectedTable.Id, record.Id));
     }
 
     private void HandleSaved(F_Record record)
@@ -115,7 +125,10 @@ else
 
     private async Task LoadModule()
     {
-        var modules = await Metadata.GetModulesAsync();
+        _loadCts?.Cancel();
+        _loadCts = new CancellationTokenSource();
+
+        var modules = await Metadata.GetModulesAsync(_loadCts.Token);
         if (!Guid.TryParse(Id, out var guid))
         {
             return;
@@ -130,6 +143,8 @@ else
         await EnsureTablesAreLoaded(Module);
         SelectedEntity ??= Module.EntityTypes.FirstOrDefault();
         SelectedView = null;
+        State.SetModule(Module);
+        State.SetEntity(SelectedEntity);
     }
 
     private async Task EnsureTablesAreLoaded(S_Module module)
@@ -150,6 +165,7 @@ else
     {
         SelectedEntity = entity;
         SelectedView = null;
+        State.SetEntity(entity);
     }
 
     private async Task OnViewChanged(ChangeEventArgs args)
@@ -164,5 +180,11 @@ else
         {
             Navigation.NavigateTo($"/dashboard/{Module.Name.ToLowerInvariant()}");
         }
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
     }
 }

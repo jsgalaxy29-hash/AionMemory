@@ -1,3 +1,5 @@
+@inherits OwningComponentBase
+@implements IDisposable
 <div class="card">
     <div class="card-header">Créer un enregistrement pour @EntityType?.Name</div>
     <div class="card-body">
@@ -39,10 +41,26 @@
 </div>
 
 @code {
+    [Inject] public IRecordQueryService? InjectedRecordService { get; set; }
+    [Inject] public ITableDefinitionService? TableDefinitionService { get; set; }
+
     [Parameter] public S_EntityType? EntityType { get; set; }
-    [Parameter] public IDataEngine? DataEngine { get; set; }
+    [Parameter] public IRecordQueryService? RecordService { get; set; }
 
     protected Dictionary<string, object?> FieldValues { get; set; } = new();
+    private CancellationTokenSource? _cts;
+    private IRecordQueryService? ActiveRecordService => RecordService ?? InjectedRecordService;
+    private STable? TargetTable { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (EntityType is null || TableDefinitionService is null || ActiveRecordService is null)
+        {
+            return;
+        }
+
+        TargetTable = await TableDefinitionService.EnsureTableAsync(EntityType);
+    }
 
     private string? GetString(string key) => FieldValues.TryGetValue(key, out var value) ? value?.ToString() : null;
     private DateTime? GetDate(string key) => FieldValues.TryGetValue(key, out var value) ? value as DateTime? : null;
@@ -52,12 +70,19 @@
 
     protected async Task HandleValidSubmit()
     {
-        if (EntityType is null || DataEngine is null)
+        if (EntityType is null || ActiveRecordService is null || TargetTable is null)
         {
             return;
         }
 
-        var payload = System.Text.Json.JsonSerializer.Serialize(FieldValues);
-        await DataEngine.InsertAsync(EntityType.Id, payload);
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        await ActiveRecordService.SaveAsync(TargetTable.Id, null, new Dictionary<string, object?>(FieldValues), _cts.Token);
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
     }
 }

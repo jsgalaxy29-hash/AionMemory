@@ -3,6 +3,7 @@
 @using Aion.Domain.Logic
 @using Microsoft.AspNetCore.Components.Forms
 @inherits OwningComponentBase
+@implements IDisposable
 <EditForm Model="FieldValues" OnValidSubmit="HandleValidSubmit">
     <DataAnnotationsValidator />
     <div class="form-row">
@@ -55,10 +56,14 @@
 </EditForm>
 
 @code {
+    [Inject] public IRecordQueryService? InjectedRecordService { get; set; }
+    [Inject] public IModuleViewService? InjectedViewService { get; set; }
+
     [Parameter] public STable? Table { get; set; }
     [Parameter] public Guid? TableId { get; set; }
     [Parameter] public string? TableName { get; set; }
-    [Parameter] public IDataEngine? DataEngine { get; set; }
+    [Parameter] public IRecordQueryService? RecordService { get; set; }
+    [Parameter] public IModuleViewService? ViewService { get; set; }
     [Parameter] public Guid? RecordId { get; set; }
     [Parameter] public F_Record? Record { get; set; }
     [Parameter] public EventCallback<F_Record> OnSaved { get; set; }
@@ -68,19 +73,14 @@
     private STable? LoadedTable { get; set; }
     private Guid? ActiveRecordId => Record?.Id ?? RecordId;
     private STable? ResolvedTable => Table ?? LoadedTable;
+    private CancellationTokenSource? _loadCts;
+    private IRecordQueryService? ActiveRecordService => RecordService ?? InjectedRecordService;
+    private IModuleViewService? ActiveViewService => ViewService ?? InjectedViewService;
 
     protected override async Task OnParametersSetAsync()
     {
-        if (DataEngine is null)
-        {
-            return;
-        }
-
-        if (ResolvedTable is null)
-        {
-            await LoadTableMetadata();
-        }
-
+        FieldValues = new Dictionary<string, object?>();
+        await EnsureTableMetadataAsync();
         await LoadExistingRecord();
         InitializeDefaults();
     }
@@ -91,14 +91,14 @@
     {
         if (FieldValues.TryGetValue(key, out var value))
         {
-            if (value is System.Text.Json.JsonElement element)
+            if (value is JsonElement element)
             {
-                if (element.ValueKind == System.Text.Json.JsonValueKind.String && DateTime.TryParse(element.GetString(), out var parsed))
+                if (element.ValueKind == JsonValueKind.String && DateTime.TryParse(element.GetString(), out var parsed))
                 {
                     return parsed;
                 }
 
-                if (element.ValueKind == System.Text.Json.JsonValueKind.Number && element.TryGetInt64(out var timestamp))
+                if (element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var timestamp))
                 {
                     return DateTimeOffset.FromUnixTimeSeconds(timestamp).DateTime;
                 }
@@ -179,15 +179,12 @@
 
     private async Task HandleValidSubmit()
     {
-        if (ResolvedTable is null || DataEngine is null)
+        if (ResolvedTable is null || ActiveRecordService is null)
         {
             return;
         }
 
-        var payload = System.Text.Json.JsonSerializer.Serialize(FieldValues);
-        var record = ActiveRecordId.HasValue
-            ? await DataEngine.UpdateAsync(ResolvedTable.Id, ActiveRecordId.Value, payload)
-            : await DataEngine.InsertAsync(ResolvedTable.Id, payload);
+        var record = await ActiveRecordService.SaveAsync(ResolvedTable.Id, ActiveRecordId, new Dictionary<string, object?>(FieldValues));
         await OnSaved.InvokeAsync(record);
         Reset();
     }
@@ -199,24 +196,26 @@
 
     private async Task Delete()
     {
-        if (DataEngine is null || ResolvedTable is null || !ActiveRecordId.HasValue)
+        if (ActiveRecordService is null || ResolvedTable is null || !ActiveRecordId.HasValue)
         {
             return;
         }
 
-        await DataEngine.DeleteAsync(ResolvedTable.Id, ActiveRecordId.Value);
+        await ActiveRecordService.DeleteAsync(ResolvedTable.Id, ActiveRecordId.Value);
         await OnDeleted.InvokeAsync(ActiveRecordId.Value);
         Reset();
     }
 
     private async Task LoadExistingRecord()
     {
-        if (ActiveRecordId is null || DataEngine is null || ResolvedTable is null)
+        if (ActiveRecordId is null || ActiveRecordService is null || ResolvedTable is null)
         {
             return;
         }
 
-        var record = await DataEngine.GetAsync(ResolvedTable.Id, ActiveRecordId.Value);
+        _loadCts?.Cancel();
+        _loadCts = new CancellationTokenSource();
+        var record = await ActiveRecordService.GetAsync(ResolvedTable.Id, ActiveRecordId.Value, _loadCts.Token);
         if (record is null)
         {
             return;
@@ -225,21 +224,26 @@
         FieldValues = DynamicListLogic.DeserializePayload(record.DataJson);
     }
 
-    private async Task LoadTableMetadata()
+    private async Task EnsureTableMetadataAsync()
     {
-        if (DataEngine is null)
+        if (ResolvedTable is not null)
+        {
+            return;
+        }
+
+        var viewService = ActiveViewService;
+        if (viewService is null)
         {
             return;
         }
 
         if (TableId.HasValue)
         {
-            LoadedTable = await DataEngine.GetTableAsync(TableId.Value);
+            LoadedTable = await viewService.GetTableAsync(TableId.Value).ConfigureAwait(false);
         }
         else if (!string.IsNullOrWhiteSpace(TableName))
         {
-            var allTables = await DataEngine.GetTablesAsync();
-            LoadedTable = allTables.FirstOrDefault(t => string.Equals(t.Name, TableName, StringComparison.OrdinalIgnoreCase));
+            LoadedTable = await viewService.GetTableByNameAsync(TableName).ConfigureAwait(false);
         }
     }
 
@@ -259,5 +263,11 @@
 
             FieldValues[field.Name] = field.DefaultValue;
         }
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
     }
 }
