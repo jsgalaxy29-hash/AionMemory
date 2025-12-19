@@ -1,0 +1,21 @@
+<Project>
+  <PropertyGroup>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(CI)' == 'true' and '$(MSBuildProjectName)' == 'Aion.Domain'">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(CI)' == 'true' and '$(MSBuildProjectName)' == 'Aion.Infrastructure'">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(CI)' == 'true' and '$(MSBuildProjectName)' == 'Aion.AI'">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(CI)' == 'true' and '$(MSBuildProjectName)' == 'Aion.AI.Providers.OpenAI'">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(CI)' == 'true' and '$(MSBuildProjectName)' == 'Aion.AI.Providers.Mistral'">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>
