@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Aion.Domain;
 using Aion.Infrastructure.Services;
 using Aion.Tests.Fixtures;
@@ -15,47 +16,166 @@ public class DataEngineCrudTests : IClassFixture<SqliteInMemoryFixture>
     }
 
     [Fact]
-    public async Task DataEngine_supports_table_and_record_lifecycle()
+    public async Task DataEngine_handles_lifecycle_with_views_and_soft_delete()
     {
         var table = new STable
         {
             Name = "tasks",
             DisplayName = "Tâches",
+            SupportsSoftDelete = true,
             Fields =
             [
-                new() { Name = "Title", Label = "Titre", DataType = FieldDataType.Text, IsRequired = true },
-                new() { Name = "IsDone", Label = "Terminé", DataType = FieldDataType.Boolean }
+                new() { Name = "Title", Label = "Titre", DataType = FieldDataType.Text, IsRequired = true, IsSortable = true },
+                new() { Name = "Status", Label = "Statut", DataType = FieldDataType.Text, IsSortable = true }
             ],
             Views =
             [
-                new() { Name = "open", QueryDefinition = "{ \"IsDone\": \"false\" }" }
+                new() { Name = "open", DisplayName = "Ouvertes", QueryDefinition = "{ \"Status\": \"todo\" }" }
             ]
         };
 
         var engine = _fixture.CreateDataEngine();
-        var created = await engine.CreateTableAsync(table);
+        await engine.CreateTableAsync(table);
 
-        Assert.NotEqual(Guid.Empty, created.Id);
-        Assert.All(created.Fields, f => Assert.Equal(created.Id, f.TableId));
+        var created = await engine.InsertAsync(table.Id, new Dictionary<string, object?>
+        {
+            ["Title"] = "Tâche initiale",
+            ["Status"] = "todo"
+        });
 
-        var fetchedTable = await engine.GetTableAsync(created.Id);
-        Assert.Equal(2, fetchedTable?.Fields.Count);
-
-        var record = await engine.InsertAsync(created.Id, "{ \"Title\": \"Demo\", \"IsDone\": false }");
-        Assert.Equal(created.Id, record.EntityTypeId);
-
-        var loaded = await engine.GetAsync(created.Id, record.Id);
+        var loaded = await engine.GetAsync(table.Id, created.Id);
         Assert.NotNull(loaded);
-        Assert.Contains("\"Demo\"", loaded!.DataJson);
+        Assert.Equal("Tâche initiale", ReadField(loaded!, "Title"));
 
-        var updated = await engine.UpdateAsync(created.Id, record.Id, "{ \"Title\": \"Updated\", \"IsDone\": true }");
-        Assert.Contains("Updated", updated.DataJson);
+        await engine.UpdateAsync(table.Id, created.Id, new Dictionary<string, object?>
+        {
+            ["Title"] = "Mise à jour",
+            ["Status"] = "done"
+        });
 
-        var filtered = await engine.QueryAsync(created.Id, filter: "open");
+        var filtered = await engine.QueryAsync(table.Id, new QuerySpec { View = "open" });
         Assert.Empty(filtered);
 
-        await engine.DeleteAsync(created.Id, record.Id);
-        var deleted = await engine.GetAsync(created.Id, record.Id);
+        await engine.DeleteAsync(table.Id, created.Id);
+        var deleted = await engine.GetAsync(table.Id, created.Id);
         Assert.Null(deleted);
+        Assert.Equal(0, await engine.CountAsync(table.Id));
+    }
+
+    [Fact]
+    public async Task DataEngine_enforces_constraints_and_uniqueness()
+    {
+        var table = new STable
+        {
+            Name = "rules",
+            DisplayName = "Règles",
+            Fields =
+            [
+                new() { Name = "Title", Label = "Titre", DataType = FieldDataType.Text, IsRequired = true, MinLength = 3, MaxLength = 64 },
+                new() { Name = "Category", Label = "Catégorie", DataType = FieldDataType.Text, EnumValues = "work,home" },
+                new() { Name = "Importance", Label = "Importance", DataType = FieldDataType.Decimal, MinValue = 0, MaxValue = 10 },
+                new() { Name = "Slug", Label = "Slug", DataType = FieldDataType.Text, IsUnique = true, IsRequired = true }
+            ]
+        };
+
+        var engine = _fixture.CreateDataEngine();
+        await engine.CreateTableAsync(table);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => engine.InsertAsync(table.Id, new Dictionary<string, object?>
+        {
+            ["Category"] = "work",
+            ["Importance"] = 1.5m,
+            ["Slug"] = "missing-title"
+        }));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => engine.InsertAsync(table.Id, new Dictionary<string, object?>
+        {
+            ["Title"] = "Hi",
+            ["Category"] = "work",
+            ["Importance"] = 1.5m,
+            ["Slug"] = "short-title"
+        }));
+
+        var record = await engine.InsertAsync(table.Id, new Dictionary<string, object?>
+        {
+            ["Title"] = "Titre valide",
+            ["Category"] = "work",
+            ["Importance"] = 2.5m,
+            ["Slug"] = "unique-slug"
+        });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => engine.InsertAsync(table.Id, new Dictionary<string, object?>
+        {
+            ["Title"] = "Autre règle",
+            ["Category"] = "home",
+            ["Importance"] = 3m,
+            ["Slug"] = "unique-slug"
+        }));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => engine.UpdateAsync(table.Id, record.Id, new Dictionary<string, object?>
+        {
+            ["Title"] = "Titre valide",
+            ["Category"] = "unknown",
+            ["Importance"] = 12m,
+            ["Slug"] = "unique-slug"
+        }));
+    }
+
+    [Fact]
+    public async Task DataEngine_supports_pagination_sorting_and_full_text()
+    {
+        var table = new STable
+        {
+            Name = "notes",
+            DisplayName = "Notes",
+            Fields =
+            [
+                new() { Name = "Title", Label = "Titre", DataType = FieldDataType.Text, IsSortable = true },
+                new() { Name = "Priority", Label = "Priorité", DataType = FieldDataType.Number, IsSortable = true }
+            ]
+        };
+
+        var engine = _fixture.CreateDataEngine();
+        await engine.CreateTableAsync(table);
+
+        await engine.InsertAsync(table.Id, new Dictionary<string, object?> { ["Title"] = "Alpha", ["Priority"] = 1 });
+        await engine.InsertAsync(table.Id, new Dictionary<string, object?> { ["Title"] = "Gamma note", ["Priority"] = 3 });
+        await engine.InsertAsync(table.Id, new Dictionary<string, object?> { ["Title"] = "Beta", ["Priority"] = 2 });
+
+        var paged = await engine.QueryAsync(table.Id, new QuerySpec
+        {
+            OrderBy = "Priority",
+            Descending = true,
+            Skip = 1,
+            Take = 1
+        });
+
+        Assert.Single(paged);
+        Assert.Equal("Beta", ReadField(paged.First(), "Title"));
+
+        var filtered = await engine.QueryAsync(table.Id, new QuerySpec
+        {
+            Filters = { new QueryFilter("Title", QueryFilterOperator.Contains, "Gamma") }
+        });
+        Assert.Single(filtered);
+
+        var fts = await engine.QueryAsync(table.Id, new QuerySpec { FullText = "Gamma" });
+        Assert.Single(fts);
+        Assert.Equal("Gamma note", ReadField(fts.First(), "Title"));
+    }
+
+    private static string? ReadField(F_Record record, string fieldName)
+    {
+        using var doc = JsonDocument.Parse(record.DataJson);
+        return doc.RootElement.TryGetProperty(fieldName, out var value)
+            ? value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString(),
+                JsonValueKind.Number => value.ToString(),
+                JsonValueKind.True => bool.TrueString,
+                JsonValueKind.False => bool.FalseString,
+                _ => value.ToString()
+            }
+            : null;
     }
 }
