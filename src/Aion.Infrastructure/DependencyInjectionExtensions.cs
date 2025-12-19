@@ -4,8 +4,6 @@ using Aion.Domain;
 using Aion.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -115,30 +113,41 @@ public static class DependencyInjectionExtensions
         await using var scope = serviceProvider.CreateAsyncScope();
         var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(DependencyInjectionExtensions));
         var context = scope.ServiceProvider.GetRequiredService<AionDbContext>();
-        await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
 
-        if (!await TableExistsAsync(context, "Modules", cancellationToken).ConfigureAwait(false))
-        {
-            logger.LogWarning("Modules table missing after migrations; forcing schema creation and re-running migrations.");
-            await context.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
-            await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        if (!await TableExistsAsync(context, "Modules", cancellationToken).ConfigureAwait(false))
-        {
-            logger.LogWarning("Modules table still missing; recreating tables via relational database creator.");
-            var databaseCreator = context.Database.GetService<IRelationalDatabaseCreator>();
-            await databaseCreator.CreateTablesAsync(cancellationToken).ConfigureAwait(false);
-            await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        if (!await TableExistsAsync(context, "Modules", cancellationToken).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException("Database schema could not be created; Modules table is still missing.");
-        }
+        await ApplyMigrationsAsync(context, logger, cancellationToken).ConfigureAwait(false);
+        await ValidateSchemaAsync(context, logger, cancellationToken).ConfigureAwait(false);
 
         var demoSeeder = scope.ServiceProvider.GetRequiredService<DemoModuleSeeder>();
         await demoSeeder.EnsureDemoDataAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task ApplyMigrationsAsync(AionDbContext context, ILogger logger, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Database migrations failed during startup.");
+            throw;
+        }
+    }
+
+    private static async Task ValidateSchemaAsync(AionDbContext context, ILogger logger, CancellationToken cancellationToken)
+    {
+        if (await TableExistsAsync(context, "Modules", cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        var appliedMigrations = await context.Database.GetAppliedMigrationsAsync(cancellationToken).ConfigureAwait(false);
+        logger.LogError("Database schema validation failed. Required table 'Modules' is missing after applying migrations: {AppliedMigrations}", appliedMigrations);
+        throw new InvalidOperationException("Database schema validation failed; required tables were not created after applying migrations.");
     }
 
     private static async Task<bool> TableExistsAsync(AionDbContext context, string tableName, CancellationToken cancellationToken)
@@ -147,7 +156,7 @@ public static class DependencyInjectionExtensions
         var shouldClose = connection.State != ConnectionState.Open;
         if (shouldClose)
         {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await context.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         }
 
         await using var command = connection.CreateCommand();
@@ -161,7 +170,7 @@ public static class DependencyInjectionExtensions
 
         if (shouldClose)
         {
-            await connection.CloseAsync().ConfigureAwait(false);
+            await context.Database.CloseConnectionAsync().ConfigureAwait(false);
         }
 
         return result is string;

@@ -38,13 +38,17 @@ public sealed class SqliteEncryptionInterceptor : DbConnectionInterceptor
         {
             return;
         }
-        
-        string escapedKey = _encryptionKey.Replace("'", "''");
+
         using (var pragma = sqliteConnection.CreateCommand())
         {
-            pragma.CommandText = $"PRAGMA key = '{escapedKey}';";
+            pragma.CommandText = "PRAGMA key = $key;";
+            var parameter = pragma.CreateParameter();
+            parameter.ParameterName = "$key";
+            parameter.Value = _encryptionKey;
+            pragma.Parameters.Add(parameter);
             pragma.ExecuteNonQuery();
         }
+
         using var secureMemory = sqliteConnection.CreateCommand();
         secureMemory.CommandText = "PRAGMA cipher_memory_security = ON;";
         secureMemory.ExecuteNonQuery();

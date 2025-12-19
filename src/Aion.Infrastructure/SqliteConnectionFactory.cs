@@ -18,6 +18,8 @@ public static class SqliteConnectionFactory
         }
 
         var builder = new SqliteConnectionStringBuilder(options.ConnectionString);
+        builder.Remove("Password");
+        builder.Remove("Pwd");
         if (builder.Mode is not SqliteOpenMode.ReadWriteCreate)
         {
             builder.Mode = SqliteOpenMode.ReadWriteCreate;
@@ -33,11 +35,6 @@ public static class SqliteConnectionFactory
         if (builder.ForeignKeys == null || (bool)!builder.ForeignKeys)
         {
             builder.ForeignKeys = true;
-        }
-
-        if (!string.IsNullOrWhiteSpace(options.EncryptionKey))
-        {
-            builder.Password = options.EncryptionKey;
         }
 
         var connection = new SqliteConnection(builder.ToString());

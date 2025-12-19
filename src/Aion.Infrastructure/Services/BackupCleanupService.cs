@@ -21,6 +21,12 @@ public sealed class BackupCleanupService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!_options.EnableBackgroundServices)
+        {
+            _logger.LogInformation("Backup cleanup background task disabled on this platform/configuration.");
+            return;
+        }
+
         await RunCleanupAsync(stoppingToken).ConfigureAwait(false);
 
         while (!stoppingToken.IsCancellationRequested)
