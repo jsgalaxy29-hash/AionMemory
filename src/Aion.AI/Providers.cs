@@ -332,7 +332,9 @@ public sealed class IntentRecognizer : IIntentDetector
             }
 
             var intent = root.TryGetProperty("intent", out var intentProp) ? intentProp.GetString() : null;
+            intent = string.IsNullOrWhiteSpace(intent) ? null : intent.Trim();
             var confidence = root.TryGetProperty("confidence", out var confidenceProp) ? confidenceProp.GetDouble() : 0.5;
+            confidence = double.IsNaN(confidence) || double.IsInfinity(confidence) ? 0.5 : Math.Clamp(confidence, 0d, 1d);
             Dictionary<string, string> parameters = new(StringComparer.OrdinalIgnoreCase);
             if (root.TryGetProperty("parameters", out var parametersProp) && parametersProp.ValueKind == JsonValueKind.Object)
             {
@@ -627,6 +629,7 @@ public sealed class CrudInterpreter : ICrudInterpreter
 {
     private readonly ILLMProvider _provider;
     private readonly ILogger<CrudInterpreter> _logger;
+    private static readonly HashSet<string> AllowedActions = new(StringComparer.OrdinalIgnoreCase) { "create", "update", "delete", "query" };
 
     public CrudInterpreter(ILLMProvider provider, ILogger<CrudInterpreter> logger)
     {
@@ -671,6 +674,7 @@ Requête: {request.Intent}";
                 ? doc.RootElement[0]
                 : doc.RootElement;
             var action = root.TryGetProperty("action", out var actionProperty) ? actionProperty.GetString() ?? "query" : "query";
+            action = NormalizeAction(action);
             var filters = ExtractStringDictionary(root, "filters");
             var payload = ExtractStringDictionary(root, "payload");
             interpretation = new CrudInterpretation(action, filters, payload, cleaned);
@@ -681,6 +685,17 @@ Requête: {request.Intent}";
             _logger.LogDebug(ex, "CRUD interpretation parse error");
             return false;
         }
+    }
+
+    private static string NormalizeAction(string action)
+    {
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            return "query";
+        }
+
+        var normalized = action.Trim();
+        return AllowedActions.Contains(normalized) ? normalized : "query";
     }
 
     private static Dictionary<string, string?> ExtractStringDictionary(JsonElement root, string propertyName)
@@ -768,6 +783,7 @@ Contenu:
 }
 public sealed class ReportInterpreter : IReportInterpreter
 {
+    private static readonly HashSet<string> AllowedVisualizations = new(StringComparer.OrdinalIgnoreCase) { "table", "chart", "number", "list" };
     private readonly ILLMProvider _provider;
     private readonly ILogger<HttpTextGenerationProvider> _logger;
 
@@ -817,12 +833,13 @@ Préférence de visualisation: {request.PreferredVisualization ?? "none"}";
 
             var query = root.TryGetProperty("query", out var queryProp) ? queryProp.GetString() : null;
             var visualization = root.TryGetProperty("visualization", out var vizProp) ? vizProp.GetString() : null;
+            visualization = NormalizeVisualization(visualization, request.PreferredVisualization);
             var reportDefinition = new S_ReportDefinition
             {
                 ModuleId = request.ModuleId,
                 Name = request.Description,
                 QueryDefinition = string.IsNullOrWhiteSpace(query) ? "select *" : query,
-                Visualization = string.IsNullOrWhiteSpace(visualization) ? request.PreferredVisualization : visualization
+                Visualization = visualization
             };
 
             result = new ReportBuildResult(reportDefinition, cleaned);
@@ -838,6 +855,17 @@ Préférence de visualisation: {request.PreferredVisualization ?? "none"}";
     {
         public string? Query { get; set; }
         public string? Visualization { get; set; }
+    }
+
+    private static string? NormalizeVisualization(string? visualization, string? preferred)
+    {
+        if (string.IsNullOrWhiteSpace(visualization))
+        {
+            return preferred;
+        }
+
+        var normalized = visualization.Trim();
+        return AllowedVisualizations.Contains(normalized) ? normalized : preferred;
     }
 }
 public sealed class VisionEngine : IAionVisionService

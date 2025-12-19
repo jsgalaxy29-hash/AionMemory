@@ -136,26 +136,10 @@ public static class MauiProgram
         services.AddAionInfrastructure(configuration);
         services.AddAionAi(configuration);
 
-        var providerName = configuration["Aion:Ai:Provider"];
-        if (string.Equals(providerName, "mistral", StringComparison.OrdinalIgnoreCase))
-        {
-            services.AddAionMistral();
-        }
-        else if (HasAiProviderConfigured(configuration))
-        {
-            services.AddAionOpenAi();
-        }
-        else
-        {
-            services.AddAiAdapters();
-        }
+        services.AddAiAdapters();
+        services.AddAionOpenAi();
+        services.AddAionMistral();
         services.AddScoped<ITableDefinitionService, TableDefinitionService>();
-    }
-
-    private static bool HasAiProviderConfigured(IConfiguration configuration)
-    {
-        var aiSection = configuration.GetSection("Aion:Ai");
-        return aiSection.Exists() && !string.IsNullOrWhiteSpace(aiSection["ApiKey"]);
     }
 
     private static void RestoreFromBackupIfRequested(IServiceProvider serviceProvider)
