@@ -2,8 +2,9 @@
 @inject IMetadataService Metadata
 @inject ModuleDesignerService ModuleDesigner
 @inject NavigationManager Navigation
-@inject IDataEngine DataEngine
+@inject IRecordQueryService RecordQueries
 @inject Aion.AppHost.Services.ITableDefinitionService Tables
+@implements IDisposable
 
 <h3>Modules</h3>
 <div class="card" style="margin-bottom:12px;">
@@ -71,7 +72,7 @@
         await LoadRecordCounts();
     }
 
-    private void OpenModule(Guid id) => Navigation.NavigateTo($"/module/{id}");
+    private void OpenModule(Guid id) => Navigation.NavigateTo(UiRoutes.Module(id));
 
     private void OpenDashboard(S_Module module)
     {
@@ -94,13 +95,19 @@
             return;
         }
 
+        using var cts = new CancellationTokenSource();
         foreach (var entity in ModuleList.SelectMany(m => m.EntityTypes))
         {
-            await Tables.EnsureTableAsync(entity);
-            var records = await DataEngine.QueryAsync(entity.Id);
-            RecordCounts[entity.Id] = records.Count();
+            await Tables.EnsureTableAsync(entity, cts.Token);
+            var total = await RecordQueries.CountAsync(entity.Id, new QuerySpec { Projection = QueryProjection.List }, cts.Token);
+            RecordCounts[entity.Id] = total;
         }
     }
 
     private int GetCount(Guid entityId) => RecordCounts.TryGetValue(entityId, out var count) ? count : 0;
+
+    public void Dispose()
+    {
+        RecordCounts.Clear();
+    }
 }

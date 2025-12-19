@@ -1,14 +1,17 @@
+@page "/Record/{tableId:guid}/{recordId:guid}"
 @page "/records/{entity}/{recordId}"
-@inject IDataEngine DataEngine
 @inject IAgendaService AgendaService
 @inject INoteService NoteService
 @inject IMetadataService Metadata
 @inject Aion.AppHost.Services.ITableDefinitionService Tables
+@inject IRecordQueryService RecordQueries
+@inject IModuleViewService ModuleViews
+@implements IDisposable
 
 <h3>Enregistrement</h3>
 <div class="grid columns-2">
     <div class="card">
-        <p><strong>Entité :</strong> @Entity</p>
+        <p><strong>Entité :</strong> @ContextEntityName</p>
         <p><strong>Identifiant :</strong> @RecordId</p>
         @if (!string.IsNullOrWhiteSpace(LoadError))
         {
@@ -37,7 +40,7 @@
             </table>
         }
         <DynamicTimeline NoteService="@NoteService"
-                        TargetType="@Entity"
+                        TargetType="@ContextEntityName"
                         TargetId="@ParsedRecordId"
                         @ref="Timeline" />
     </div>
@@ -57,13 +60,18 @@
 @code {
     [Parameter] public string? Entity { get; set; }
     [Parameter] public string? RecordId { get; set; }
+    [Parameter] public string? TableId { get; set; }
 
     private IList<S_Event> Events { get; set; } = new List<S_Event>();
     private S_EntityType? EntityType { get; set; }
+    private STable? Table { get; set; }
     private ResolvedRecord? ResolvedRecord { get; set; }
     private string? LoadError { get; set; }
     private DynamicTimeline? Timeline { get; set; }
     private Guid? ParsedRecordId => Guid.TryParse(RecordId, out var guid) ? guid : null;
+    private Guid? ParsedTableId => Guid.TryParse(TableId, out var guid) ? guid : null;
+    private string? ContextEntityName => EntityType?.Name ?? Entity;
+    private CancellationTokenSource? _loadCts;
 
     protected override async Task OnInitializedAsync()
     {
@@ -75,7 +83,7 @@
     {
         var evt = await AgendaService.AddEventAsync(new S_Event
         {
-            Title = $"Suivi {Entity}",
+            Title = $"Suivi {ContextEntityName}",
             Description = "Action à réaliser",
             Start = DateTimeOffset.Now.AddHours(4),
             Links = BuildLinks().ToList()
@@ -94,40 +102,71 @@
 
     private async Task LoadRecord()
     {
-        if (string.IsNullOrWhiteSpace(Entity) || ParsedRecordId is null)
+        _loadCts?.Cancel();
+        _loadCts = new CancellationTokenSource();
+
+        if (ParsedRecordId is null)
         {
             LoadError = "Contexte incomplet pour charger l'enregistrement.";
             return;
         }
 
-        var modules = await Metadata.GetModulesAsync();
-        EntityType = modules.SelectMany(m => m.EntityTypes)
-            .FirstOrDefault(e => string.Equals(e.Name, Entity, StringComparison.OrdinalIgnoreCase));
-
-        if (EntityType is null)
+        await ResolveEntityAndTable(_loadCts.Token);
+        if (Table is null)
         {
-            LoadError = $"Entité {Entity} introuvable.";
+            LoadError = "Table introuvable pour cet enregistrement.";
             return;
         }
 
-        await Tables.EnsureTableAsync(EntityType);
-        ResolvedRecord = await DataEngine.GetResolvedAsync(EntityType.Id, ParsedRecordId.Value);
+        ResolvedRecord = await RecordQueries.GetResolvedAsync(Table.Id, ParsedRecordId.Value, _loadCts.Token);
         if (ResolvedRecord is null)
         {
             LoadError = "Enregistrement non trouvé.";
         }
     }
 
+    private async Task ResolveEntityAndTable(CancellationToken cancellationToken)
+    {
+        if (ParsedTableId.HasValue)
+        {
+            Table = await ModuleViews.GetTableAsync(ParsedTableId.Value, cancellationToken);
+            var modules = await Metadata.GetModulesAsync(cancellationToken);
+            EntityType = modules.SelectMany(m => m.EntityTypes).FirstOrDefault(e => e.Id == ParsedTableId.Value);
+            if (Table is null && EntityType is not null)
+            {
+                Table = await Tables.EnsureTableAsync(EntityType, cancellationToken);
+            }
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(Entity))
+        {
+            return;
+        }
+
+        var modulesByName = await Metadata.GetModulesAsync(cancellationToken);
+        EntityType = modulesByName.SelectMany(m => m.EntityTypes)
+            .FirstOrDefault(e => string.Equals(e.Name, Entity, StringComparison.OrdinalIgnoreCase));
+        if (EntityType is null)
+        {
+            LoadError = $"Entité {Entity} introuvable.";
+            return;
+        }
+
+        Table = await Tables.EnsureTableAsync(EntityType, cancellationToken);
+    }
+
     private async Task LoadAgenda()
     {
+        _loadCts ??= new CancellationTokenSource();
         var now = DateTimeOffset.Now;
-        var events = await AgendaService.GetEventsAsync(now.AddDays(-2), now.AddDays(10));
+        var events = await AgendaService.GetEventsAsync(now.AddDays(-2), now.AddDays(10), _loadCts.Token);
         Events = events.Where(MatchesContext).ToList();
     }
 
     private IEnumerable<J_Event_Link> BuildLinks()
     {
-        if (ParsedRecordId is null || string.IsNullOrWhiteSpace(Entity))
+        if (ParsedRecordId is null || string.IsNullOrWhiteSpace(ContextEntityName))
         {
             return Array.Empty<J_Event_Link>();
         }
@@ -136,7 +175,7 @@
         {
             new J_Event_Link
             {
-                TargetType = Entity!,
+                TargetType = ContextEntityName!,
                 TargetId = ParsedRecordId.Value
             }
         };
@@ -144,7 +183,7 @@
 
     private IEnumerable<J_Note_Link> BuildNoteLinks()
     {
-        if (ParsedRecordId is null || string.IsNullOrWhiteSpace(Entity))
+        if (ParsedRecordId is null || string.IsNullOrWhiteSpace(ContextEntityName))
         {
             return Array.Empty<J_Note_Link>();
         }
@@ -153,7 +192,7 @@
         {
             new J_Note_Link
             {
-                TargetType = Entity!,
+                TargetType = ContextEntityName!,
                 TargetId = ParsedRecordId.Value
             }
         };
@@ -161,13 +200,19 @@
 
     private bool MatchesContext(S_Event evt)
     {
-        if (ParsedRecordId is null || string.IsNullOrWhiteSpace(Entity))
+        if (ParsedRecordId is null || string.IsNullOrWhiteSpace(ContextEntityName))
         {
             return true;
         }
 
         return evt.Links.Any(l =>
-            string.Equals(l.TargetType, Entity, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(l.TargetType, ContextEntityName, StringComparison.OrdinalIgnoreCase) &&
             l.TargetId == ParsedRecordId.Value);
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
     }
 }

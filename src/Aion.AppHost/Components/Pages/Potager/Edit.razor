@@ -1,9 +1,11 @@
 @page "/potager/edit/{recordId?}"
 @using Aion.Domain
 @inject IMetadataService Metadata
-@inject IDataEngine DataEngine
+@inject IRecordQueryService RecordQueries
+@inject IModuleViewService ModuleViews
 @inject Aion.AppHost.Services.ITableDefinitionService Tables
 @inject NavigationManager Navigation
+@implements IDisposable
 
 <h3>Nouvelle culture</h3>
 @if (PotagerTable is null)
@@ -12,7 +14,7 @@
 }
 else
 {
-    <DynamicForm Table="PotagerTable" RecordId="EditingRecordId" DataEngine="DataEngine" OnSaved="Saved" />
+    <DynamicForm Table="PotagerTable" RecordId="EditingRecordId" RecordService="RecordQueries" ViewService="ModuleViews" OnSaved="Saved" />
 }
 
 @code {
@@ -20,14 +22,17 @@ else
     private S_EntityType? PotagerEntity { get; set; }
     private STable? PotagerTable { get; set; }
     private Guid? EditingRecordId { get; set; }
+    private CancellationTokenSource? _loadCts;
 
     protected override async Task OnInitializedAsync()
     {
-        var modules = await Metadata.GetModulesAsync();
+        _loadCts?.Cancel();
+        _loadCts = new CancellationTokenSource();
+        var modules = await Metadata.GetModulesAsync(_loadCts.Token);
         PotagerEntity = modules.FirstOrDefault(m => m.Name.Contains("Potager", StringComparison.OrdinalIgnoreCase))?.EntityTypes.FirstOrDefault();
         if (PotagerEntity is not null)
         {
-            PotagerTable = await Tables.EnsureTableAsync(PotagerEntity);
+            PotagerTable = await Tables.EnsureTableAsync(PotagerEntity, _loadCts.Token);
         }
 
         if (Guid.TryParse(RouteParamToGuid(RecordId), out var guid))
@@ -40,6 +45,17 @@ else
 
     private void Saved(F_Record record)
     {
-        Navigation.NavigateTo($"/records/{PotagerEntity?.Name}/{record.Id}");
+        if (PotagerTable is null)
+        {
+            return;
+        }
+
+        Navigation.NavigateTo(UiRoutes.RecordDetail(PotagerTable.Id, record.Id));
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
     }
 }
