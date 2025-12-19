@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aionmemory.ai/schemas/ModuleSpec.schema.json",
+  "title": "ModuleSpec v1",
+  "type": "object",
+  "required": ["version", "slug", "tables"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "moduleId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "slug": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "displayName": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "tables": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/TableSpec" }
+    }
+  },
+  "$defs": {
+    "TableSpec": {
+      "type": "object",
+      "required": ["slug"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "slug": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 128 },
+        "description": { "type": "string", "maxLength": 1024 },
+        "isSystem": { "type": "boolean" },
+        "supportsSoftDelete": { "type": "boolean" },
+        "hasAuditTrail": { "type": "boolean" },
+        "defaultView": { "type": "string", "maxLength": 128 },
+        "rowLabelTemplate": { "type": "string", "maxLength": 256 },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/FieldSpec" }
+        },
+        "views": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ViewSpec" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "FieldSpec": {
+      "type": "object",
+      "required": ["slug", "label", "dataType"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "slug": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "dataType": {
+          "type": "string",
+          "enum": ["Text", "Number", "Decimal", "Boolean", "Date", "DateTime", "Enum", "Lookup", "File", "Note", "Json", "Tags"]
+        },
+        "isRequired": { "type": "boolean" },
+        "isSearchable": { "type": "boolean" },
+        "isListVisible": { "type": "boolean" },
+        "isPrimaryKey": { "type": "boolean" },
+        "isUnique": { "type": "boolean" },
+        "isIndexed": { "type": "boolean" },
+        "isFilterable": { "type": "boolean" },
+        "isSortable": { "type": "boolean" },
+        "isHidden": { "type": "boolean" },
+        "isReadOnly": { "type": "boolean" },
+        "isComputed": { "type": "boolean" },
+        "defaultValue": {},
+        "enumValues": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "lookup": { "$ref": "#/$defs/LookupSpec" },
+        "computedExpression": { "type": "string", "maxLength": 2048 },
+        "minLength": { "type": "integer", "minimum": 0 },
+        "maxLength": { "type": "integer", "minimum": 0 },
+        "minValue": { "type": "number" },
+        "maxValue": { "type": "number" },
+        "validationPattern": { "type": "string", "maxLength": 512 },
+        "placeholder": { "type": "string", "maxLength": 256 },
+        "unit": { "type": "string", "maxLength": 128 }
+      },
+      "additionalProperties": false
+    },
+    "LookupSpec": {
+      "type": "object",
+      "required": ["targetTableSlug"],
+      "properties": {
+        "targetTableSlug": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "labelField": { "type": "string", "maxLength": 128 }
+      },
+      "additionalProperties": false
+    },
+    "ViewSpec": {
+      "type": "object",
+      "required": ["slug"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "slug": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 128 },
+        "description": { "type": "string", "maxLength": 1024 },
+        "filter": {
+          "type": "object",
+          "additionalProperties": { "type": ["string", "null"] }
+        },
+        "sort": { "type": "string", "maxLength": 128 },
+        "pageSize": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "visualization": { "type": "string", "maxLength": 128 },
+        "isDefault": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,6 +1,8 @@
 using System.IO;
 using System.Data;
 using Aion.Domain;
+using Aion.Domain.ModuleBuilder;
+using Aion.Infrastructure.ModuleBuilder;
 using Aion.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -95,6 +97,9 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IAionPersonaEngine, PersonaEngine>();
         services.AddScoped<IPersonaEngine>(sp => sp.GetRequiredService<IAionPersonaEngine>());
         services.AddScoped<ISearchService, SemanticSearchService>();
+        services.AddScoped<IModuleValidator, ModuleValidator>();
+        services.AddScoped<IModuleApplier, ModuleApplier>();
+        services.AddScoped<ModuleBuilderService>();
         services.AddScoped<ICloudBackupService, CloudBackupService>();
         services.AddScoped<IBackupService, BackupService>();
         services.AddScoped<IRestoreService, RestoreService>();
