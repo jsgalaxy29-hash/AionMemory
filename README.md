@@ -28,15 +28,13 @@ Application MAUI Blazor qui orchestre l’agent mémoire AION (domaine, infrastr
 - Tests (Release) : `pwsh ./scripts/test.ps1`
 
 ## Configuration
-L’application utilise des options strictement validées au démarrage :
-- **Base de données** :
-  - Chaîne de connexion SQLite (par défaut `aion.db` dans le répertoire applicatif).
-  - Clé d’encryption SQLCipher (`AION_DB_KEY`). Si non fournie, une clé 32 octets est générée et stockée via `SecureStorage`.
-- **Stockage** : chemin racine pour les pièces jointes et exports (`storage`).
-- **Marketplace** : dossier pour les packages de modules (`marketplace`).
-- **Backups** : dossier de sauvegarde chiffrée (`storage/backup`).
+La configuration est lue depuis les fichiers `appsettings.*` (non versionnés), `dotnet user-secrets` et/ou les variables d’environnement (`Aion:*`, `ConnectionStrings:Aion`). L’application démarre en mode offline lorsque rien n’est configuré : les providers IA retournent des stubs et les dossiers par défaut (`data/storage`, `data/marketplace`, `data/storage/backup`) sont créés automatiquement sous le répertoire d’exécution.
 
-La configuration peut être passée via `appsettings.*`, variables d’environnement (`Aion:*`) ou `ConnectionStrings:Aion`. Toute valeur manquante ou chemin inexistant bloque le démarrage pour éviter une configuration partielle.
+- **Base de données** : SQLite + SQLCipher ; une clé de développement est utilisée par défaut. Fournir `AION_DB_KEY`/`Aion:Database:EncryptionKey` en production.
+- **Stockage / Marketplace / Backups** : chemins configurables ; valeurs de secours générées si aucune configuration n’est fournie.
+- **IA** : OpenAI/Mistral configurables via `Aion:Ai:*`. Sans clé ou endpoint, l’app reste offline et ne tente aucun appel réseau.
+
+Voir [docs/SECURITY.md](./docs/SECURITY.md) pour les instructions détaillées (user-secrets en dev, variables d’environnement en CI/production) et les modèles `*.example.json`.
 
 ## Structure des projets
 - `/src/Aion.Domain` : entités, contrats et invariants.
@@ -47,9 +45,9 @@ La configuration peut être passée via `appsettings.*`, variables d’environne
 - `/tests` : batteries de tests unitaires par couche.
 
 ## Configuration & sécurité
-- **Ne pas versionner de secrets** : les exemples `appsettings.OpenAI.example.json` et `appsettings.Mistral.example.json` servent de modèles. Les vrais fichiers sont ignorés par Git.
-- En développement, utiliser `dotnet user-secrets` pour injecter les clés (`Aion:Ai:ApiKey`, `AION_DB_KEY`, etc.).
-- En CI/production, préférer les variables d’environnement (`Aion:*`) ou les coffres-forts secrets.
+- **Ne pas versionner de secrets** : les exemples `appsettings.OpenAI.example.json`, `appsettings.Mistral.example.json` et `appsettings.Development.example.json` servent de modèles. Les vrais fichiers sont ignorés par Git.
+- En développement, utiliser `dotnet user-secrets` pour injecter les clés (`Aion:Ai:ApiKey`, `AION_DB_KEY`, etc.) sans écrire de fichiers locaux.
+- En CI/production, préférer les variables d’environnement (`Aion:*`, `ConnectionStrings:Aion`) ou les coffres-forts secrets. Les validateurs tolèrent l’absence d’IA pour permettre un mode offline contrôlé.
 
 ## Repo conventions
 Les règles d’architecture, de qualité et de sécurité sont décrites dans [AGENTS.md](./AGENTS.md). Merci de les suivre avant toute contribution.

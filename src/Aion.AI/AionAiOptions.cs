@@ -5,6 +5,7 @@ public sealed record AionAiOptions
     private string? _baseEndpoint;
     private string? _llmModel;
     private string? _provider;
+    private bool HasConfiguredProvider => !string.IsNullOrWhiteSpace(_provider);
 
     public string? BaseEndpoint
     {
@@ -61,6 +62,16 @@ public sealed record AionAiOptions
         _baseEndpoint = FirstNonEmpty(_baseEndpoint, LlmEndpoint, EmbeddingsEndpoint, TranscriptionEndpoint, VisionEndpoint);
         _provider ??= "http";
     }
+
+    internal bool HasConfiguration()
+        => HasConfiguredProvider
+           || !string.IsNullOrWhiteSpace(_baseEndpoint)
+           || !string.IsNullOrWhiteSpace(_llmModel)
+           || !string.IsNullOrWhiteSpace(ApiKey)
+           || !string.IsNullOrWhiteSpace(Organization)
+           || !string.IsNullOrWhiteSpace(EmbeddingsEndpoint)
+           || !string.IsNullOrWhiteSpace(TranscriptionEndpoint)
+           || !string.IsNullOrWhiteSpace(VisionEndpoint);
 
     private static string? FirstNonEmpty(params string?[] values)
     {

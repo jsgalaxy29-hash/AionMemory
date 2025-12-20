@@ -35,15 +35,17 @@ public static class MauiProgram
         builder.Configuration
             .AddJsonFile("appsettings.json", optional: true)
             .AddJsonFile("appsettings.OpenAI.json", optional: true)
-            .AddJsonFile("appsettings.Mistral.json", optional: true);
+            .AddJsonFile("appsettings.Mistral.json", optional: true)
+#if DEBUG
+            .AddUserSecrets<App>(optional: true)
+#endif
+            .AddEnvironmentVariables();
 
         builder.Services.AddMauiBlazorWebView();
 #if DEBUG
         builder.Services.AddBlazorWebViewDeveloperTools();
         builder.Logging.AddDebug();
 #endif
-
-        builder.Configuration.AddEnvironmentVariables();
 
         ConfigureOptions(builder);
         ConfigureServices(builder.Services, builder.Configuration);

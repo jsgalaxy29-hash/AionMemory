@@ -10,6 +10,11 @@ public sealed class AionAiOptionsValidator : IValidateOptions<AionAiOptions>
 
         options.Normalize();
 
+        if (!options.HasConfiguration())
+        {
+            return ValidateOptionsResult.Success;
+        }
+
         var errors = new List<string>();
 
         if (options.DefaultHeaders is null)
