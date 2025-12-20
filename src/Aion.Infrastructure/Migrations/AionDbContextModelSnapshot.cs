@@ -1103,6 +1103,15 @@ namespace Aion.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Aion.Domain.F_Record", b =>
+                {
+                    b.HasOne("Aion.Domain.STable", null)
+                        .WithMany()
+                        .HasForeignKey("TableId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Aion.Domain.J_Event_Link", b =>
                 {
                     b.HasOne("Aion.Domain.S_Event", null)

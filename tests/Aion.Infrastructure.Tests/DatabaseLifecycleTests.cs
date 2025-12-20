@@ -1,7 +1,8 @@
 using System.Collections.Generic;
+using System.Data;
 using System.Data.Common;
 using System.IO;
-using System.Data;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -89,13 +90,14 @@ public class DatabaseLifecycleTests
         Directory.Delete(root, recursive: true);
     }
 
-    private static ServiceProvider BuildProvider(string root, string databasePath)
+    private static ServiceProvider BuildProvider(string root, string databasePath, string? encryptionKey = null)
     {
+        var key = string.IsNullOrWhiteSpace(encryptionKey) ? SqliteCipherDevelopmentDefaults.DevelopmentKey : encryptionKey;
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Aion:Database:ConnectionString"] = $"Data Source={databasePath}",
-                ["Aion:Database:EncryptionKey"] = SqliteCipherDevelopmentDefaults.DevelopmentKey,
+                ["Aion:Database:EncryptionKey"] = key,
                 ["Aion:Storage:RootPath"] = Path.Combine(root, "storage"),
                 ["Aion:Backup:Folder"] = Path.Combine(root, "backup"),
                 ["Aion:Marketplace:Folder"] = Path.Combine(root, "marketplace")
@@ -111,6 +113,36 @@ public class DatabaseLifecycleTests
         services.AddAionInfrastructure(configuration);
 
         return services.BuildServiceProvider();
+    }
+
+    [Fact]
+    public async Task EnsureAionDatabaseAsync_fails_when_encryption_key_is_incorrect()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+
+        var databasePath = Path.Combine(root, "aion_protected.db");
+        var correctProvider = BuildProvider(root, databasePath);
+        try
+        {
+            await correctProvider.EnsureAionDatabaseAsync();
+        }
+        finally
+        {
+            await correctProvider.DisposeAsync();
+        }
+
+        var wrongKey = new string('x', 48);
+        var failingProvider = BuildProvider(root, databasePath, wrongKey);
+        try
+        {
+            await Assert.ThrowsAsync<SqliteException>(() => failingProvider.EnsureAionDatabaseAsync());
+        }
+        finally
+        {
+            await failingProvider.DisposeAsync();
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     private static async Task<bool> TableExistsAsync(DbConnection connection, string tableName)

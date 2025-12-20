@@ -123,11 +123,36 @@ public static class DependencyInjectionExtensions
         var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(DependencyInjectionExtensions));
         var context = scope.ServiceProvider.GetRequiredService<AionDbContext>();
 
-        await ApplyMigrationsAsync(context, logger, cancellationToken).ConfigureAwait(false);
-        await ValidateSchemaAsync(context, logger, cancellationToken).ConfigureAwait(false);
+        await InitializeDatabaseAsync(context, logger, cancellationToken).ConfigureAwait(false);
 
         var demoSeeder = scope.ServiceProvider.GetRequiredService<DemoModuleSeeder>();
         await demoSeeder.EnsureDemoDataAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task InitializeDatabaseAsync(AionDbContext context, ILogger logger, CancellationToken cancellationToken)
+    {
+        var dataSource = GetDatabaseLabel(context);
+        logger.LogInformation("Opening SQLite database at {DatabasePath}", dataSource);
+
+        var connection = context.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+        {
+            await context.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            await ApplyMigrationsAsync(context, logger, cancellationToken).ConfigureAwait(false);
+            await ValidateSchemaAsync(context, logger, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await context.Database.CloseConnectionAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     private static async Task ApplyMigrationsAsync(AionDbContext context, ILogger logger, CancellationToken cancellationToken)
@@ -142,7 +167,7 @@ public static class DependencyInjectionExtensions
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Database migrations failed during startup.");
+            logger.LogError(ex, "Database migrations failed during startup for data source {DatabasePath}.", GetDatabaseLabel(context));
             throw;
         }
     }
@@ -240,5 +265,20 @@ public static class DependencyInjectionExtensions
         }
 
         return string.Empty;
+    }
+
+    private static string GetDatabaseLabel(AionDbContext context)
+    {
+        var connectionString = context.Database.GetConnectionString();
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return "(unknown data source)";
+        }
+
+        var builder = new SqliteConnectionStringBuilder(connectionString);
+        builder.Remove("Password");
+        builder.Remove("Pwd");
+
+        return string.IsNullOrWhiteSpace(builder.DataSource) ? "(in-memory)" : Path.GetFullPath(builder.DataSource);
     }
 }
