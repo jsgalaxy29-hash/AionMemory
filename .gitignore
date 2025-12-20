@@ -1,3 +1,4 @@
+# Application configuration (never commit real secrets)
 appsettings.json
 appsettings.*.json
 !appsettings.*.example.json
@@ -367,9 +368,3 @@ FodyWeavers.xsd
 **/Platforms/*/bin/
 **/Platforms/*/obj/
 **/Platforms/iOS/build/
-
-# Application configuration that should not be committed
-appsettings.Staging.json
-appsettings.OpenAI.json
-appsettings.Mistral.json
-appsettings.Development.json

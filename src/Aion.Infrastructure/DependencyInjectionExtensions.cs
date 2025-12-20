@@ -1,5 +1,5 @@
-using System.IO;
 using System.Data;
+using System.IO;
 using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
 using Aion.Infrastructure.ModuleBuilder;
@@ -17,6 +17,11 @@ public static class DependencyInjectionExtensions
 {
     public static IServiceCollection AddAionInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        var dataDirectory = GetDefaultDataDirectory();
+        var defaultStorageRoot = Path.Combine(dataDirectory, "storage");
+        var defaultMarketplaceFolder = Path.Combine(dataDirectory, "marketplace");
+        var defaultBackupFolder = Path.Combine(defaultStorageRoot, "backup");
+
         var databaseOptions = services.AddOptions<AionDatabaseOptions>();
         databaseOptions.PostConfigure(options =>
         {
@@ -25,7 +30,7 @@ public static class DependencyInjectionExtensions
 
             // Ensure dev/test environments always have a working SQLCipher configuration
             // even when configuration files are minimal.
-            SqliteCipherDevelopmentDefaults.ApplyDefaults(options);
+            SqliteCipherDevelopmentDefaults.ApplyDefaults(options, directory: dataDirectory);
         });
         databaseOptions.Validate(o => !string.IsNullOrWhiteSpace(o.ConnectionString), "The database connection string cannot be empty.");
         databaseOptions.Validate(o => !string.IsNullOrWhiteSpace(o.EncryptionKey), "The database encryption key cannot be empty.");
@@ -37,9 +42,8 @@ public static class DependencyInjectionExtensions
         var storageOptions = services.AddOptions<StorageOptions>();
         storageOptions.PostConfigure(options =>
         {
-            options.RootPath = ChooseValue(options.RootPath, configuration["Aion:Storage:RootPath"]);
-            options.EncryptionKey = ChooseValue(options.EncryptionKey, configuration["Aion:Storage:EncryptionKey"], configuration["Aion:Database:EncryptionKey"], configuration["AION_DB_KEY"]);
-            EnsureDirectoryExists(options.RootPath);
+            options.RootPath = EnsureDirectoryPath(ChooseValue(options.RootPath, configuration["Aion:Storage:RootPath"], defaultStorageRoot));
+            options.EncryptionKey = ChooseValue(options.EncryptionKey, configuration["Aion:Storage:EncryptionKey"], configuration["Aion:Database:EncryptionKey"], configuration["AION_DB_KEY"], SqliteCipherDevelopmentDefaults.DevelopmentKey);
         });
         storageOptions.Validate(o => !string.IsNullOrWhiteSpace(o.RootPath), "A storage root path is required.");
         storageOptions.Validate(o => Directory.Exists(o.RootPath), "The configured storage root path must exist.");
@@ -52,8 +56,8 @@ public static class DependencyInjectionExtensions
         var marketplaceOptions = services.AddOptions<MarketplaceOptions>();
         marketplaceOptions.PostConfigure(options =>
         {
-            options.MarketplaceFolder = ChooseValue(options.MarketplaceFolder, configuration["Aion:Marketplace:Folder"]);
-            EnsureDirectoryExists(options.MarketplaceFolder);
+            var fallbackFolder = options.MarketplaceFolder ?? defaultMarketplaceFolder;
+            options.MarketplaceFolder = EnsureDirectoryPath(ChooseValue(options.MarketplaceFolder, configuration["Aion:Marketplace:Folder"], fallbackFolder));
         });
         marketplaceOptions.Validate(o => !string.IsNullOrWhiteSpace(o.MarketplaceFolder), "The marketplace folder cannot be empty.");
         marketplaceOptions.Validate(o => Directory.Exists(o.MarketplaceFolder), "The configured marketplace folder must exist.");
@@ -62,8 +66,8 @@ public static class DependencyInjectionExtensions
         var backupOptions = services.AddOptions<BackupOptions>();
         backupOptions.PostConfigure(options =>
         {
-            options.BackupFolder = ChooseValue(options.BackupFolder, configuration["Aion:Backup:Folder"]);
-            EnsureDirectoryExists(options.BackupFolder);
+            var fallback = options.BackupFolder ?? defaultBackupFolder;
+            options.BackupFolder = EnsureDirectoryPath(ChooseValue(options.BackupFolder, configuration["Aion:Backup:Folder"], fallback));
         });
         backupOptions.Validate(o => !string.IsNullOrWhiteSpace(o.BackupFolder), "The backup folder cannot be empty.");
         backupOptions.Validate(o => Directory.Exists(o.BackupFolder), "The configured backup folder must exist.");
@@ -181,30 +185,12 @@ public static class DependencyInjectionExtensions
         return result is string;
     }
 
-    private static string ChooseValue(string current, params string?[] candidates)
+    private static string EnsureDirectoryPath(string? path)
     {
-        if (!string.IsNullOrWhiteSpace(current))
-        {
-            return current;
-        }
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
-        foreach (var candidate in candidates)
-        {
-            if (!string.IsNullOrWhiteSpace(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return current;
-    }
-
-    private static void EnsureDirectoryExists(string? path)
-    {
-        if (!string.IsNullOrWhiteSpace(path) && !Directory.Exists(path))
-        {
-            Directory.CreateDirectory(path);
-        }
+        Directory.CreateDirectory(path);
+        return path;
     }
 
     private static bool IsDataSourceConfigured(string? connectionString)
@@ -229,5 +215,30 @@ public static class DependencyInjectionExtensions
         var fullPath = Path.GetFullPath(builder.DataSource);
         var directory = Path.GetDirectoryName(fullPath);
         return directory is not null && Directory.Exists(directory);
+    }
+
+    private static string GetDefaultDataDirectory()
+    {
+        var directory = Path.Combine(AppContext.BaseDirectory, "data");
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
+
+    private static string ChooseValue(string? current, params string?[] candidates)
+    {
+        if (!string.IsNullOrWhiteSpace(current))
+        {
+            return current;
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (!string.IsNullOrWhiteSpace(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return string.Empty;
     }
 }
