@@ -23,6 +23,10 @@ Application MAUI Blazor qui orchestre l’agent mémoire AION (domaine, infrastr
    dotnet build src/Aion.AppHost/Aion.AppHost.csproj -t:Run -f net10.0-android
    ```
 
+## Build & Test
+- Build (Release) : `pwsh ./scripts/build.ps1`
+- Tests (Release) : `pwsh ./scripts/test.ps1`
+
 ## Configuration
 L’application utilise des options strictement validées au démarrage :
 - **Base de données** :
@@ -46,6 +50,9 @@ La configuration peut être passée via `appsettings.*`, variables d’environne
 - **Ne pas versionner de secrets** : les exemples `appsettings.OpenAI.example.json` et `appsettings.Mistral.example.json` servent de modèles. Les vrais fichiers sont ignorés par Git.
 - En développement, utiliser `dotnet user-secrets` pour injecter les clés (`Aion:Ai:ApiKey`, `AION_DB_KEY`, etc.).
 - En CI/production, préférer les variables d’environnement (`Aion:*`) ou les coffres-forts secrets.
+
+## Repo conventions
+Les règles d’architecture, de qualité et de sécurité sont décrites dans [AGENTS.md](./AGENTS.md). Merci de les suivre avant toute contribution.
 
 ## Notes supplémentaires
 - La base de données et les dossiers sont créés dans le répertoire de données applicatif (`FileSystem.AppDataDirectory`).
