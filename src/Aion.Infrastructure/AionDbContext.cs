@@ -164,6 +164,7 @@ public class AionDbContext : DbContext
             builder.Property(r => r.TableId).HasColumnName("EntityTypeId");
             builder.Property(r => r.DeletedAt);
             builder.HasIndex(r => new { r.TableId, r.CreatedAt });
+            builder.HasOne<STable>().WithMany().HasForeignKey(r => r.TableId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<S_VisionAnalysis>(builder =>
