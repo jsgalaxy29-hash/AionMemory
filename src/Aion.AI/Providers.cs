@@ -14,7 +14,7 @@ public static class HttpClientNames
     public const string Transcription = "aion-ai-transcription";
     public const string Vision = "aion-ai-vision";
 }
-public sealed class HttpTextGenerationProvider : ILLMProvider
+public sealed class HttpTextGenerationProvider : IChatModel
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly IHttpClientFactory _httpClientFactory;
@@ -132,7 +132,7 @@ internal static class JsonHelper
 }
 
 
-public sealed class HttpEmbeddingProvider : IEmbeddingProvider
+public sealed class HttpEmbeddingProvider : IEmbeddingsModel
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly IHttpClientFactory _httpClientFactory;
@@ -178,7 +178,7 @@ public sealed class HttpEmbeddingProvider : IEmbeddingProvider
         return new EmbeddingResult(values, opts.EmbeddingModel ?? opts.LlmModel, json);
     }
 }
-public sealed class HttpAudioTranscriptionProvider : IAudioTranscriptionProvider
+public sealed class HttpAudioTranscriptionProvider : ITranscriptionModel
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptionsMonitor<AionAiOptions> _options;
@@ -217,7 +217,7 @@ public sealed class HttpAudioTranscriptionProvider : IAudioTranscriptionProvider
         return new TranscriptionResult(text, TimeSpan.Zero, opts.TranscriptionModel);
     }
 }
-public sealed class HttpVisionProvider : IVisionService
+public sealed class HttpVisionProvider : IVisionModel
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly IHttpClientFactory _httpClientFactory;
@@ -240,11 +240,10 @@ public sealed class HttpVisionProvider : IVisionService
             return BuildStub(request.FileId, request.AnalysisType, "Unconfigured vision endpoint");
         }
         var payload = new { fileId = request.FileId, analysisType = request.AnalysisType.ToString(), model = request.Model ?? opts.VisionModel ?? "vision-generic" };
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "vision/analyze")
+        using var response = await HttpRetryHelper.SendWithRetryAsync(client, () => new HttpRequestMessage(HttpMethod.Post, "vision/analyze")
         {
             Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
-        };
-        var response = await client.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+        }, _logger, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("Vision call failed with status {Status}; returning stub", response.StatusCode);
@@ -268,10 +267,10 @@ public sealed class HttpVisionProvider : IVisionService
 }
 public sealed class IntentRecognizer : IIntentDetector
 {
-    private readonly ILLMProvider _provider;
+    private readonly IChatModel _provider;
     private readonly ILogger<IntentRecognizer> _logger;
 
-    public IntentRecognizer(ILLMProvider provider, ILogger<IntentRecognizer> logger)
+    public IntentRecognizer(IChatModel provider, ILogger<IntentRecognizer> logger)
     {
         _provider = provider;
         _logger = logger;
@@ -394,9 +393,9 @@ public sealed class ModuleDesigner : IModuleDesigner
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true
     };
-    private readonly ILLMProvider _provider;
+    private readonly IChatModel _provider;
     private readonly ILogger<ModuleDesigner> _logger;
-    public ModuleDesigner(ILLMProvider provider, ILogger<ModuleDesigner> logger)
+    public ModuleDesigner(IChatModel provider, ILogger<ModuleDesigner> logger)
     {
         _provider = provider;
         _logger = logger;
@@ -652,11 +651,11 @@ Ne réponds que par du JSON valide.";
 }
 public sealed class CrudInterpreter : ICrudInterpreter
 {
-    private readonly ILLMProvider _provider;
+    private readonly IChatModel _provider;
     private readonly ILogger<CrudInterpreter> _logger;
     private static readonly HashSet<string> AllowedActions = new(StringComparer.OrdinalIgnoreCase) { "create", "update", "delete", "query" };
 
-    public CrudInterpreter(ILLMProvider provider, ILogger<CrudInterpreter> logger)
+    public CrudInterpreter(IChatModel provider, ILogger<CrudInterpreter> logger)
     {
         _provider = provider;
         _logger = logger;
@@ -748,9 +747,9 @@ Requête: {request.Intent}";
 }
 public sealed class AgendaInterpreter : IAgendaInterpreter
 {
-    private readonly ILLMProvider _provider;
+    private readonly IChatModel _provider;
 
-    public AgendaInterpreter(ILLMProvider provider)
+    public AgendaInterpreter(IChatModel provider)
     {
         _provider = provider;
     }
@@ -790,9 +789,9 @@ public sealed class AgendaInterpreter : IAgendaInterpreter
 }
 public sealed class NoteInterpreter : INoteInterpreter
 {
-    private readonly ILLMProvider _provider;
+    private readonly IChatModel _provider;
 
-    public NoteInterpreter(ILLMProvider provider)
+    public NoteInterpreter(IChatModel provider)
     {
         _provider = provider;
     }
@@ -809,10 +808,10 @@ Contenu:
 public sealed class ReportInterpreter : IReportInterpreter
 {
     private static readonly HashSet<string> AllowedVisualizations = new(StringComparer.OrdinalIgnoreCase) { "table", "chart", "number", "list" };
-    private readonly ILLMProvider _provider;
+    private readonly IChatModel _provider;
     private readonly ILogger<HttpTextGenerationProvider> _logger;
 
-    public ReportInterpreter(ILLMProvider provider, ILogger<HttpTextGenerationProvider> logger)
+    public ReportInterpreter(IChatModel provider, ILogger<HttpTextGenerationProvider> logger)
     {
         _provider = provider;
         _logger = logger;
@@ -893,7 +892,7 @@ Préférence de visualisation: {request.PreferredVisualization ?? "none"}";
         return AllowedVisualizations.Contains(normalized) ? normalized : preferred;
     }
 }
-public sealed class VisionEngine : IAionVisionService
+public sealed class VisionEngine : IVisionModel, IAionVisionService
 {
     private readonly HttpVisionProvider _visionProvider;
     private readonly IFileStorageService _fileStorage;

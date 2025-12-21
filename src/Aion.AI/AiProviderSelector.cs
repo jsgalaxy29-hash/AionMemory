@@ -26,7 +26,7 @@ public sealed class AiProviderSelector
 
         if (!HasRemoteConfiguration(options))
         {
-            return AiProviderNames.Local;
+            return normalized == AiProviderNames.Local ? AiProviderNames.Local : AiProviderNames.Mock;
         }
 
         return normalized switch
@@ -34,19 +34,21 @@ public sealed class AiProviderSelector
             AiProviderNames.OpenAi => AiProviderNames.OpenAi,
             AiProviderNames.Mistral => AiProviderNames.Mistral,
             AiProviderNames.Http => AiProviderNames.Http,
+            AiProviderNames.Mock => AiProviderNames.Mock,
+            AiProviderNames.Local => AiProviderNames.Local,
             _ => LogAndFallback(normalized)
         };
     }
 
     private static string Normalize(string? provider)
-        => string.IsNullOrWhiteSpace(provider) ? AiProviderNames.Http : provider.Trim().ToLowerInvariant();
+        => string.IsNullOrWhiteSpace(provider) ? AiProviderNames.Mock : provider.Trim().ToLowerInvariant();
 
     private static bool HasRemoteConfiguration(AionAiOptions options)
         => !string.IsNullOrWhiteSpace(options.ApiKey) || !string.IsNullOrWhiteSpace(options.BaseEndpoint);
 
     private string LogAndFallback(string? provider)
     {
-        _logger.LogWarning("AI provider '{Provider}' is not recognized; defaulting to HTTP provider", provider ?? "(null)");
-        return AiProviderNames.Http;
+        _logger.LogWarning("AI provider '{Provider}' is not recognized; defaulting to mock provider", provider ?? "(null)");
+        return AiProviderNames.Mock;
     }
 }

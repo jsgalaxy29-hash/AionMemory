@@ -11,7 +11,7 @@ namespace Aion.AI;
 /// <summary>
 /// Provider spécialisé pour OpenAI (ou compatible) avec gestion basique du rate-limit.
 /// </summary>
-public sealed class OpenAiTextGenerationProvider : ILLMProvider
+public sealed class OpenAiTextGenerationProvider : IChatModel
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly IHttpClientFactory _httpClientFactory;
@@ -73,6 +73,8 @@ public sealed class OpenAiTextGenerationProvider : ILLMProvider
             client.BaseAddress = uri;
         }
 
+        client.Timeout = opts.RequestTimeout;
+
         if (!string.IsNullOrWhiteSpace(opts.ApiKey) && client.DefaultRequestHeaders.Authorization is null)
         {
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", opts.ApiKey);
@@ -94,7 +96,7 @@ public sealed class OpenAiTextGenerationProvider : ILLMProvider
     }
 }
 
-public sealed class OpenAiEmbeddingProvider : IEmbeddingProvider
+public sealed class OpenAiEmbeddingProvider : IEmbeddingsModel
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly OpenAiTextGenerationProvider _clientBuilder;
@@ -140,7 +142,7 @@ public sealed class OpenAiEmbeddingProvider : IEmbeddingProvider
     }
 }
 
-public sealed class OpenAiAudioTranscriptionProvider : IAudioTranscriptionProvider
+public sealed class OpenAiAudioTranscriptionProvider : ITranscriptionModel
 {
     private readonly OpenAiTextGenerationProvider _clientBuilder;
     private readonly IOptionsMonitor<AionAiOptions> _options;

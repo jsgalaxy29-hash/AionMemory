@@ -2,7 +2,6 @@ using Aion.AI.ModuleBuilder;
 using Aion.Domain.ModuleBuilder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Aion.AI;
@@ -30,24 +29,41 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<HttpEmbeddingProvider>();
         services.AddScoped<HttpAudioTranscriptionProvider>();
         services.AddSingleton<HttpVisionProvider>();
+        services.AddScoped<VisionEngine>();
+
+        services.AddSingleton<HttpMockChatModel>();
+        services.AddSingleton<HttpMockEmbeddingsModel>();
+        services.AddScoped<HttpMockTranscriptionModel>();
+        services.AddSingleton<HttpMockVisionModel>();
 
         services.AddSingleton<EchoLlmProvider>();
         services.AddSingleton<DeterministicEmbeddingProvider>();
         services.AddScoped<StubAudioTranscriptionProvider>();
 
-        services.AddKeyedSingleton<ILLMProvider>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpTextGenerationProvider>());
-        services.AddKeyedSingleton<IEmbeddingProvider>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpEmbeddingProvider>());
-        services.AddKeyedScoped<IAudioTranscriptionProvider>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpAudioTranscriptionProvider>());
+        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpTextGenerationProvider>());
+        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpEmbeddingProvider>());
+        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpAudioTranscriptionProvider>());
+        services.AddKeyedScoped<IVisionModel>(AiProviderNames.Http, sp => sp.GetRequiredService<VisionEngine>());
 
-        services.AddKeyedSingleton<ILLMProvider>(AiProviderNames.Local, sp => sp.GetRequiredService<EchoLlmProvider>());
-        services.AddKeyedSingleton<IEmbeddingProvider>(AiProviderNames.Local, sp => sp.GetRequiredService<DeterministicEmbeddingProvider>());
-        services.AddKeyedScoped<IAudioTranscriptionProvider>(AiProviderNames.Local, sp => sp.GetRequiredService<StubAudioTranscriptionProvider>());
+        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Mock, sp => sp.GetRequiredService<HttpMockChatModel>());
+        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Mock, sp => sp.GetRequiredService<HttpMockEmbeddingsModel>());
+        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Mock, sp => sp.GetRequiredService<HttpMockTranscriptionModel>());
+        services.AddKeyedSingleton<IVisionModel>(AiProviderNames.Mock, sp => sp.GetRequiredService<HttpMockVisionModel>());
 
-        services.AddSingleton<ILLMProvider>(ResolveProvider<ILLMProvider>);
-        services.AddSingleton<IEmbeddingProvider>(ResolveProvider<IEmbeddingProvider>);
-        services.AddScoped<IAudioTranscriptionProvider>(ResolveProvider<IAudioTranscriptionProvider>);
-        services.AddScoped<IAionVisionService, VisionEngine>();
-        services.AddScoped<IVisionService>(sp => sp.GetRequiredService<IAionVisionService>());
+        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Local, sp => sp.GetRequiredService<EchoLlmProvider>());
+        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Local, sp => sp.GetRequiredService<DeterministicEmbeddingProvider>());
+        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Local, sp => sp.GetRequiredService<StubAudioTranscriptionProvider>());
+
+        services.AddScoped<AiModelFactory>();
+        services.AddScoped<IChatModel>(sp => sp.GetRequiredService<AiModelFactory>());
+        services.AddScoped<IEmbeddingsModel>(sp => sp.GetRequiredService<AiModelFactory>());
+        services.AddScoped<ITranscriptionModel>(sp => sp.GetRequiredService<AiModelFactory>());
+        services.AddScoped<IVisionModel>(sp => sp.GetRequiredService<AiModelFactory>());
+        services.AddScoped<ILLMProvider>(sp => sp.GetRequiredService<IChatModel>());
+        services.AddScoped<IEmbeddingProvider>(sp => sp.GetRequiredService<IEmbeddingsModel>());
+        services.AddScoped<IAudioTranscriptionProvider>(sp => sp.GetRequiredService<ITranscriptionModel>());
+        services.AddScoped<IAionVisionService>(sp => sp.GetRequiredService<IVisionModel>());
+        services.AddScoped<IVisionService>(sp => sp.GetRequiredService<IVisionModel>());
 
         services.AddScoped<IIntentDetector, IntentRecognizer>();
         services.AddScoped<IModuleDesigner, ModuleDesigner>();
@@ -91,21 +107,4 @@ public static class ServiceCollectionExtensions
                 client.DefaultRequestHeaders.Add(header.Key, header.Value);
             }
         };
-
-    private static T ResolveProvider<T>(IServiceProvider serviceProvider)
-    {
-        var providerName = serviceProvider.GetRequiredService<AiProviderSelector>().ResolveProviderName();
-        var resolved = serviceProvider.GetKeyedService<T>(providerName);
-        if (resolved is not null)
-        {
-            return resolved;
-        }
-
-        if (!string.Equals(providerName, AiProviderNames.Http, StringComparison.OrdinalIgnoreCase))
-        {
-            serviceProvider.GetService<ILogger<AiProviderSelector>>()?.LogWarning("AI provider '{Provider}' not registered; falling back to HTTP provider", providerName);
-        }
-
-        return serviceProvider.GetRequiredKeyedService<T>(AiProviderNames.Http);
-    }
 }

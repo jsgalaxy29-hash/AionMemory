@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using Aion.AI;
-using Aion.AI;
 using Aion.Domain;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -62,7 +61,7 @@ public class OrchestratorTests
         Assert.Equal(payload, result.RawResponse);
     }
 
-    private sealed class StubLlmProvider : ILLMProvider
+    private sealed class StubLlmProvider : IChatModel
     {
         public StubLlmProvider(string payload)
         {

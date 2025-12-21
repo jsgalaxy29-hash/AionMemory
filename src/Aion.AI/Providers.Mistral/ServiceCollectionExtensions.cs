@@ -11,9 +11,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<MistralEmbeddingProvider>();
         services.AddScoped<MistralAudioTranscriptionProvider>();
 
-        services.AddKeyedSingleton<ILLMProvider>(AiProviderNames.Mistral, sp => sp.GetRequiredService<MistralTextGenerationProvider>());
-        services.AddKeyedSingleton<IEmbeddingProvider>(AiProviderNames.Mistral, sp => sp.GetRequiredService<MistralEmbeddingProvider>());
-        services.AddKeyedScoped<IAudioTranscriptionProvider>(AiProviderNames.Mistral, sp => sp.GetRequiredService<MistralAudioTranscriptionProvider>());
+        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Mistral, sp => sp.GetRequiredService<MistralTextGenerationProvider>());
+        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Mistral, sp => sp.GetRequiredService<MistralEmbeddingProvider>());
+        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Mistral, sp => sp.GetRequiredService<MistralAudioTranscriptionProvider>());
 
         return services;
     }

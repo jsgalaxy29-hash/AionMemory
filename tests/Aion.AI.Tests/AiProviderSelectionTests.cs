@@ -9,17 +9,17 @@ namespace Aion.AI.Tests;
 public class AiProviderSelectionTests
 {
     [Fact]
-    public void Selector_returns_local_when_no_remote_configuration()
+    public void Selector_returns_mock_when_no_remote_configuration()
     {
         var selector = new AiProviderSelector(new StubOptionsMonitor(new AionAiOptions()), NullLogger<AiProviderSelector>.Instance);
 
         var provider = selector.ResolveProviderName();
 
-        Assert.Equal(AiProviderNames.Local, provider);
+        Assert.Equal(AiProviderNames.Mock, provider);
     }
 
     [Fact]
-    public void Selector_falls_back_to_http_for_unknown_provider()
+    public void Selector_falls_back_to_mock_for_unknown_provider()
     {
         var selector = new AiProviderSelector(
             new StubOptionsMonitor(new AionAiOptions { Provider = "custom", ApiKey = "token", BaseEndpoint = "http://localhost" }),
@@ -27,11 +27,11 @@ public class AiProviderSelectionTests
 
         var provider = selector.ResolveProviderName();
 
-        Assert.Equal(AiProviderNames.Http, provider);
+        Assert.Equal(AiProviderNames.Mock, provider);
     }
 
     [Fact]
-    public void ResolveProvider_returns_http_provider_when_requested_provider_is_missing()
+    public async Task ModelFactory_uses_mock_provider_when_requested_provider_is_missing()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -47,9 +47,11 @@ public class AiProviderSelectionTests
         services.AddAionAi(configuration);
 
         using var provider = services.BuildServiceProvider();
-        var resolved = provider.GetRequiredService<ILLMProvider>();
+        var chat = provider.GetRequiredService<IChatModel>();
 
-        Assert.IsType<HttpTextGenerationProvider>(resolved);
+        var response = await chat.GenerateAsync("ping");
+
+        Assert.StartsWith("[mock-chat]", response.Content, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -94,7 +96,7 @@ public class AiProviderSelectionTests
         }
     }
 
-    private sealed class StubProvider : ILLMProvider
+    private sealed class StubProvider : IChatModel
     {
         private readonly string _payload;
 
@@ -109,7 +111,7 @@ public class AiProviderSelectionTests
         }
     }
 
-    private sealed class ThrowingProvider : ILLMProvider
+    private sealed class ThrowingProvider : IChatModel
     {
         private readonly Exception _exception;
 
@@ -124,6 +126,3 @@ public class AiProviderSelectionTests
         }
     }
 }
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;

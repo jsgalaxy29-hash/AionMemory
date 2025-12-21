@@ -14,6 +14,12 @@ public static class AiAdapterServiceCollectionExtensions
         services.TryAddSingleton<EchoLlmProvider>();
         services.TryAddSingleton<DeterministicEmbeddingProvider>();
         services.TryAddScoped<StubAudioTranscriptionProvider>();
+        services.TryAddSingleton<IChatModel>(sp => sp.GetRequiredService<EchoLlmProvider>());
+        services.TryAddSingleton<ILLMProvider>(sp => sp.GetRequiredService<IChatModel>());
+        services.TryAddSingleton<IEmbeddingsModel>(sp => sp.GetRequiredService<DeterministicEmbeddingProvider>());
+        services.TryAddSingleton<IEmbeddingProvider>(sp => sp.GetRequiredService<IEmbeddingsModel>());
+        services.TryAddScoped<ITranscriptionModel>(sp => sp.GetRequiredService<StubAudioTranscriptionProvider>());
+        services.TryAddScoped<IAudioTranscriptionProvider>(sp => sp.GetRequiredService<ITranscriptionModel>());
 
         services.TryAddScoped<IIntentDetector, BasicIntentDetector>();
         services.TryAddScoped<IModuleDesigner, SimpleModuleDesigner>();
@@ -26,7 +32,7 @@ public static class AiAdapterServiceCollectionExtensions
     }
 }
 
-public sealed class EchoLlmProvider : ILLMProvider
+public sealed class EchoLlmProvider : IChatModel
 {
     public Task<LlmResponse> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
     {
@@ -35,7 +41,7 @@ public sealed class EchoLlmProvider : ILLMProvider
     }
 }
 
-public sealed class DeterministicEmbeddingProvider : IEmbeddingProvider
+public sealed class DeterministicEmbeddingProvider : IEmbeddingsModel
 {
     public Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default)
     {
@@ -47,7 +53,7 @@ public sealed class DeterministicEmbeddingProvider : IEmbeddingProvider
     }
 }
 
-public sealed class StubAudioTranscriptionProvider : IAudioTranscriptionProvider
+public sealed class StubAudioTranscriptionProvider : ITranscriptionModel
 {
     public Task<TranscriptionResult> TranscribeAsync(Stream audioStream, string fileName, CancellationToken cancellationToken = default)
     {
@@ -57,10 +63,10 @@ public sealed class StubAudioTranscriptionProvider : IAudioTranscriptionProvider
 
 public sealed class BasicIntentDetector : IIntentDetector
 {
-    private readonly ILLMProvider _provider;
+    private readonly IChatModel _provider;
     private readonly ILogger<BasicIntentDetector> _logger;
 
-    public BasicIntentDetector(ILLMProvider provider, ILogger<BasicIntentDetector> logger)
+    public BasicIntentDetector(IChatModel provider, ILogger<BasicIntentDetector> logger)
     {
         _provider = provider;
         _logger = logger;

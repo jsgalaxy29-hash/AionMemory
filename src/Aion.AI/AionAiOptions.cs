@@ -37,7 +37,7 @@ public sealed record AionAiOptions
 
     public string Provider
     {
-        get => _provider ?? "http";
+        get => _provider ?? AiProviderNames.Mock;
         init => _provider = Normalize(value);
     }
 
@@ -60,7 +60,7 @@ public sealed record AionAiOptions
     public void Normalize()
     {
         _baseEndpoint = FirstNonEmpty(_baseEndpoint, LlmEndpoint, EmbeddingsEndpoint, TranscriptionEndpoint, VisionEndpoint);
-        _provider ??= "http";
+        _provider ??= AiProviderNames.Mock;
     }
 
     internal bool HasConfiguration()

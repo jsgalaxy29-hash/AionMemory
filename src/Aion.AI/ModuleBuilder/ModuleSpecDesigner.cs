@@ -18,10 +18,10 @@ public sealed class ModuleSpecDesigner : IModuleSpecDesigner
         AllowTrailingCommas = true
     };
 
-    private readonly ILLMProvider _provider;
+    private readonly IChatModel _provider;
     private readonly ILogger<ModuleSpecDesigner> _logger;
 
-    public ModuleSpecDesigner(ILLMProvider provider, ILogger<ModuleSpecDesigner> logger)
+    public ModuleSpecDesigner(IChatModel provider, ILogger<ModuleSpecDesigner> logger)
     {
         _provider = provider;
         _logger = logger;

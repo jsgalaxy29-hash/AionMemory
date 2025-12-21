@@ -34,7 +34,8 @@ public sealed class AionAiOptionsValidator : IValidateOptions<AionAiOptions>
         {
             errors.Add($"BaseEndpoint (or a specific Llm/Embeddings/Transcription/Vision endpoint) is required for provider '{provider}'.");
         }
-        else if (provider != AiProviderNames.Local
+        else if (provider != AiProviderNames.Mock
+                 && provider != AiProviderNames.Local
                  && provider != AiProviderNames.OpenAi
                  && provider != AiProviderNames.Mistral
                  && !hasEndpoint)
@@ -53,7 +54,7 @@ public sealed class AionAiOptionsValidator : IValidateOptions<AionAiOptions>
     }
 
     private static string Normalize(string? provider)
-        => string.IsNullOrWhiteSpace(provider) ? AiProviderNames.Http : provider.Trim().ToLowerInvariant();
+        => string.IsNullOrWhiteSpace(provider) ? AiProviderNames.Mock : provider.Trim().ToLowerInvariant();
 
     private static bool HasAnyEndpoint(AionAiOptions options)
         => !string.IsNullOrWhiteSpace(options.BaseEndpoint)

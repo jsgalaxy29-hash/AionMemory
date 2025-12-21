@@ -1,11 +1,6 @@
-using System.Net;
-using System.Net.Http;
 using System.Text;
 using Aion.AI;
-using Aion.AI;
 using Aion.Domain;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Aion.AI.Tests;
@@ -13,37 +8,37 @@ namespace Aion.AI.Tests;
 public class DefaultAionAiProviderTests
 {
     [Fact]
-    public async Task GenerateAsync_returns_stub_when_no_endpoint_is_configured()
+    public async Task Mock_chat_provider_returns_stubbed_prefix()
     {
-        var provider = CreateProvider(new AionAiOptions { LlmModel = "gpt-stub" });
+        var provider = new HttpMockChatModel();
 
         var response = await provider.GenerateAsync("bonjour");
 
-        Assert.Equal("[stub] gpt-stub: bonjour", response.Content);
-        Assert.Equal("gpt-stub", response.Model);
+        Assert.Contains("[mock-chat]", response.Content, StringComparison.Ordinal);
+        Assert.Equal("mock-chat", response.Model);
     }
 
     [Fact]
-    public async Task EmbedAsync_returns_deterministic_vector_in_stub_mode()
+    public void Mock_embeddings_are_deterministic()
     {
-        var provider = CreateProvider(new AionAiOptions());
+        var provider = new HttpMockEmbeddingsModel();
 
-        var vector = await provider.EmbedAsync("demo");
+        var vector1 = provider.EmbedAsync("demo").Result.Vector;
+        var vector2 = provider.EmbedAsync("demo").Result.Vector;
 
-        Assert.Equal(8, vector.Vector.Length);
-        Assert.True(vector.Vector.SequenceEqual(new[] { 4f, 5f, 6f, 7f, 8f, 9f, 10f, 11f }));
+        Assert.Equal(vector1, vector2);
     }
 
     [Fact]
-    public async Task TranscribeAsync_returns_stub_result_when_transcription_endpoint_missing()
+    public async Task Mock_transcription_returns_stub()
     {
-        var provider = CreateProvider(new AionAiOptions { TranscriptionModel = "whisper" });
+        var provider = new HttpMockTranscriptionModel();
 
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("audio"));
         var result = await provider.TranscribeAsync(stream, "file.wav");
 
-        Assert.Equal("Transcription stub", result.Text);
-        Assert.Equal("whisper", result.Model);
+        Assert.Equal("[mock-transcription] file.wav", result.Text);
+        Assert.Equal("mock-transcription", result.Model);
     }
 
     [Fact]
@@ -87,35 +82,7 @@ public class DefaultAionAiProviderTests
         Assert.Equal("openai", options.Provider);
     }
 
-    private static DefaultAionAiProvider CreateProvider(AionAiOptions options)
-    {
-        var handler = new StubHttpMessageHandler();
-        var factory = new StubHttpClientFactory(handler);
-        return new DefaultAionAiProvider(factory, Options.Create(options), NullLogger<DefaultAionAiProvider>.Instance);
-    }
-
-    private sealed class StubHttpClientFactory : IHttpClientFactory
-    {
-        private readonly HttpMessageHandler _handler;
-
-        public StubHttpClientFactory(HttpMessageHandler handler)
-        {
-            _handler = handler;
-        }
-
-        public HttpClient CreateClient(string name) => new(_handler, disposeHandler: false);
-    }
-
-    private sealed class StubHttpMessageHandler : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{ \"choices\":[{\"message\":{\"content\":\"ok\"}}] }")
-            });
-    }
-
-    private sealed class StubTextGenerationProvider : ILLMProvider
+    private sealed class StubTextGenerationProvider : IChatModel
     {
         private readonly string _payload;
 

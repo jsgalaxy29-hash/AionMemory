@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Aion.AI;
 
-public sealed class MistralTextGenerationProvider : ILLMProvider
+public sealed class MistralTextGenerationProvider : IChatModel
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly IHttpClientFactory _httpClientFactory;
@@ -94,7 +94,7 @@ public sealed class MistralTextGenerationProvider : ILLMProvider
     }
 }
 
-public sealed class MistralEmbeddingProvider : IEmbeddingProvider
+public sealed class MistralEmbeddingProvider : IEmbeddingsModel
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly MistralTextGenerationProvider _clientBuilder;
@@ -140,7 +140,7 @@ public sealed class MistralEmbeddingProvider : IEmbeddingProvider
     }
 }
 
-public sealed class MistralAudioTranscriptionProvider : IAudioTranscriptionProvider
+public sealed class MistralAudioTranscriptionProvider : ITranscriptionModel
 {
     private readonly MistralTextGenerationProvider _clientBuilder;
     private readonly IOptionsMonitor<AionAiOptions> _options;
