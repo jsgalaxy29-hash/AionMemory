@@ -5,19 +5,19 @@ Cette version introduit un pipeline strict *spec → validate → apply* pour cr
 ## Contrat ModuleSpec v1
 - **Classes C#** : `ModuleSpec`, `TableSpec`, `FieldSpec`, `ViewSpec`, `LookupSpec` (`Aion.Domain.ModuleBuilder`).
 - **Version** : `1.0` via `ModuleSpecVersions.V1`.
-- **Schéma JSON** : `docs/ModuleSpec.schema.json`.
+- **Schéma JSON** : `docs/ModuleSpec.schema.json` (min. une table, min. un champ par table, contraintes conditionnelles pour `Enum`/`Lookup`).
 - **Types de champ** : `ModuleFieldDataTypes` expose les types autorisés et le mapping vers `FieldDataType`.
 
 ## Validation
 Service : `ModuleValidator` (`Aion.Infrastructure.ModuleBuilder`, interface `IModuleValidator`).
 
 Vérifications clés :
-- Slugs module/table/field/view non vides et uniques (dans la spec et en base pour les tables).
+- Validation DataAnnotations (longueurs, min/max, champs requis) sur la spec + tables + champs + vues.
+- Slugs module/table/field/view non vides et uniques (dans la spec et en base pour les tables). Minimum un champ par table.
 - `dataType` membre de la liste autorisée.
 - Cohérence `required/default` + compatibilité de type (numérique, date ISO, booléen, enum, etc.) et respect des bornes `min/max` + `validationPattern`.
-- `enumValues` requis pour `Enum`, sans doublons et alignés avec le défaut éventuel.
-- `lookup.targetTableSlug` doit exister (dans la même spec si `ModuleId` null, sinon spec ou base).
-- Vues : clés de filtre et champ de tri référencent des champs déclarés; `defaultView` correspond à une vue.
+- `enumValues` requis pour `Enum`, sans doublons et alignés avec le défaut éventuel (refusé si `dataType` ≠ Enum). `Lookup` impose `lookup.targetTableSlug` et l’existence de la table cible (spec ou base selon `ModuleId`).
+- Vues : clés de filtre et champ de tri référencent des champs déclarés; `defaultView` correspond à une vue; une seule vue par table peut être marquée `isDefault`.
 
 En cas d’erreur, `ModuleValidationException` agrège toutes les anomalies.
 

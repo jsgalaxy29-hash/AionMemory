@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -25,6 +26,7 @@ public sealed class ModuleValidator : IModuleValidator
     public async Task<ModuleValidationResult> ValidateAsync(ModuleSpec spec, CancellationToken cancellationToken = default)
     {
         var errors = new List<string>();
+        ValidateAnnotations(spec, "Module", errors);
         if (!string.Equals(spec.Version, ModuleSpecVersions.V1, System.StringComparison.OrdinalIgnoreCase))
         {
             errors.Add($"Unsupported ModuleSpec version '{spec.Version}'. Expected {ModuleSpecVersions.V1}.");
@@ -48,6 +50,12 @@ public sealed class ModuleValidator : IModuleValidator
         var tableSlugs = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
         foreach (var table in spec.Tables)
         {
+            ValidateAnnotations(table, $"Table '{table.Slug}'", errors);
+            if (table.Fields.Count == 0)
+            {
+                errors.Add($"Table '{table.Slug}' must declare at least one field.");
+            }
+
             if (!tableSlugs.Add(table.Slug))
             {
                 errors.Add($"Table slug '{table.Slug}' is duplicated.");
@@ -103,6 +111,12 @@ public sealed class ModuleValidator : IModuleValidator
             ValidateView(view, table, fieldSlugs, errors);
         }
 
+        var defaultCount = table.Views.Count(v => v.IsDefault);
+        if (defaultCount > 1)
+        {
+            errors.Add($"Table '{table.Slug}' cannot declare multiple default views.");
+        }
+
         if (!string.IsNullOrWhiteSpace(table.DefaultView) &&
             !table.Views.Any(v => string.Equals(v.Slug, table.DefaultView, System.StringComparison.OrdinalIgnoreCase)))
         {
@@ -112,6 +126,7 @@ public sealed class ModuleValidator : IModuleValidator
 
     private static void ValidateField(FieldSpec field, TableSpec table, ModuleSpec spec, IReadOnlyCollection<ExistingTable> existingTables, ICollection<string> errors)
     {
+        ValidateAnnotations(field, $"Field '{field.Slug}' in table '{table.Slug}'", errors);
         if (string.IsNullOrWhiteSpace(field.Slug))
         {
             errors.Add($"Field slug is required in table '{table.Slug}'.");
@@ -342,6 +357,7 @@ public sealed class ModuleValidator : IModuleValidator
 
     private static void ValidateView(ViewSpec view, TableSpec table, IReadOnlySet<string> fieldSlugs, ICollection<string> errors)
     {
+        ValidateAnnotations(view, $"View '{view.Slug}' in table '{table.Slug}'", errors);
         if (string.IsNullOrWhiteSpace(view.Slug))
         {
             errors.Add($"View slug is required for table '{table.Slug}'.");
@@ -365,6 +381,22 @@ public sealed class ModuleValidator : IModuleValidator
             {
                 errors.Add($"View '{view.Slug}' in table '{table.Slug}' references unknown field '{sortField}' in sort.");
             }
+        }
+
+    }
+
+    private static void ValidateAnnotations(object instance, string context, ICollection<string> errors)
+    {
+        var results = new List<ValidationResult>();
+        if (Validator.TryValidateObject(instance, new ValidationContext(instance), results, validateAllProperties: true))
+        {
+            return;
+        }
+
+        foreach (var result in results)
+        {
+            var message = result.ErrorMessage ?? "Validation failed.";
+            errors.Add(string.IsNullOrWhiteSpace(context) ? message : $"{context}: {message}");
         }
     }
 }

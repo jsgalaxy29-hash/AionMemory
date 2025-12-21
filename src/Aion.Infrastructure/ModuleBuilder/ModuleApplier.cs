@@ -193,7 +193,7 @@ public sealed class ModuleApplier : IModuleApplier
         if (defaultCount > 1)
         {
             var primary = table.Views.First(v => v.IsDefault);
-            foreach (var view in table.Views.Where(v => v.IsDefault && view.Id != primary.Id))
+            foreach (var view in table.Views.Where(v => v.IsDefault && v.Id != primary.Id))
             {
                 view.IsDefault = false;
             }

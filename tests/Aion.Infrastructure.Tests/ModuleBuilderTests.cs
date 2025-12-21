@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Linq;
 using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
 using Aion.Infrastructure.ModuleBuilder;
@@ -87,6 +89,75 @@ public class ModuleBuilderTests
         Assert.Contains(table.Views, v => v.Name == "form");
         Assert.Equal(6, table.Fields.Count);
         Assert.Equal(2, table.Views.Count);
+    }
+
+    [Fact]
+    public async Task Validate_requires_fields_and_labels()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
+
+        await using var context = new AionDbContext(options);
+        await context.Database.MigrateAsync();
+
+        var validator = new ModuleValidator(context);
+        var spec = new ModuleSpec
+        {
+            Slug = "invalid-module",
+            Tables =
+            {
+                new TableSpec
+                {
+                    Slug = "empty",
+                    Fields = new List<FieldSpec>()
+                }
+            }
+        };
+
+        var result = await validator.ValidateAsync(spec);
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Contains("at least one field", StringComparison.OrdinalIgnoreCase));
+
+        spec.Tables[0].Fields.Add(new FieldSpec { Slug = "title", Label = string.Empty, DataType = ModuleFieldDataTypes.Text });
+        result = await validator.ValidateAsync(spec);
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Contains("Label", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Apply_forces_single_default_view()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
+
+        await using var context = new AionDbContext(options);
+        await context.Database.MigrateAsync();
+
+        var validator = new ModuleValidator(context);
+        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance);
+
+        var spec = BuildSimpleSpec();
+        spec.Tables[0].Views = new List<ViewSpec>
+        {
+            new() { Slug = "all", DisplayName = "All", IsDefault = true },
+            new() { Slug = "board", DisplayName = "Board", IsDefault = false, Visualization = "board" }
+        };
+
+        await applier.ApplyAsync(spec);
+
+        var table = await context.Tables.Include(t => t.Views).SingleAsync(t => t.Name == "tasks");
+        var board = table.Views.Single(v => v.Name == "board");
+        board.IsDefault = true;
+        await context.SaveChangesAsync();
+
+        await applier.ApplyAsync(spec);
+
+        table = await context.Tables.Include(t => t.Views).SingleAsync(t => t.Name == "tasks");
+        Assert.Single(table.Views, v => v.IsDefault);
+        Assert.Equal("all", table.DefaultView);
+        Assert.Contains(table.Views, v => v.Name == "board" && !v.IsDefault);
     }
 
     private static ModuleSpec BuildSimpleSpec()

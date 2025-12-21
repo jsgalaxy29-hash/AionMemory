@@ -95,6 +95,27 @@
         "placeholder": { "type": "string", "maxLength": 256 },
         "unit": { "type": "string", "maxLength": 128 }
       },
+      "allOf": [
+        {
+          "if": { "properties": { "dataType": { "const": "Enum" } }, "required": ["dataType"] },
+          "then": {
+            "required": ["enumValues"],
+            "properties": { "enumValues": { "minItems": 1 } }
+          }
+        },
+        {
+          "if": { "required": ["enumValues"] },
+          "then": { "properties": { "dataType": { "const": "Enum" } } }
+        },
+        {
+          "if": { "properties": { "dataType": { "const": "Lookup" } }, "required": ["dataType"] },
+          "then": { "required": ["lookup"] }
+        },
+        {
+          "if": { "required": ["lookup"] },
+          "then": { "properties": { "dataType": { "const": "Lookup" } } }
+        }
+      ],
       "additionalProperties": false
     },
     "LookupSpec": {

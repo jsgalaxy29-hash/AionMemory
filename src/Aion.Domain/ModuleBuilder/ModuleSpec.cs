@@ -88,6 +88,7 @@ public sealed class ModuleSpec
     [StringLength(1024)]
     public string? Description { get; set; }
 
+    [MinLength(1)]
     public List<TableSpec> Tables { get; set; } = new();
 }
 
@@ -116,6 +117,7 @@ public sealed class TableSpec
     [StringLength(256)]
     public string? RowLabelTemplate { get; set; }
 
+    [MinLength(1)]
     public List<FieldSpec> Fields { get; set; } = new();
 
     public List<ViewSpec> Views { get; set; } = new();
