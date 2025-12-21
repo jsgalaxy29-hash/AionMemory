@@ -12,6 +12,16 @@ public interface IAionTemplateMarketplaceService : ITemplateService;
 public interface IAionPredictionService : IPredictService;
 public interface IAionPersonaEngine : IPersonaEngine;
 
+public interface IAuthorizationService
+{
+    Task<AuthorizationResult> AuthorizeAsync(Guid userId, PermissionAction action, PermissionScope scope, CancellationToken cancellationToken = default);
+}
+
+public interface ICurrentUserService
+{
+    Guid GetCurrentUserId();
+}
+
 public interface IMetadataService
 {
     Task<IEnumerable<S_Module>> GetModulesAsync(CancellationToken cancellationToken = default);

@@ -993,6 +993,51 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("TableViews");
                 });
 
+            modelBuilder.Entity("Aion.Domain.Permission", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "Action");
+
+                    b.ToTable("Permissions");
+                });
+
+            modelBuilder.Entity("Aion.Domain.Role", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("Roles");
+                });
+
             modelBuilder.Entity("Aion.Domain.TemplatePackage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1258,6 +1303,32 @@ namespace Aion.Infrastructure.Migrations
                         .HasForeignKey("TableId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Aion.Domain.Permission", b =>
+                {
+                    b.OwnsOne("Aion.Domain.PermissionScope", "Scope", b1 =>
+                        {
+                            b1.Property<Guid>("PermissionId")
+                                .HasColumnType("TEXT");
+
+                            b1.Property<Guid?>("RecordId")
+                                .HasColumnType("TEXT");
+
+                            b1.Property<Guid>("TableId")
+                                .HasColumnType("TEXT");
+
+                            b1.HasKey("PermissionId");
+
+                            b1.HasIndex("TableId", "RecordId");
+
+                            b1.ToTable("Permissions");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PermissionId");
+                        });
+
+                    b.Navigation("Scope");
                 });
 
             modelBuilder.Entity("Aion.Domain.S_Event", b =>
