@@ -5,15 +5,63 @@
 @inherits OwningComponentBase
 @implements IDisposable
 
-<div class="card">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <h5>@ResolvedTable?.DisplayName</h5>
-        <button class="button secondary" @onclick="Refresh">Actualiser</button>
+<div class="list-container card">
+    <div class="list-toolbar">
+        <div>
+            <h5 style="margin:0;">@ResolvedTable?.DisplayName</h5>
+            <div class="text-muted small">@TotalCount enregistrement(s)</div>
+        </div>
+        <div class="list-toolbar__actions">
+            <input class="input" placeholder="Recherche plein texte" @bind="SearchText" @bind:event="oninput" @onkeydown="HandleSearchKey" />
+            <button class="button secondary" @onclick="ApplySearch">Rechercher</button>
+            <button class="button secondary" @onclick="Refresh">Actualiser</button>
+        </div>
     </div>
+
+    <div class="list-filters">
+        <label>
+            <span class="text-muted">Vue</span>
+            <select class="input" @onchange="OnViewChanged" value="@SelectedView">
+                <option value="">Toutes les données</option>
+                @foreach (var view in AvailableViews)
+                {
+                    <option value="@view.Name">@view.DisplayName</option>
+                }
+            </select>
+        </label>
+        <label>
+            <span class="text-muted">Tri</span>
+            <div class="list-sort">
+                <select class="input" @onchange="OnSortChanged" value="@SortField">
+                    <option value="">Par défaut</option>
+                    @foreach (var field in SortableFields)
+                    {
+                        <option value="@field.Name">@field.Label</option>
+                    }
+                </select>
+                <button class="button secondary" @onclick="ToggleSortDirection">@(SortDescending ? "↓" : "↑")</button>
+            </div>
+        </label>
+        <label>
+            <span class="text-muted">Pagination</span>
+            <div class="list-pagination">
+                <button class="button secondary" @onclick="PreviousPage" disabled="@(!CanGoPrevious)">◀</button>
+                <span class="text-muted">Page @(PageIndex + 1) / @TotalPages</span>
+                <button class="button secondary" @onclick="NextPage" disabled="@(!CanGoNext)">▶</button>
+                <select class="input" @onchange="OnPageSizeChanged" value="@PageSize">
+                    @foreach (var size in PageSizeOptions)
+                    {
+                        <option value="@size">@size</option>
+                    }
+                </select>
+            </div>
+        </label>
+    </div>
+
     <table class="table">
         <thead>
             <tr>
-                <th>Titre</th>
+                <th style="width:220px;">Identifiant</th>
                 @if (ResolvedTable is not null)
                 {
                     @foreach (var field in ResolvedTable.Fields.Where(f => f.IsListVisible).Take(3))
@@ -53,7 +101,9 @@
             </Virtualize>
         </tbody>
     </table>
-    <div class="text-muted" style="margin-top:4px;">@TotalCount enregistrement(s)</div>
+    <div class="text-muted small">
+        Virt. @PageSize éléments/page - affichage des éléments @DisplayStart à @DisplayEnd
+    </div>
 </div>
 
 @code {
@@ -76,14 +126,65 @@
     private CancellationTokenSource? _refreshCts;
     private STable? LoadedTable { get; set; }
     private STable? ResolvedTable => Table ?? LoadedTable;
+    private string? SelectedView { get; set; }
+    private string SearchText { get; set; } = string.Empty;
     private int TotalCount { get; set; }
+    private int PageIndex { get; set; }
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)Math.Max(TotalCount, 1) / Math.Max(PageSize, 1)));
+    private bool CanGoPrevious => PageIndex > 0;
+    private bool CanGoNext => PageIndex < TotalPages - 1;
+    private int DisplayStart => TotalCount == 0 ? 0 : PageIndex * PageSize + 1;
+    private int DisplayEnd => TotalCount == 0 ? 0 : Math.Min((PageIndex + 1) * PageSize, TotalCount);
     private IRecordQueryService? ActiveRecordService => RecordService ?? InjectedRecordService;
     private IModuleViewService? ActiveViewService => ViewService ?? InjectedViewService;
+    private Guid? _lastTableId;
+    private string? _lastFilter;
+    private string? _lastSortField;
+    private bool _lastSortDescending;
+    private int _lastPageSize;
+
+    private IEnumerable<SFieldDefinition> SortableFields
+        => ResolvedTable?.Fields.Where(f => f.IsSortable) ?? Enumerable.Empty<SFieldDefinition>();
+
+    private IEnumerable<SViewDefinition> AvailableViews
+        => ResolvedTable?.Views ?? Enumerable.Empty<SViewDefinition>();
+
+    private static readonly IReadOnlyList<int> PageSizeOptions = new List<int> { 10, 15, 25, 50, 100 };
 
     protected override async Task OnParametersSetAsync()
     {
         await EnsureTableMetadataAsync();
-        await Refresh();
+
+        var tableChanged = _lastTableId != ResolvedTable?.Id;
+        if (tableChanged)
+        {
+            SearchText = string.Empty;
+            SelectedView = Filter ?? ResolvedTable?.DefaultView;
+            PageIndex = 0;
+        }
+
+        if (SelectedView is null && (!string.IsNullOrWhiteSpace(Filter) || ResolvedTable?.DefaultView is not null))
+        {
+            SelectedView = Filter ?? ResolvedTable?.DefaultView;
+        }
+
+        var hasChanges = tableChanged
+                         || _lastFilter != Filter
+                         || _lastSortField != SortField
+                         || _lastSortDescending != SortDescending
+                         || _lastPageSize != PageSize;
+
+        if (hasChanges)
+        {
+            PageIndex = 0;
+            await Refresh();
+        }
+
+        _lastTableId = ResolvedTable?.Id;
+        _lastFilter = Filter;
+        _lastSortField = SortField;
+        _lastSortDescending = SortDescending;
+        _lastPageSize = PageSize;
     }
 
     private async Task Refresh()
@@ -110,19 +211,23 @@
             return new ItemsProviderResult<F_Record>(Array.Empty<F_Record>(), 0);
         }
 
-        var take = Math.Min(PageSize, request.Count);
+        var pageStart = PageIndex * PageSize;
+        var take = Math.Min(Math.Max(1, PageSize - request.StartIndex), Math.Max(1, request.Count));
         var spec = new QuerySpec
         {
-            View = Filter,
+            View = SelectedView ?? Filter,
+            FullText = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText,
             OrderBy = SortField,
             Descending = SortDescending,
-            Skip = request.StartIndex,
+            Skip = pageStart + request.StartIndex,
             Take = take
         };
 
         var page = await ActiveRecordService.QueryAsync(ResolvedTable.Id, spec, cancellation).ConfigureAwait(false);
         TotalCount = page.TotalCount;
-        return new ItemsProviderResult<F_Record>(page.Items, page.TotalCount);
+        var remaining = Math.Max(0, TotalCount - pageStart);
+        var countForPage = Math.Min(PageSize, remaining);
+        return new ItemsProviderResult<F_Record>(page.Items, countForPage);
     }
 
     private async Task EnsureTableMetadataAsync()
@@ -158,6 +263,72 @@
         await ActiveRecordService.DeleteAsync(ResolvedTable.Id, record.Id);
         await Refresh();
         await OnDeleted.InvokeAsync(record.Id);
+    }
+
+    private async Task ApplySearch()
+    {
+        PageIndex = 0;
+        await Refresh();
+    }
+
+    private async Task OnViewChanged(ChangeEventArgs args)
+    {
+        SelectedView = args.Value?.ToString();
+        PageIndex = 0;
+        await Refresh();
+    }
+
+    private async Task OnSortChanged(ChangeEventArgs args)
+    {
+        SortField = args.Value?.ToString();
+        PageIndex = 0;
+        await Refresh();
+    }
+
+    private async Task OnPageSizeChanged(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var parsed) && parsed > 0)
+        {
+            PageSize = parsed;
+            PageIndex = 0;
+            await Refresh();
+        }
+    }
+
+    private Task ToggleSortDirection()
+    {
+        SortDescending = !SortDescending;
+        return Refresh();
+    }
+
+    private async Task PreviousPage()
+    {
+        if (!CanGoPrevious)
+        {
+            return;
+        }
+
+        PageIndex--;
+        await Refresh();
+    }
+
+    private async Task NextPage()
+    {
+        if (!CanGoNext)
+        {
+            return;
+        }
+
+        PageIndex++;
+        await Refresh();
+    }
+
+    private void HandleSearchKey(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+        {
+            _ = ApplySearch();
+        }
     }
 
     public void Dispose()
