@@ -26,6 +26,7 @@ Application MAUI Blazor qui orchestre l’agent mémoire AION (domaine, infrastr
 ## Build & Test
 - Build (Release) : `pwsh ./scripts/build.ps1`
 - Tests (Release) : `pwsh ./scripts/test.ps1`
+- Validation (Release) : Windows `pwsh ./tools/validate.ps1`, Linux/macOS `bash ./tools/validate.sh`
 
 ## Configuration
 La configuration est lue depuis les fichiers `appsettings.*` (non versionnés), `dotnet user-secrets` et/ou les variables d’environnement (`Aion:*`, `ConnectionStrings:Aion`). L’application démarre en mode offline lorsque rien n’est configuré : les providers IA retournent des stubs et les dossiers par défaut (`data/storage`, `data/marketplace`, `data/storage/backup`) sont créés automatiquement sous le répertoire d’exécution.
