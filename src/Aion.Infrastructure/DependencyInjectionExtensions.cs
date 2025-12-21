@@ -47,8 +47,8 @@ public static class DependencyInjectionExtensions
         });
         storageOptions.Validate(o => !string.IsNullOrWhiteSpace(o.RootPath), "A storage root path is required.");
         storageOptions.Validate(o => Directory.Exists(o.RootPath), "The configured storage root path must exist.");
-        storageOptions.Validate(o => !string.IsNullOrWhiteSpace(o.EncryptionKey), "The file storage encryption key cannot be empty.");
-        storageOptions.Validate(o => o.EncryptionKey?.Length >= 32, "The file storage encryption key must contain at least 32 characters.");
+        storageOptions.Validate(o => !o.EncryptPayloads || !string.IsNullOrWhiteSpace(o.EncryptionKey), "The file storage encryption key cannot be empty when encryption is enabled.");
+        storageOptions.Validate(o => !o.EncryptPayloads || o.EncryptionKey?.Length >= 32, "The file storage encryption key must contain at least 32 characters when encryption is enabled.");
         storageOptions.Validate(o => o.MaxFileSizeBytes > 0, "The maximum file size must be greater than zero.");
         storageOptions.Validate(o => o.MaxTotalBytes > 0, "The storage quota must be greater than zero.");
         storageOptions.ValidateOnStart();
@@ -81,6 +81,7 @@ public static class DependencyInjectionExtensions
             SqliteConnectionFactory.ConfigureBuilder(dbOptions, databaseOptions);
         });
 
+        services.AddScoped<IStorageService, StorageService>();
         services.AddScoped<IFileStorageService, FileStorageService>();
         services.AddScoped<IMetadataService, MetadataService>();
         services.AddScoped<IAionDataEngine, AionDataEngine>();

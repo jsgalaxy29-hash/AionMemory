@@ -21,4 +21,16 @@ public sealed record BackupManifest
 
     [JsonPropertyName("sourcePath")]
     public string SourcePath { get; set; } = string.Empty;
+
+    [JsonPropertyName("storageArchive")]
+    public string? StorageArchivePath { get; set; }
+
+    [JsonPropertyName("storageSha256")]
+    public string? StorageSha256 { get; set; }
+
+    [JsonPropertyName("storageSize")]
+    public long? StorageSize { get; set; }
+
+    [JsonPropertyName("storageRoot")]
+    public string? StorageRoot { get; set; }
 }
