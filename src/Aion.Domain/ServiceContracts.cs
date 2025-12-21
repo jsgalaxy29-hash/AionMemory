@@ -45,6 +45,7 @@ public interface IDataEngine
     Task<int> CountAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default);
     Task<IEnumerable<F_Record>> QueryAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default);
     Task<IEnumerable<ResolvedRecord>> QueryResolvedAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default);
+    Task<IEnumerable<RecordSearchHit>> SearchAsync(Guid tableId, string query, SearchOptions? options = null, CancellationToken cancellationToken = default);
 }
 
 public interface INoteService
