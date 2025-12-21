@@ -6,7 +6,8 @@ This repository exposes pluggable AI providers through a single set of interface
 
 `AiProviderSelector` inspects `Aion:Ai` settings (`Provider`, `BaseEndpoint`, `ApiKey`, specific endpoints) and chooses the active provider:
 
-- If no remote configuration is provided, or an unknown provider name is supplied, the selector falls back to the **mock** provider.
+- If no configuration is provided, the selector marks the AI as **inactive** and routes calls to no-op providers that fail fast.
+- If an unknown provider name is supplied, the selector falls back to the **mock** provider.
 - Supported provider names: `mock` (offline), `http` (generic OpenAI-compatible), `openai`, `mistral`.
 - The selector normalizes names to lowercase and trims whitespace.
 
