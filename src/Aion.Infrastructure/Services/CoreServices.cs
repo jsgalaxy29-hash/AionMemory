@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -326,6 +327,11 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         var path = BuildJsonPath(field.Name);
         var stringValue = filter.Value?.ToString();
 
+        if (filter.Operator == QueryFilterOperator.Contains)
+        {
+            throw new InvalidOperationException("Contains filters are not allowed. Use full-text search or structured equality filters.");
+        }
+
         switch (field.DataType)
         {
             case FieldDataType.Number:
@@ -355,7 +361,6 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
                 query = filter.Operator switch
                 {
                     QueryFilterOperator.Equals => query.Where(r => EF.Functions.JsonExtract<string?>(r.DataJson, path) == stringValue),
-                    QueryFilterOperator.Contains => query.Where(r => EF.Functions.JsonExtract<string?>(r.DataJson, path) != null && EF.Functions.JsonExtract<string?>(r.DataJson, path)!.Contains(stringValue)),
                     _ => query
                 };
                 break;
@@ -618,20 +623,21 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Table {tableId} not found");
 
-        var normalized = new Dictionary<string, object?>(values, StringComparer.OrdinalIgnoreCase);
+        var sourceValues = new Dictionary<string, object?>(values, StringComparer.OrdinalIgnoreCase);
+        var normalized = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var kv in values.ToArray())
+        foreach (var kv in sourceValues.ToArray())
         {
             EnsureFieldExists(table, kv.Key);
         }
 
         foreach (var field in table.Fields)
         {
-            if (!normalized.ContainsKey(field.Name))
+            if (!sourceValues.TryGetValue(field.Name, out var value))
             {
                 if (field.DefaultValue is not null)
                 {
-                    normalized[field.Name] = field.DefaultValue;
+                    value = field.DefaultValue;
                 }
                 else if (field.IsRequired)
                 {
@@ -639,19 +645,154 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
                 }
             }
 
-            if (normalized.TryGetValue(field.Name, out var value))
+            if (!sourceValues.TryGetValue(field.Name, out _) && value is null)
             {
-                ValidateFieldValue(field, value);
-                if (!string.IsNullOrWhiteSpace(field.LookupTarget) && value is not null)
-                {
-                    var lookupId = ParseGuid(value) ?? throw new InvalidOperationException($"Field '{field.Name}' expects a GUID lookup value");
-                    await EnsureLookupTargetExists(field, lookupId, cancellationToken).ConfigureAwait(false);
-                    normalized[field.Name] = lookupId;
-                }
+                continue;
             }
+
+            var normalizedValue = NormalizeFieldValue(field, value);
+            ValidateFieldValue(field, normalizedValue);
+
+            if (!string.IsNullOrWhiteSpace(field.LookupTarget) && normalizedValue is not null)
+            {
+                var lookupId = ParseGuid(normalizedValue) ?? throw new InvalidOperationException($"Field '{field.Name}' expects a GUID lookup value");
+                await EnsureLookupTargetExists(field, lookupId, cancellationToken).ConfigureAwait(false);
+                normalizedValue = lookupId;
+            }
+
+            normalized[field.Name] = normalizedValue;
         }
 
         return normalized;
+    }
+
+    private static object? NormalizeFieldValue(SFieldDefinition field, object? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        return field.DataType switch
+        {
+            FieldDataType.Text or FieldDataType.Note or FieldDataType.Tags or FieldDataType.Json or FieldDataType.File
+                => NormalizeStringValue(field, value),
+            FieldDataType.Lookup
+                => ParseGuid(value) ?? throw new InvalidOperationException($"Field '{field.Name}' expects a GUID lookup value"),
+            FieldDataType.Number
+                => NormalizeIntegerValue(field, value),
+            FieldDataType.Decimal
+                => NormalizeDecimalValue(field, value),
+            FieldDataType.Boolean
+                => NormalizeBooleanValue(field, value),
+            FieldDataType.Date or FieldDataType.DateTime
+                => NormalizeDateValue(field, value),
+            _ => throw new ArgumentOutOfRangeException(nameof(field.DataType), $"Unsupported data type {field.DataType}")
+        };
+    }
+
+    private static string NormalizeStringValue(SFieldDefinition field, object value)
+    {
+        if (value is JsonElement element && element.ValueKind == JsonValueKind.String)
+        {
+            return element.GetString() ?? string.Empty;
+        }
+
+        if (value is string str)
+        {
+            return str;
+        }
+
+        throw new InvalidOperationException($"Field '{field.Name}' expects text content");
+    }
+
+    private static long NormalizeIntegerValue(SFieldDefinition field, object value)
+    {
+        if (value is JsonElement element && element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var intValue))
+        {
+            return intValue;
+        }
+
+        if (value is IConvertible convertible)
+        {
+            try
+            {
+                return Convert.ToInt64(convertible, CultureInfo.InvariantCulture);
+            }
+            catch (FormatException ex)
+            {
+                throw new InvalidOperationException($"Field '{field.Name}' expects an integer number", ex);
+            }
+        }
+
+        throw new InvalidOperationException($"Field '{field.Name}' expects an integer number");
+    }
+
+    private static decimal NormalizeDecimalValue(SFieldDefinition field, object value)
+    {
+        if (value is JsonElement element && element.ValueKind == JsonValueKind.Number && element.TryGetDecimal(out var dec))
+        {
+            return dec;
+        }
+
+        if (value is IConvertible convertible)
+        {
+            try
+            {
+                return Convert.ToDecimal(convertible, CultureInfo.InvariantCulture);
+            }
+            catch (FormatException ex)
+            {
+                throw new InvalidOperationException($"Field '{field.Name}' expects a decimal number", ex);
+            }
+        }
+
+        throw new InvalidOperationException($"Field '{field.Name}' expects a decimal number");
+    }
+
+    private static bool NormalizeBooleanValue(SFieldDefinition field, object value)
+    {
+        if (value is JsonElement element && element.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            return element.GetBoolean();
+        }
+
+        if (value is bool b)
+        {
+            return b;
+        }
+
+        if (value is string str && bool.TryParse(str, out var parsed))
+        {
+            return parsed;
+        }
+
+        throw new InvalidOperationException($"Field '{field.Name}' expects a boolean value");
+    }
+
+    private static string NormalizeDateValue(SFieldDefinition field, object value)
+    {
+        if (value is JsonElement element)
+        {
+            value = ExtractValue(element);
+        }
+
+        if (value is DateTimeOffset dto)
+        {
+            return dto.ToString("O", CultureInfo.InvariantCulture);
+        }
+
+        if (value is DateTime dt)
+        {
+            return new DateTimeOffset(dt.ToUniversalTime()).ToString("O", CultureInfo.InvariantCulture);
+        }
+
+        if (value is string s && DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
+        {
+            return parsed.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+        }
+
+        throw new InvalidOperationException($"Field '{field.Name}' expects an ISO-8601 date/time string");
     }
 
     private static IDictionary<string, string?>? ResolveViewFilter(string? filter, STable table)
