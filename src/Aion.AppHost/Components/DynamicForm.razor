@@ -1,58 +1,70 @@
 @using System.Text.Json
+@using System.Text.RegularExpressions
 @using Aion.Domain
 @using Aion.Domain.Logic
 @using Microsoft.AspNetCore.Components.Forms
 @inherits OwningComponentBase
 @implements IDisposable
-<EditForm Model="FieldValues" OnValidSubmit="HandleValidSubmit">
-    <DataAnnotationsValidator />
+<EditForm Model="FieldValues" OnSubmit="HandleSubmit">
     <div class="form-row">
         @if (ResolvedTable is not null)
         {
             @foreach (var field in ResolvedTable.Fields)
             {
                 <div>
-                    <label>@field.Label</label>
+                    <label>@field.Label @if (field.IsRequired) { <span class="text-muted">*</span> }</label>
                     @switch (field.DataType)
                     {
                         case FieldDataType.Text:
                         case FieldDataType.Lookup:
                         case FieldDataType.Tags:
                         case FieldDataType.File:
-                            <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
+                            <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field, v)" />
                             break;
                         case FieldDataType.Note:
-                            <InputTextArea class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
+                            <InputTextArea class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field, v)" />
                             break;
                         case FieldDataType.Number:
-                            <InputNumber TValue="long?" class="input" Value="@GetLong(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetLong(field.Name)" />
+                            <InputNumber TValue="long?" class="input" Value="@GetLong(field.Name)" ValueChanged="v => SetValue(field, v)" />
                             break;
                         case FieldDataType.Decimal:
-                            <InputNumber TValue="decimal?" class="input" Value="@GetDecimal(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetDecimal(field.Name)" />
+                            <InputNumber TValue="decimal?" class="input" Value="@GetDecimal(field.Name)" ValueChanged="v => SetValue(field, v)" />
                             break;
                         case FieldDataType.Boolean:
-                            <InputCheckbox class="input" Value="@GetBool(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetBool(field.Name)" />
+                            <InputCheckbox class="input" Value="@GetBool(field.Name)" ValueChanged="v => SetValue(field, v)" />
                             break;
                         case FieldDataType.Date:
                         case FieldDataType.DateTime:
-                            <InputDate TValue="DateTime?" class="input" Value="@GetDateTime(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetDateTime(field.Name)" />
+                            <InputDate TValue="DateTime?" class="input" Value="@GetDateTime(field.Name)" ValueChanged="v => SetValue(field, v)" />
                             break;
                         default:
-                            <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field.Name, v)" ValueExpression="() => GetString(field.Name)" />
+                            <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field, v)" />
                             break;
+                    }
+
+                    @if (TryGetErrors(field.Name, out var errors))
+                    {
+                        foreach (var error in errors)
+                        {
+                            <div class="validation-message">@error</div>
+                        }
                     }
                 </div>
             }
         }
     </div>
-    <div style="margin-top:12px; display:flex; gap:8px;">
-        <button type="submit" class="button">Enregistrer</button>
+    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button type="submit" class="button" disabled="@IsSaving">@(IsSaving ? "Enregistrement..." : "Enregistrer")</button>
         <button type="button" class="button secondary" @onclick="Reset">Annuler</button>
         @if (ActiveRecordId.HasValue)
         {
             <button type="button" class="button danger" @onclick="Delete">Supprimer</button>
         }
     </div>
+    @if (!string.IsNullOrWhiteSpace(SubmissionError))
+    {
+        <div class="validation-message" style="margin-top:8px;">@SubmissionError</div>
+    }
 </EditForm>
 
 @code {
@@ -69,20 +81,34 @@
     [Parameter] public EventCallback<F_Record> OnSaved { get; set; }
     [Parameter] public EventCallback<Guid> OnDeleted { get; set; }
 
-    private Dictionary<string, object?> FieldValues { get; set; } = new();
+    private Dictionary<string, object?> FieldValues { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, List<string>> FieldErrors { get; } = new(StringComparer.OrdinalIgnoreCase);
     private STable? LoadedTable { get; set; }
     private Guid? ActiveRecordId => Record?.Id ?? RecordId;
     private STable? ResolvedTable => Table ?? LoadedTable;
     private CancellationTokenSource? _loadCts;
+    private Guid? _lastRecordId;
+    private Guid? _lastTableId;
+    private string? SubmissionError { get; set; }
+    private bool IsSaving { get; set; }
     private IRecordQueryService? ActiveRecordService => RecordService ?? InjectedRecordService;
     private IModuleViewService? ActiveViewService => ViewService ?? InjectedViewService;
 
     protected override async Task OnParametersSetAsync()
     {
-        FieldValues = new Dictionary<string, object?>();
         await EnsureTableMetadataAsync();
-        await LoadExistingRecord();
-        InitializeDefaults();
+
+        var tableChanged = _lastTableId != ResolvedTable?.Id;
+        var recordChanged = _lastRecordId != ActiveRecordId;
+        if (tableChanged || recordChanged)
+        {
+            FieldValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            ClearErrors();
+            await LoadExistingRecord();
+            InitializeDefaults();
+            _lastRecordId = ActiveRecordId;
+            _lastTableId = ResolvedTable?.Id;
+        }
     }
 
     private string? GetString(string key) => FieldValues.TryGetValue(key, out var value) ? value?.ToString() : null;
@@ -130,6 +156,11 @@
             return parsed;
         }
 
+        if (value is double dbl)
+        {
+            return (decimal)dbl;
+        }
+
         return null;
     }
 
@@ -140,19 +171,14 @@
             return null;
         }
 
-        switch (value)
+        return value switch
         {
-            case long l:
-                return l;
-            case int i:
-                return i;
-            case decimal d:
-                return (long)d;
-            case JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var parsed):
-                return parsed;
-        }
-
-        return null;
+            long l => l,
+            int i => i,
+            decimal d => (long)d,
+            JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var parsed) => parsed,
+            _ => null
+        };
     }
 
     private bool GetBool(string key)
@@ -175,23 +201,59 @@
         return false;
     }
 
-    private void SetValue(string key, object? value) => FieldValues[key] = value;
-
-    private async Task HandleValidSubmit()
+    private void SetValue(SFieldDefinition field, object? value)
     {
+        FieldValues[field.Name] = value;
+        ValidateField(field);
+    }
+
+    private async Task HandleSubmit(EditContext _)
+    {
+        SubmissionError = null;
+
         if (ResolvedTable is null || ActiveRecordService is null)
+        {
+            SubmissionError = "Contexte de formulaire incomplet.";
+            return;
+        }
+
+        if (!ValidateForm())
         {
             return;
         }
 
-        var record = await ActiveRecordService.SaveAsync(ResolvedTable.Id, ActiveRecordId, new Dictionary<string, object?>(FieldValues));
-        await OnSaved.InvokeAsync(record);
-        Reset();
+        IsSaving = true;
+        try
+        {
+            var payload = BuildPayload();
+            var record = await ActiveRecordService.SaveAsync(ResolvedTable.Id, ActiveRecordId, payload).ConfigureAwait(false);
+            Record = record;
+            RecordId = record.Id;
+            _lastRecordId = record.Id;
+            await OnSaved.InvokeAsync(record);
+            await LoadExistingRecord();
+        }
+        catch (InvalidOperationException ex)
+        {
+            SubmissionError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            SubmissionError = $"Erreur lors de l'enregistrement : {ex.Message}";
+        }
+        finally
+        {
+            IsSaving = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
-    private void Reset()
+    private async Task Reset()
     {
-        FieldValues = new();
+        FieldValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        ClearErrors();
+        await LoadExistingRecord();
+        InitializeDefaults();
     }
 
     private async Task Delete()
@@ -203,12 +265,26 @@
 
         await ActiveRecordService.DeleteAsync(ResolvedTable.Id, ActiveRecordId.Value);
         await OnDeleted.InvokeAsync(ActiveRecordId.Value);
-        Reset();
+        Record = null;
+        RecordId = null;
+        _lastRecordId = null;
+        await Reset();
     }
 
     private async Task LoadExistingRecord()
     {
-        if (ActiveRecordId is null || ActiveRecordService is null || ResolvedTable is null)
+        if (ActiveRecordService is null || ResolvedTable is null)
+        {
+            return;
+        }
+
+        if (Record is not null)
+        {
+            FieldValues = new Dictionary<string, object?>(DynamicListLogic.DeserializePayload(Record.DataJson), StringComparer.OrdinalIgnoreCase);
+            return;
+        }
+
+        if (ActiveRecordId is null)
         {
             return;
         }
@@ -221,7 +297,7 @@
             return;
         }
 
-        FieldValues = DynamicListLogic.DeserializePayload(record.DataJson);
+        FieldValues = new Dictionary<string, object?>(DynamicListLogic.DeserializePayload(record.DataJson), StringComparer.OrdinalIgnoreCase);
     }
 
     private async Task EnsureTableMetadataAsync()
@@ -263,6 +339,188 @@
 
             FieldValues[field.Name] = field.DefaultValue;
         }
+    }
+
+    private bool ValidateForm()
+    {
+        if (ResolvedTable is null)
+        {
+            return false;
+        }
+
+        var isValid = true;
+        foreach (var field in ResolvedTable.Fields)
+        {
+            isValid &= ValidateField(field);
+        }
+
+        return isValid;
+    }
+
+    private bool ValidateField(SFieldDefinition field)
+    {
+        var errors = new List<string>();
+        FieldValues.TryGetValue(field.Name, out var value);
+        var normalized = NormalizeValue(value);
+
+        if (normalized is null || (normalized is string s && string.IsNullOrWhiteSpace(s)))
+        {
+            if (field.IsRequired)
+            {
+                errors.Add($"Le champ « {field.Label} » est requis.");
+            }
+
+            return UpdateFieldErrors(field.Name, errors);
+        }
+
+        switch (field.DataType)
+        {
+            case FieldDataType.Text or FieldDataType.Note or FieldDataType.Tags or FieldDataType.Json or FieldDataType.File:
+                if (normalized is not string)
+                {
+                    errors.Add("Valeur texte attendue.");
+                }
+                break;
+            case FieldDataType.Lookup:
+                if (normalized is not string && normalized is not Guid)
+                {
+                    errors.Add("Identifiant de lookup attendu.");
+                }
+                break;
+            case FieldDataType.Number:
+                if (normalized is not long and not int)
+                {
+                    errors.Add("Nombre entier attendu.");
+                }
+                break;
+            case FieldDataType.Decimal:
+                if (normalized is not double and not decimal and not float)
+                {
+                    errors.Add("Nombre décimal attendu.");
+                }
+                break;
+            case FieldDataType.Boolean:
+                if (normalized is not bool)
+                {
+                    errors.Add("Valeur booléenne attendue.");
+                }
+                break;
+            case FieldDataType.Date or FieldDataType.DateTime:
+                if (normalized is not DateTime && normalized is not string)
+                {
+                    errors.Add("Date au format ISO attendue.");
+                }
+                break;
+        }
+
+        if (normalized is string str)
+        {
+            if (field.MinLength.HasValue && str.Length < field.MinLength.Value)
+            {
+                errors.Add($"Longueur minimale : {field.MinLength}.");
+            }
+
+            if (field.MaxLength.HasValue && str.Length > field.MaxLength.Value)
+            {
+                errors.Add($"Longueur maximale : {field.MaxLength}.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(field.ValidationPattern) && !Regex.IsMatch(str, field.ValidationPattern))
+            {
+                errors.Add("Le format ne correspond pas au motif attendu.");
+            }
+        }
+
+        if ((field.DataType == FieldDataType.Number || field.DataType == FieldDataType.Decimal) && normalized is IConvertible convertible)
+        {
+            var numeric = Convert.ToDecimal(convertible);
+            if (field.MinValue.HasValue && numeric < field.MinValue.Value)
+            {
+                errors.Add($"Valeur minimale : {field.MinValue}.");
+            }
+
+            if (field.MaxValue.HasValue && numeric > field.MaxValue.Value)
+            {
+                errors.Add($"Valeur maximale : {field.MaxValue}.");
+            }
+        }
+
+        return UpdateFieldErrors(field.Name, errors);
+    }
+
+    private static object? NormalizeValue(object? value)
+    {
+        if (value is not JsonElement element)
+        {
+            return value;
+        }
+
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number when element.TryGetInt64(out var l) => l,
+            JsonValueKind.Number when element.TryGetDouble(out var d) => d,
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            _ => element.ToString()
+        };
+    }
+
+    private Dictionary<string, object?> BuildPayload()
+    {
+        var payload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in FieldValues)
+        {
+            payload[kvp.Key] = NormalizeForSubmit(kvp.Value);
+        }
+
+        return payload;
+    }
+
+    private static object? NormalizeForSubmit(object? value)
+    {
+        if (value is DateTime dateTime)
+        {
+            return dateTime.ToString("O");
+        }
+
+        if (value is DateTimeOffset dto)
+        {
+            return dto.ToString("O");
+        }
+
+        return value;
+    }
+
+    private bool TryGetErrors(string key, out IReadOnlyList<string> errors)
+    {
+        if (FieldErrors.TryGetValue(key, out var list))
+        {
+            errors = list;
+            return true;
+        }
+
+        errors = Array.Empty<string>();
+        return false;
+    }
+
+    private bool UpdateFieldErrors(string key, List<string> errors)
+    {
+        if (errors.Count == 0)
+        {
+            FieldErrors.Remove(key);
+            return true;
+        }
+
+        FieldErrors[key] = errors;
+        return false;
+    }
+
+    private void ClearErrors()
+    {
+        FieldErrors.Clear();
+        SubmissionError = null;
     }
 
     public void Dispose()

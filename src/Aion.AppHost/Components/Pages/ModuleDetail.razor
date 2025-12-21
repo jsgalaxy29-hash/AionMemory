@@ -6,148 +6,174 @@
 @inject IModuleViewService ModuleViews
 @inject Aion.AppHost.Services.ITableDefinitionService Tables
 @inject UiState State
+@inject INoteService NoteService
+@inject IAgendaService AgendaService
 @implements IDisposable
 
-<h3>Module</h3>
-@if (Module is null)
-{
-    <p>Chargement du module…</p>
-}
-else
-{
-    <div class="module-header" style="margin-bottom:12px;">
+<div class="module-host">
+    <header class="card module-host__header">
         <div>
-            <h4>@Module.Name</h4>
-            <p class="text-muted">@Module.Description</p>
+            <div class="text-muted">Module</div>
+            <h3 style="margin:0;">@Module?.Name</h3>
+            <p class="text-muted" style="margin:4px 0 0 0;">@Module?.Description</p>
         </div>
-        <button class="button secondary" @onclick="NavigateToDashboard">Dashboard</button>
-    </div>
-
-    <div class="grid columns-3" style="margin-bottom:12px;">
-        <div class="card">
-            <h5>Entités</h5>
-            <ul class="module-entities">
-                @foreach (var entity in Module.EntityTypes)
-                {
-                    <li class="@(SelectedEntity == entity ? "active" : string.Empty)" @onclick="() => SelectEntity(entity)">
-                        <div><strong>@entity.Name</strong></div>
-                        <small class="text-muted">@entity.Fields.Count champ(s)</small>
-                    </li>
-                }
-            </ul>
-        </div>
-        <div class="card">
-            <h5>Vues enregistrées</h5>
-            @if (SelectedTableViews.Any())
-            {
-                <select class="select" @onchange="OnViewChanged" value="@SelectedView">
-                    <option value="">Toutes les données</option>
-                    @foreach (var view in SelectedTableViews)
+        <div class="module-host__selectors">
+            <label>
+                <span class="text-muted">Entité</span>
+                <select class="input" @onchange="OnEntityChanged" value="@SelectedEntityId">
+                    @foreach (var entity in Module?.EntityTypes ?? Enumerable.Empty<S_EntityType>())
                     {
-                        <option value="@view.Name">@view.Name</option>
+                        <option value="@entity.Id">@entity.Name</option>
                     }
                 </select>
-            }
-            else
-            {
-                <p class="text-muted">Aucune vue filtrée pour cette entité.</p>
-            }
-        </div>
-        <div class="card">
-            <h5>Rapports</h5>
-            @if (Module.Reports.Any())
-            {
-                <ul class="module-entities">
-                    @foreach (var report in Module.Reports)
+            </label>
+            <label>
+                <span class="text-muted">Vue</span>
+                <select class="input" @onchange="OnViewChanged" value="@ActiveViewName">
+                    <option value="">Toutes les données</option>
+                    @foreach (var view in AvailableViews)
                     {
-                        <li>
-                            <div><strong>@report.Name</strong></div>
-                            <small class="text-muted">@report.Visualization ?? "Requête"</small>
-                        </li>
+                        <option value="@view.Name">@view.DisplayName</option>
                     }
-                </ul>
-            }
-            else
-            {
-                <p class="text-muted">Pas encore de rapports pour ce module.</p>
-            }
+                </select>
+            </label>
+            <div class="module-host__actions">
+                <button class="button secondary" @onclick="NavigateToDashboard">Dashboard</button>
+                <button class="button" @onclick="NavigateModules">Modules</button>
+            </div>
         </div>
-    </div>
+    </header>
 
-    <div class="grid columns-2">
+    @if (!string.IsNullOrWhiteSpace(LoadError))
+    {
         <div class="card">
-            @if (SelectedTable is not null)
-            {
-                <DynamicList Table="SelectedTable" Filter="@SelectedView" RecordService="RecordQueries" ViewService="ModuleViews" OnSelect="OpenRecord" />
-            }
+            <p class="text-muted">@LoadError</p>
         </div>
+    }
+    else if (IsLoading || Module is null || ActiveTable is null)
+    {
         <div class="card">
-            <h4>Créer un enregistrement</h4>
-            @if (SelectedTable is not null)
-            {
-                <DynamicForm Table="SelectedTable" RecordService="RecordQueries" ViewService="ModuleViews" OnSaved="HandleSaved" />
-            }
+            <p class="text-muted">Chargement du module dynamique…</p>
         </div>
-    </div>
-}
+    }
+    else
+    {
+        <div class="grid columns-3 module-host__grid">
+            <div class="card stretch">
+                <div class="module-host__section-header">
+                    <div>
+                        <div class="text-muted">Liste dynamique</div>
+                        <h4 style="margin:0;">@ActiveTable.DisplayName</h4>
+                    </div>
+                    <div class="text-muted small">Tri : @(ActiveSortField ?? "par défaut")</div>
+                </div>
+                <DynamicList Table="ActiveTable"
+                             Filter="@ActiveViewName"
+                             SortField="@ActiveSortField"
+                             SortDescending="SortDescending"
+                             PageSize="CurrentPageSize"
+                             RecordService="RecordQueries"
+                             ViewService="ModuleViews"
+                             OnSelect="SelectRecord"
+                             OnDeleted="HandleDeleted" />
+            </div>
+            <div class="card stretch">
+                <div class="module-host__section-header">
+                    <div>
+                        <div class="text-muted">Formulaire dynamique</div>
+                        <h4 style="margin:0;">@(SelectedRecordId is null ? "Nouvel enregistrement" : "Édition")</h4>
+                    </div>
+                </div>
+                <DynamicForm Table="ActiveTable"
+                             RecordId="SelectedRecordId"
+                             RecordService="RecordQueries"
+                             ViewService="ModuleViews"
+                             OnSaved="HandleSaved"
+                             OnDeleted="HandleDeleted" />
+            </div>
+            <div class="card stretch">
+                <div class="module-host__section-header">
+                    <div>
+                        <div class="text-muted">Timeline</div>
+                        <h4 style="margin:0;">Notes & évènements</h4>
+                    </div>
+                </div>
+                <DynamicTimeline TargetType="@ActiveTable.Name"
+                                 TargetId="SelectedRecordId"
+                                 NoteService="NoteService"
+                                 AgendaService="AgendaService"
+                                 PageSize="15"
+                                 @ref="Timeline" />
+            </div>
+        </div>
+    }
+</div>
 
 @code {
     [Parameter] public string? Id { get; set; }
+
+    private const int DefaultPageSize = 25;
     private S_Module? Module { get; set; }
-    private S_EntityType? SelectedEntity { get; set; }
     private readonly Dictionary<Guid, STable> TablesByEntity = new();
-    private string? SelectedView { get; set; }
-    private IEnumerable<SViewDefinition> SelectedTableViews
-        => SelectedTable?.Views ?? Enumerable.Empty<SViewDefinition>();
-    private STable? SelectedTable
-        => SelectedEntity is not null && TablesByEntity.TryGetValue(SelectedEntity.Id, out var table) ? table : null;
+    private S_EntityType? SelectedEntity { get; set; }
+    private STable? ActiveTable => SelectedEntity is not null && TablesByEntity.TryGetValue(SelectedEntity.Id, out var table) ? table : null;
+    private Guid? SelectedEntityId => SelectedEntity?.Id;
+    private string? ActiveViewName { get; set; }
+    private string? ActiveSortField { get; set; }
+    private bool SortDescending { get; set; }
+    private int CurrentPageSize { get; set; } = DefaultPageSize;
+    private Guid? SelectedRecordId { get; set; }
+    private bool IsLoading { get; set; }
+    private string? LoadError { get; set; }
+    private DynamicTimeline? Timeline { get; set; }
     private CancellationTokenSource? _loadCts;
+
+    private IEnumerable<SViewDefinition> AvailableViews
+        => ActiveTable?.Views ?? Enumerable.Empty<SViewDefinition>();
 
     protected override async Task OnParametersSetAsync()
     {
         await LoadModule();
     }
 
-    private void OpenRecord(F_Record record)
-    {
-        if (SelectedTable is null)
-        {
-            return;
-        }
-
-        Navigation.NavigateTo(UiRoutes.RecordDetail(SelectedTable.Id, record.Id));
-    }
-
-    private void HandleSaved(F_Record record)
-    {
-        OpenRecord(record);
-    }
-
     private async Task LoadModule()
     {
         _loadCts?.Cancel();
         _loadCts = new CancellationTokenSource();
+        IsLoading = true;
+        LoadError = null;
 
-        var modules = await Metadata.GetModulesAsync(_loadCts.Token);
-        if (!Guid.TryParse(Id, out var guid))
+        try
         {
-            return;
-        }
+            if (!Guid.TryParse(Id, out var moduleId))
+            {
+                LoadError = "Identifiant de module invalide.";
+                return;
+            }
 
-        Module = modules.FirstOrDefault(m => m.Id == guid);
-        if (Module is null)
+            var modules = await Metadata.GetModulesAsync(_loadCts.Token).ConfigureAwait(false);
+            Module = modules.FirstOrDefault(m => m.Id == moduleId);
+            if (Module is null)
+            {
+                LoadError = "Module introuvable.";
+                return;
+            }
+
+            await EnsureTablesAreLoaded(Module, _loadCts.Token).ConfigureAwait(false);
+            SelectedEntity ??= Module.EntityTypes.FirstOrDefault();
+            SelectedRecordId = null;
+            ApplyDefaultView();
+
+            State.SetModule(Module);
+            State.SetEntity(SelectedEntity);
+        }
+        finally
         {
-            return;
+            IsLoading = false;
         }
-
-        await EnsureTablesAreLoaded(Module);
-        SelectedEntity ??= Module.EntityTypes.FirstOrDefault();
-        SelectedView = null;
-        State.SetModule(Module);
-        State.SetEntity(SelectedEntity);
     }
 
-    private async Task EnsureTablesAreLoaded(S_Module module)
+    private async Task EnsureTablesAreLoaded(S_Module module, CancellationToken cancellationToken)
     {
         foreach (var entity in module.EntityTypes)
         {
@@ -156,22 +182,96 @@ else
                 continue;
             }
 
-            var table = await Tables.EnsureTableAsync(entity);
-            TablesByEntity[entity.Id] = table;
+            var ensured = await Tables.EnsureTableAsync(entity, cancellationToken).ConfigureAwait(false);
+            var fromEngine = await ModuleViews.GetTableAsync(ensured.Id, cancellationToken).ConfigureAwait(false);
+            TablesByEntity[entity.Id] = fromEngine ?? ensured;
         }
     }
 
-    private void SelectEntity(S_EntityType entity)
+    private void ApplyDefaultView()
     {
-        SelectedEntity = entity;
-        SelectedView = null;
-        State.SetEntity(entity);
+        if (ActiveTable is null)
+        {
+            ActiveViewName = null;
+            return;
+        }
+
+        var defaultView = AvailableViews.FirstOrDefault(v => v.IsDefault)
+            ?? AvailableViews.FirstOrDefault(v => string.Equals(v.Name, ActiveTable.DefaultView, StringComparison.OrdinalIgnoreCase));
+
+        ActiveViewName = defaultView?.Name;
+        CurrentPageSize = defaultView?.PageSize ?? DefaultPageSize;
+        ApplySortFromView(defaultView);
+    }
+
+    private void ApplySortFromView(SViewDefinition? view)
+    {
+        if (view is null || string.IsNullOrWhiteSpace(view.SortExpression))
+        {
+            ActiveSortField = null;
+            SortDescending = false;
+            return;
+        }
+
+        var expression = view.SortExpression.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            return;
+        }
+
+        var parts = expression.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        ActiveSortField = parts[0];
+        SortDescending = parts.Skip(1).Any(p => p.Equals("desc", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task OnEntityChanged(ChangeEventArgs args)
+    {
+        if (Guid.TryParse(args.Value?.ToString(), out var entityId) && Module is not null)
+        {
+            SelectedEntity = Module.EntityTypes.FirstOrDefault(e => e.Id == entityId);
+            SelectedRecordId = null;
+            ApplyDefaultView();
+            State.SetEntity(SelectedEntity);
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task OnViewChanged(ChangeEventArgs args)
     {
-        SelectedView = args.Value?.ToString();
-        await InvokeAsync(StateHasChanged);
+        ActiveViewName = args.Value?.ToString();
+        var matched = AvailableViews.FirstOrDefault(v => string.Equals(v.Name, ActiveViewName, StringComparison.OrdinalIgnoreCase));
+        CurrentPageSize = matched?.PageSize ?? DefaultPageSize;
+        ApplySortFromView(matched);
+
+        if (Timeline is not null)
+        {
+            await Timeline.RefreshInternal();
+        }
+    }
+
+    private void SelectRecord(F_Record record)
+    {
+        SelectedRecordId = record.Id;
+        _ = Timeline?.RefreshInternal();
+    }
+
+    private async Task HandleSaved(F_Record record)
+    {
+        SelectedRecordId = record.Id;
+        if (Timeline is not null)
+        {
+            await Timeline.RefreshInternal();
+        }
+    }
+
+    private Task HandleDeleted(Guid recordId)
+    {
+        if (SelectedRecordId == recordId)
+        {
+            SelectedRecordId = null;
+        }
+
+        return Task.CompletedTask;
     }
 
     private void NavigateToDashboard()
@@ -181,6 +281,8 @@ else
             Navigation.NavigateTo($"/dashboard/{Module.Name.ToLowerInvariant()}");
         }
     }
+
+    private void NavigateModules() => Navigation.NavigateTo("/modules");
 
     public void Dispose()
     {

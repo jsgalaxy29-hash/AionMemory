@@ -2,35 +2,51 @@
 @using System.Linq
 @using Microsoft.AspNetCore.Components
 @inherits OwningComponentBase
+@implements IDisposable
 
 <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h5>Timeline</h5>
-        <button class="button secondary" @onclick="RefreshInternal">Rafraîchir</button>
+        <div>
+            <h5 style="margin:0;">Timeline</h5>
+            <div class="text-muted small">@Entries.Count élément(s)</div>
+        </div>
+        <div class="list-pagination">
+            <button class="button secondary" @onclick="PreviousPage" disabled="@(!CanGoPrevious)">◀</button>
+            <span class="text-muted">Page @(PageIndex + 1) / @TotalPages</span>
+            <button class="button secondary" @onclick="NextPage" disabled="@(!CanGoNext)">▶</button>
+            <button class="button secondary" @onclick="() => RefreshInternal(true)">Rafraîchir</button>
+        </div>
     </div>
     <div class="timeline">
         @if (IsLoading)
         {
             <p>Chargement…</p>
         }
-        else if (!FilteredNotes.Any())
+        else if (!string.IsNullOrWhiteSpace(Error))
         {
-            <p class="text-muted">Aucune note correspondant au contexte.</p>
+            <p class="validation-message">@Error</p>
+        }
+        else if (!PagedEntries.Any())
+        {
+            <p class="text-muted">Aucune note ou évènement correspondant au contexte.</p>
         }
         else
         {
-            @foreach (var note in FilteredNotes.OrderByDescending(n => n.CreatedAt))
+            @foreach (var entry in PagedEntries)
             {
                 <div class="timeline-item">
-                    <strong>@note.Title</strong>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <strong>@entry.Title</strong>
+                        <span class="badge">@entry.Kind</span>
+                    </div>
 
-                    @if (!string.IsNullOrWhiteSpace(note.Content))
+                    @if (!string.IsNullOrWhiteSpace(entry.Content))
                     {
-                        <div>@note.Content</div>
+                        <div>@entry.Content</div>
                     }
 
                     <small class="text-muted">
-                        @note.CreatedAt.ToLocalTime().ToString("g")
+                        @entry.Timestamp.ToLocalTime().ToString("g")
                     </small>
                 </div>
             }
@@ -39,66 +55,161 @@
 </div>
 
 @code {
-    // Tu peux passer le service via DI ou en paramètre.
-    // DI (standard)
     [Inject] public INoteService? InjectedNoteService { get; set; }
+    [Inject] public IAgendaService? InjectedAgendaService { get; set; }
 
-    // Paramètre optionnel si tu veux surcharger le service
     [Parameter] public INoteService? NoteService { get; set; }
-
+    [Parameter] public IAgendaService? AgendaService { get; set; }
     [Parameter] public string? TargetType { get; set; }
     [Parameter] public Guid? TargetId { get; set; }
+    [Parameter] public int PageSize { get; set; } = 20;
+    [Parameter] public int TimelineWindowDays { get; set; } = 180;
 
     private bool IsLoading { get; set; } = true;
-    private IReadOnlyList<S_Note> Notes { get; set; } = Array.Empty<S_Note>();
+    private List<TimelineEntry> Entries { get; set; } = new();
+    private int PageIndex { get; set; }
+    private string? Error { get; set; }
+    private CancellationTokenSource? _loadCts;
 
-    private IEnumerable<S_Note> FilteredNotes =>
-        Notes.Where(MatchesContext);
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)Math.Max(Entries.Count, 1) / Math.Max(PageSize, 1)));
+    private bool CanGoPrevious => PageIndex > 0;
+    private bool CanGoNext => PageIndex < TotalPages - 1;
+    private IEnumerable<TimelineEntry> PagedEntries => Entries.Skip(PageIndex * PageSize).Take(PageSize);
 
     protected override async Task OnParametersSetAsync()
     {
-        await RefreshInternal();
+        await RefreshInternal(true);
     }
 
-    public async Task RefreshInternal()
+    public async Task RefreshInternal(bool resetPage = false)
     {
-        var service = NoteService ?? InjectedNoteService;
-        if (service is null)
+        var noteSvc = NoteService ?? InjectedNoteService;
+        var agendaSvc = AgendaService ?? InjectedAgendaService;
+
+        if (resetPage)
         {
-            // Aucun service disponible : on arrête proprement
+            PageIndex = 0;
+        }
+
+        if (noteSvc is null && agendaSvc is null)
+        {
+            Error = "Aucun service de timeline disponible.";
             IsLoading = false;
-            Notes = Array.Empty<S_Note>();
+            Entries.Clear();
+            await InvokeAsync(StateHasChanged);
             return;
         }
 
+        _loadCts?.Cancel();
+        _loadCts = new CancellationTokenSource();
         IsLoading = true;
+        Error = null;
 
-        // On réutilise ton contrat existant
-        IEnumerable<S_Note> enumerable = await service.GetChronologicalAsync();
-        Notes = enumerable?.ToList() ?? new List<S_Note>();
+        try
+        {
+            var entries = new List<TimelineEntry>();
+            if (noteSvc is not null)
+            {
+                var noteCount = Math.Max(PageSize * 3, 60);
+                var notes = await noteSvc.GetChronologicalAsync(noteCount, _loadCts.Token).ConfigureAwait(false);
+                entries.AddRange(notes.Where(MatchesContext)
+                    .Select(n => new TimelineEntry(n.Id, n.Title, n.Content, n.CreatedAt, "Note")));
+            }
 
-        IsLoading = false;
-        StateHasChanged();
+            if (agendaSvc is not null)
+            {
+                var now = DateTimeOffset.UtcNow;
+                var from = now.AddDays(-TimelineWindowDays);
+                var to = now.AddDays(TimelineWindowDays);
+                var events = await agendaSvc.GetEventsAsync(from, to, _loadCts.Token).ConfigureAwait(false);
+                entries.AddRange(events.Where(MatchesContext)
+                    .Select(e => new TimelineEntry(e.Id, e.Title, e.Description, e.Start, "Évènement")));
+            }
+
+            Entries = entries
+                .OrderByDescending(e => e.Timestamp)
+                .ToList();
+
+            PageIndex = Math.Min(PageIndex, TotalPages - 1);
+        }
+        catch (OperationCanceledException)
+        {
+            // ignore cancellation
+        }
+        catch (Exception ex)
+        {
+            Error = $"Impossible de charger la timeline : {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private bool MatchesContext(S_Note note)
     {
-        // Cas général : aucun filtre => tout passe
         if (TargetId is null && string.IsNullOrWhiteSpace(TargetType))
         {
             return true;
         }
 
-        // Si la note n’a aucun lien associé, elle ne peut pas correspondre au contexte
         if (note.Links is null || note.Links.Count == 0)
         {
             return false;
         }
 
-        // On vérifie si au moins un lien correspond au contexte demandé
         return note.Links.Any(link =>
             (string.IsNullOrWhiteSpace(TargetType) ||
              string.Equals(link.TargetType, TargetType, StringComparison.OrdinalIgnoreCase)) &&
             (!TargetId.HasValue || link.TargetId == TargetId.Value));
+    }
+
+    private bool MatchesContext(S_Event evt)
+    {
+        if (TargetId is null && string.IsNullOrWhiteSpace(TargetType))
+        {
+            return true;
+        }
+
+        if (evt.Links is null || evt.Links.Count == 0)
+        {
+            return false;
+        }
+
+        return evt.Links.Any(link =>
+            (string.IsNullOrWhiteSpace(TargetType) ||
+             string.Equals(link.TargetType, TargetType, StringComparison.OrdinalIgnoreCase)) &&
+            (!TargetId.HasValue || link.TargetId == TargetId.Value));
+    }
+
+    private async Task PreviousPage()
+    {
+        if (!CanGoPrevious)
+        {
+            return;
+        }
+
+        PageIndex--;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task NextPage()
+    {
+        if (!CanGoNext)
+        {
+            return;
+        }
+
+        PageIndex++;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private sealed record TimelineEntry(Guid Id, string Title, string? Content, DateTimeOffset Timestamp, string Kind);
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
     }
 }

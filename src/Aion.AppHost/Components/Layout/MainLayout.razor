@@ -1,3 +1,124 @@
-﻿@inherits LayoutComponentBase
+﻿@using Aion.AppHost.Services
+@using Aion.Domain
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject IMetadataService Metadata
+@inject NavigationManager Navigation
+@inject UiState State
 
-@Body
+<div class="app-shell">
+    <aside class="app-shell__nav">
+        <div class="app-shell__brand" @onclick="NavigateHome">
+            <strong>AionMemory</strong>
+            <small class="text-muted">UI dynamique</small>
+        </div>
+        <div class="app-shell__nav-section">
+            <div class="app-shell__nav-title">Navigation</div>
+            <button class="button secondary full-width" @onclick="NavigateHome">Accueil</button>
+            <button class="button secondary full-width" @onclick="NavigateDashboard">Dashboard</button>
+        </div>
+        <div class="app-shell__nav-section">
+            <div class="app-shell__nav-title">
+                Modules
+                <button class="button ghost" title="Actualiser" @onclick="LoadModules">↻</button>
+            </div>
+            @if (IsLoadingModules)
+            {
+                <p class="text-muted">Chargement…</p>
+            }
+            else if (Modules.Count == 0)
+            {
+                <p class="text-muted">Aucun module disponible.</p>
+            }
+            else
+            {
+                <ul class="app-shell__nav-list">
+                    @foreach (var module in Modules)
+                    {
+                        var isActive = State.CurrentModule?.Id == module.Id;
+                        <li class="@(isActive ? "active" : string.Empty)" @onclick="() => NavigateToModule(module)">
+                            <div>@module.Name</div>
+                            <small class="text-muted">@module.EntityTypes.Count() entité(s)</small>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </aside>
+    <section class="app-shell__content">
+        <header class="app-shell__topbar">
+            <div>
+                <div class="text-muted">Contexte</div>
+                <div class="app-shell__breadcrumb">
+                    <span>@(State.CurrentModule?.Name ?? "Module inconnu")</span>
+                    @if (State.CurrentEntity is not null)
+                    {
+                        <span>›</span>
+                        <span>@State.CurrentEntity.Name</span>
+                    }
+                </div>
+            </div>
+            <div class="app-shell__topbar-actions">
+                <button class="button secondary" @onclick="NavigateModules">Modules</button>
+                <button class="button" @onclick="NavigateMarketplace">Marketplace</button>
+            </div>
+        </header>
+        <main class="app-shell__body">
+            @Body
+        </main>
+    </section>
+</div>
+
+@code {
+    private readonly List<S_Module> Modules = new();
+    private CancellationTokenSource? _loadCts;
+    private bool IsLoadingModules { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        State.OnChange += StateHasChanged;
+        await LoadModules();
+    }
+
+    private async Task LoadModules()
+    {
+        _loadCts?.Cancel();
+        _loadCts = new CancellationTokenSource();
+        IsLoadingModules = true;
+
+        try
+        {
+            var modules = await Metadata.GetModulesAsync(_loadCts.Token).ConfigureAwait(false);
+            Modules.Clear();
+            Modules.AddRange(modules);
+        }
+        finally
+        {
+            IsLoadingModules = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void NavigateHome() => Navigation.NavigateTo("/");
+    private void NavigateDashboard()
+    {
+        var target = State.CurrentModule?.Name?.ToLowerInvariant() ?? "global";
+        Navigation.NavigateTo($"/dashboard/{target}");
+    }
+    private void NavigateModules() => Navigation.NavigateTo("/modules");
+    private void NavigateMarketplace() => Navigation.NavigateTo("/marketplace");
+
+    private void NavigateToModule(S_Module module)
+    {
+        State.SetModule(module);
+        State.SetEntity(module.EntityTypes.FirstOrDefault());
+        Navigation.NavigateTo(UiRoutes.Module(module.Id));
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        State.OnChange -= StateHasChanged;
+    }
+}

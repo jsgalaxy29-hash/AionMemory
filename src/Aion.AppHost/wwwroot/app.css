@@ -39,9 +39,9 @@ body {
 }
 
 #app {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 24px 16px 48px;
+    max-width: none;
+    margin: 0;
+    padding: 0;
 }
 
 h1:focus {
@@ -152,6 +152,78 @@ h1:focus {
 .timeline-item {
     border-left: 3px solid var(--accent);
     padding-left: 12px;
+}
+
+.list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.list-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.list-toolbar__actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.list-filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+}
+
+.list-sort, .list-pagination {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.module-host__header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+}
+
+.module-host__selectors {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    align-items: end;
+}
+
+.module-host__actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.module-host__grid {
+    align-items: stretch;
+}
+
+.module-host__section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.stretch {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.small {
+    font-size: 12px;
 }
 
 .quick-actions {
