@@ -45,6 +45,8 @@ public class AionDbContext : DbContext
     public DbSet<MarketplaceItem> Marketplace => Set<MarketplaceItem>();
     public DbSet<PredictionInsight> Predictions => Set<PredictionInsight>();
     public DbSet<UserPersona> Personas => Set<UserPersona>();
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<Permission> Permissions => Set<Permission>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -297,6 +299,27 @@ public class AionDbContext : DbContext
             builder.Property(e => e.EmbeddingJson).HasMaxLength(16000);
             builder.HasIndex(e => new { e.TargetType, e.TargetId }).IsUnique();
             builder.HasIndex(e => e.IndexedAt);
+        });
+
+        modelBuilder.Entity<Role>(builder =>
+        {
+            builder.Property(r => r.UserId).IsRequired();
+            builder.Property(r => r.Kind).HasConversion<string>().HasMaxLength(16);
+            builder.HasIndex(r => new { r.UserId, r.Kind }).IsUnique();
+        });
+
+        modelBuilder.Entity<Permission>(builder =>
+        {
+            builder.Property(p => p.UserId).IsRequired();
+            builder.Property(p => p.Action).HasConversion<string>().HasMaxLength(32);
+            builder.HasIndex(p => p.UserId);
+            builder.HasIndex(p => new { p.UserId, p.Action });
+            builder.OwnsOne(p => p.Scope, owned =>
+            {
+                owned.Property(s => s.TableId).HasColumnName("TableId").IsRequired();
+                owned.Property(s => s.RecordId).HasColumnName("RecordId");
+                owned.HasIndex(s => new { s.TableId, s.RecordId });
+            });
         });
 
         base.OnModelCreating(modelBuilder);

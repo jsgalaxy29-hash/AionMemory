@@ -54,11 +54,11 @@
         }
     </div>
     <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
-        <button type="submit" class="button" disabled="@IsSaving">@(IsSaving ? "Enregistrement..." : "Enregistrer")</button>
+        <button type="submit" class="button" disabled="@(IsSaving || !CanWrite)">@(IsSaving ? "Enregistrement..." : "Enregistrer")</button>
         <button type="button" class="button secondary" @onclick="Reset">Annuler</button>
         @if (ActiveRecordId.HasValue)
         {
-            <button type="button" class="button danger" @onclick="Delete">Supprimer</button>
+            <button type="button" class="button danger" @onclick="Delete" disabled="@(!CanDelete)">Supprimer</button>
         }
     </div>
     @if (!string.IsNullOrWhiteSpace(SubmissionError))
@@ -70,6 +70,8 @@
 @code {
     [Inject] public IRecordQueryService? InjectedRecordService { get; set; }
     [Inject] public IModuleViewService? InjectedViewService { get; set; }
+    [Inject] public IAuthorizationService? AuthorizationService { get; set; }
+    [Inject] public ICurrentUserService? CurrentUserService { get; set; }
 
     [Parameter] public STable? Table { get; set; }
     [Parameter] public Guid? TableId { get; set; }
@@ -93,6 +95,8 @@
     private bool IsSaving { get; set; }
     private IRecordQueryService? ActiveRecordService => RecordService ?? InjectedRecordService;
     private IModuleViewService? ActiveViewService => ViewService ?? InjectedViewService;
+    private bool CanWrite { get; set; } = true;
+    private bool CanDelete { get; set; } = true;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -108,6 +112,7 @@
             InitializeDefaults();
             _lastRecordId = ActiveRecordId;
             _lastTableId = ResolvedTable?.Id;
+            await UpdatePermissionsAsync();
         }
     }
 
@@ -217,6 +222,12 @@
             return;
         }
 
+        if (!CanWrite)
+        {
+            SubmissionError = "Vous n'êtes pas autorisé à modifier ces données.";
+            return;
+        }
+
         if (!ValidateForm())
         {
             return;
@@ -258,7 +269,7 @@
 
     private async Task Delete()
     {
-        if (ActiveRecordService is null || ResolvedTable is null || !ActiveRecordId.HasValue)
+        if (ActiveRecordService is null || ResolvedTable is null || !ActiveRecordId.HasValue || !CanDelete)
         {
             return;
         }
@@ -298,6 +309,28 @@
         }
 
         FieldValues = new Dictionary<string, object?>(DynamicListLogic.DeserializePayload(record.DataJson), StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task UpdatePermissionsAsync()
+    {
+        if (AuthorizationService is null || CurrentUserService is null || ResolvedTable is null)
+        {
+            CanWrite = true;
+            CanDelete = true;
+            return;
+        }
+
+        var userId = CurrentUserService.GetCurrentUserId();
+        var tableScope = PermissionScope.ForTable(ResolvedTable.Id);
+        var writeResult = await AuthorizationService.AuthorizeAsync(userId, PermissionAction.Write, tableScope);
+        CanWrite = writeResult.IsAllowed;
+
+        var deleteScope = ActiveRecordId.HasValue
+            ? PermissionScope.ForRecord(ResolvedTable.Id, ActiveRecordId.Value)
+            : tableScope;
+
+        var deleteResult = await AuthorizationService.AuthorizeAsync(userId, PermissionAction.Delete, deleteScope);
+        CanDelete = deleteResult.IsAllowed;
     }
 
     private async Task EnsureTableMetadataAsync()

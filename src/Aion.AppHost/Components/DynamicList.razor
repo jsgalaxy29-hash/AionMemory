@@ -90,7 +90,7 @@
                             }
                             <td>@item.CreatedAt.ToLocalTime().ToString("g")</td>
                             <td style="text-align:right;">
-                                <button class="button danger" @onclick="() => DeleteRecord(item)" @onclick:stopPropagation="true">Supprimer</button>
+                                <button class="button danger" @onclick="() => DeleteRecord(item)" @onclick:stopPropagation="true" disabled="@(!CanDelete)">Supprimer</button>
                             </td>
                         </tr>
                     }
@@ -109,6 +109,8 @@
 @code {
     [Inject] public IRecordQueryService? InjectedRecordService { get; set; }
     [Inject] public IModuleViewService? InjectedViewService { get; set; }
+    [Inject] public IAuthorizationService? AuthorizationService { get; set; }
+    [Inject] public ICurrentUserService? CurrentUserService { get; set; }
 
     [Parameter] public STable? Table { get; set; }
     [Parameter] public Guid? TableId { get; set; }
@@ -142,6 +144,7 @@
     private string? _lastSortField;
     private bool _lastSortDescending;
     private int _lastPageSize;
+    private bool CanDelete { get; set; } = true;
 
     private IEnumerable<SFieldDefinition> SortableFields
         => ResolvedTable?.Fields.Where(f => f.IsSortable) ?? Enumerable.Empty<SFieldDefinition>();
@@ -178,6 +181,11 @@
         {
             PageIndex = 0;
             await Refresh();
+        }
+
+        if (tableChanged)
+        {
+            await UpdatePermissionsAsync();
         }
 
         _lastTableId = ResolvedTable?.Id;
@@ -255,7 +263,7 @@
 
     private async Task DeleteRecord(F_Record record)
     {
-        if (ResolvedTable is null || ActiveRecordService is null)
+        if (ResolvedTable is null || ActiveRecordService is null || !CanDelete)
         {
             return;
         }
@@ -263,6 +271,20 @@
         await ActiveRecordService.DeleteAsync(ResolvedTable.Id, record.Id);
         await Refresh();
         await OnDeleted.InvokeAsync(record.Id);
+    }
+
+    private async Task UpdatePermissionsAsync()
+    {
+        if (AuthorizationService is null || CurrentUserService is null || ResolvedTable is null)
+        {
+            CanDelete = true;
+            return;
+        }
+
+        var userId = CurrentUserService.GetCurrentUserId();
+        var deleteScope = PermissionScope.ForTable(ResolvedTable.Id);
+        var deleteResult = await AuthorizationService.AuthorizeAsync(userId, PermissionAction.Delete, deleteScope);
+        CanDelete = deleteResult.IsAllowed;
     }
 
     private async Task ApplySearch()

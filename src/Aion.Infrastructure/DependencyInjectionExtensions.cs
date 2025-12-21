@@ -85,7 +85,9 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IFileStorageService, FileStorageService>();
         services.AddScoped<IMetadataService, MetadataService>();
         services.AddScoped<IAionDataEngine, AionDataEngine>();
-        services.AddScoped<IDataEngine>(sp => sp.GetRequiredService<IAionDataEngine>());
+        services.AddScoped<IDataEngine, AuthorizedDataEngine>();
+        services.AddScoped<IAuthorizationService, AuthorizationService>();
+        services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<IAionNoteService, NoteService>();
         services.AddScoped<INoteService>(sp => sp.GetRequiredService<IAionNoteService>());
         services.AddScoped<IAionAgendaService, AgendaService>();
