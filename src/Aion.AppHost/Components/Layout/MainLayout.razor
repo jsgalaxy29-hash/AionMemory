@@ -5,6 +5,7 @@
 @inject IMetadataService Metadata
 @inject NavigationManager Navigation
 @inject UiState State
+@inject AiProviderSelector AiSelector
 
 <div class="app-shell">
     <aside class="app-shell__nav">
@@ -59,6 +60,10 @@
                 </div>
             </div>
             <div class="app-shell__topbar-actions">
+                @if (!_aiStatus.IsConfigured)
+                {
+                    <div class="badge" style="background-color:#c0392b; color:#fff;" title="@_aiStatus.Reason">IA inactive</div>
+                }
                 <button class="button secondary" @onclick="NavigateModules">Modules</button>
                 <button class="button" @onclick="NavigateMarketplace">Marketplace</button>
             </div>
@@ -73,10 +78,12 @@
     private readonly List<S_Module> Modules = new();
     private CancellationTokenSource? _loadCts;
     private bool IsLoadingModules { get; set; }
+    private AiConfigurationStatus _aiStatus = AiConfigurationStatus.Inactive();
 
     protected override async Task OnInitializedAsync()
     {
         State.OnChange += StateHasChanged;
+        _aiStatus = AiSelector.GetStatus();
         await LoadModules();
     }
 

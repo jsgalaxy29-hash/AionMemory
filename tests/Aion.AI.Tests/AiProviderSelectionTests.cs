@@ -9,13 +9,14 @@ namespace Aion.AI.Tests;
 public class AiProviderSelectionTests
 {
     [Fact]
-    public void Selector_returns_mock_when_no_remote_configuration()
+    public void Selector_marks_inactive_when_no_configuration()
     {
         var selector = new AiProviderSelector(new StubOptionsMonitor(new AionAiOptions()), NullLogger<AiProviderSelector>.Instance);
 
-        var provider = selector.ResolveProviderName();
+        var status = selector.GetStatus();
 
-        Assert.Equal(AiProviderNames.Mock, provider);
+        Assert.False(status.IsConfigured);
+        Assert.Equal(AiProviderNames.Inactive, status.ActiveProvider);
     }
 
     [Fact]

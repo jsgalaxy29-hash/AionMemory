@@ -17,16 +17,43 @@ public sealed class AiProviderSelector
         _logger = logger;
     }
 
-    public bool HasConfiguredProvider => HasRemoteConfiguration(_options.CurrentValue);
+    public bool HasConfiguredProvider => _options.CurrentValue.HasConfiguration();
+
+    public AiConfigurationStatus GetStatus()
+    {
+        var options = _options.CurrentValue;
+        if (!options.HasConfiguration())
+        {
+            return AiConfigurationStatus.Inactive("Aucune configuration AI détectée (Aion:Ai).");
+        }
+
+        var provider = Normalize(options.Provider);
+        if (provider is AiProviderNames.Mock or AiProviderNames.Local)
+        {
+            return new AiConfigurationStatus(true, provider, null);
+        }
+
+        if (!HasRemoteConfiguration(options))
+        {
+            return AiConfigurationStatus.Inactive("Aucune clé ni endpoint pour l'IA distante.");
+        }
+
+        return new AiConfigurationStatus(true, ResolveProviderName(options), null);
+    }
 
     public string ResolveProviderName()
     {
         var options = _options.CurrentValue;
+        return ResolveProviderName(options);
+    }
+
+    private string ResolveProviderName(AionAiOptions options)
+    {
         var normalized = Normalize(options.Provider);
 
-        if (!HasRemoteConfiguration(options))
+        if (!options.HasConfiguration())
         {
-            return normalized == AiProviderNames.Local ? AiProviderNames.Local : AiProviderNames.Mock;
+            return AiProviderNames.Inactive;
         }
 
         return normalized switch

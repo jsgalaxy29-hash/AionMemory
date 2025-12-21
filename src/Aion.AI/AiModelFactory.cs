@@ -34,7 +34,8 @@ public sealed class AiModelFactory : IChatModel, IEmbeddingsModel, ITranscriptio
 
     private T Resolve<T>(string capability)
     {
-        var providerName = _selector.ResolveProviderName();
+        var status = _selector.GetStatus();
+        var providerName = status.IsConfigured ? status.ActiveProvider : AiProviderNames.Inactive;
         var resolved = _services.GetKeyedService<T>(providerName);
         if (resolved is not null)
         {
@@ -44,6 +45,11 @@ public sealed class AiModelFactory : IChatModel, IEmbeddingsModel, ITranscriptio
         if (!string.Equals(providerName, AiProviderNames.Mock, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning("{Capability} provider '{Provider}' is not registered; using mock provider instead", capability, providerName);
+        }
+
+        if (!status.IsConfigured)
+        {
+            return _services.GetRequiredKeyedService<T>(AiProviderNames.Inactive);
         }
 
         return _services.GetRequiredKeyedService<T>(AiProviderNames.Mock);

@@ -39,6 +39,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<EchoLlmProvider>();
         services.AddSingleton<DeterministicEmbeddingProvider>();
         services.AddScoped<StubAudioTranscriptionProvider>();
+        services.AddSingleton<InactiveChatModel>();
+        services.AddSingleton<InactiveEmbeddingsModel>();
+        services.AddScoped<InactiveTranscriptionModel>();
+        services.AddSingleton<InactiveVisionModel>();
 
         services.AddKeyedSingleton<IChatModel>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpTextGenerationProvider>());
         services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpEmbeddingProvider>());
@@ -53,6 +57,10 @@ public static class ServiceCollectionExtensions
         services.AddKeyedSingleton<IChatModel>(AiProviderNames.Local, sp => sp.GetRequiredService<EchoLlmProvider>());
         services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Local, sp => sp.GetRequiredService<DeterministicEmbeddingProvider>());
         services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Local, sp => sp.GetRequiredService<StubAudioTranscriptionProvider>());
+        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Inactive, sp => sp.GetRequiredService<InactiveChatModel>());
+        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Inactive, sp => sp.GetRequiredService<InactiveEmbeddingsModel>());
+        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Inactive, sp => sp.GetRequiredService<InactiveTranscriptionModel>());
+        services.AddKeyedSingleton<IVisionModel>(AiProviderNames.Inactive, sp => sp.GetRequiredService<InactiveVisionModel>());
 
         services.AddScoped<AiModelFactory>();
         services.AddScoped<IChatModel>(sp => sp.GetRequiredService<AiModelFactory>());

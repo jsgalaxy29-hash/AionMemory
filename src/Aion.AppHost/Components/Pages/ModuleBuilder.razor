@@ -1,16 +1,21 @@
 @page "/module-builder"
 @inject ModuleDesignerService Designer
 @inject NavigationManager Navigation
+@inject AiProviderSelector AiSelector
 
 <h3>Module Builder IA</h3>
 
 <div class="card" style="display:flex; flex-direction:column; gap:8px;">
     <label for="prompt" style="font-weight:600;">Décrivez votre module</label>
     <textarea id="prompt" class="input" rows="6" placeholder="Ex: Crée-moi un module pour gérer ma cave à vin"
-              @bind="Prompt"></textarea>
-    <button class="button" @onclick="Generate" disabled="IsLoading">
+              @bind="Prompt" disabled="@(!_aiStatus.IsConfigured || IsLoading)"></textarea>
+    <button class="button" @onclick="Generate" disabled="@(!_aiStatus.IsConfigured || IsLoading)">
         @(IsLoading ? "Génération en cours..." : "Générer le module")
     </button>
+    @if (!_aiStatus.IsConfigured)
+    {
+        <p class="text-muted">IA inactive : @_aiStatus.Reason. La génération automatique est désactivée. Voir <code>docs/OFFLINE_MODE.md</code> pour les alternatives hors-ligne.</p>
+    }
     @if (!string.IsNullOrWhiteSpace(Status))
     {
         <p class="text-muted">@Status</p>
@@ -73,6 +78,12 @@
     private string? Status { get; set; }
     private bool IsLoading { get; set; }
     private S_Module? Module { get; set; }
+    private AiConfigurationStatus _aiStatus = AiConfigurationStatus.Inactive();
+
+    protected override void OnInitialized()
+    {
+        _aiStatus = AiSelector.GetStatus();
+    }
 
     private string GetEntityName(Guid entityTypeId)
     {
@@ -85,6 +96,12 @@
 
     private async Task Generate()
     {
+        if (!_aiStatus.IsConfigured)
+        {
+            Status = _aiStatus.Reason ?? "IA inactive.";
+            return;
+        }
+
         if (IsLoading)
         {
             return;

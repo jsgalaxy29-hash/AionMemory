@@ -5,6 +5,7 @@
 @inject IModuleDesigner ModuleDesigner
 @inject ISearchService SearchService
 @inject NavigationManager Navigation
+@inject AiProviderSelector AiSelector
 
 <div class="grid columns-2">
     <div class="card">
@@ -15,7 +16,7 @@
             </div>
             <div style="display:flex; gap:8px;">
                 <button class="button secondary" @onclick="ToggleDictation">🎙️ Dictée</button>
-                <button class="button" @onclick="CreateModuleFromIntent">Créer module IA</button>
+                <button class="button" @onclick="CreateModuleFromIntent" disabled="@(!_aiStatus.IsConfigured)">Créer module IA</button>
             </div>
         </div>
         <div class="chat-window">
@@ -29,9 +30,13 @@
             }
         </div>
         <div style="display:flex; gap:8px; margin-top:12px;">
-            <input class="input" placeholder="Posez une question à AION" @bind="CurrentInput" @bind:event="oninput" />
-            <button class="button" @onclick="SendMessage">Envoyer</button>
+            <input class="input" placeholder="Posez une question à AION" @bind="CurrentInput" @bind:event="oninput" disabled="@(!_aiStatus.IsConfigured)" />
+            <button class="button" @onclick="SendMessage" disabled="@(!_aiStatus.IsConfigured)">Envoyer</button>
         </div>
+        @if (!_aiStatus.IsConfigured)
+        {
+            <p class="text-muted" style="margin-top:4px;">IA inactive : @_aiStatus.Reason</p>
+        }
         @if (IsSearching)
         {
             <p class="text-muted" style="margin-top:4px;">Recherche contextuelle…</p>
@@ -96,6 +101,7 @@
     private bool Listening { get; set; }
     private bool IsSearching { get; set; }
     private List<SearchHit> SearchResults { get; set; } = new();
+    private AiConfigurationStatus _aiStatus = AiConfigurationStatus.Inactive();
     private static readonly string[] Suggestions =
     [
         "Créer un module Potager",
@@ -104,8 +110,19 @@
         "Montre le dashboard Potager"
     ];
 
+    protected override void OnInitialized()
+    {
+        _aiStatus = AiSelector.GetStatus();
+    }
+
     private async Task SendMessage()
     {
+        if (!_aiStatus.IsConfigured)
+        {
+            Messages.Add(new ChatMessage("Système", _aiStatus.Reason ?? "IA inactive.", false));
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(CurrentInput))
         {
             return;
@@ -144,6 +161,12 @@
 
     private async Task CreateModuleFromIntent()
     {
+        if (!_aiStatus.IsConfigured)
+        {
+            Messages.Add(new ChatMessage("Système", _aiStatus.Reason ?? "IA inactive.", false));
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(CurrentInput))
         {
             CurrentInput = "Module personnel pour suivre mes projets";
@@ -167,6 +190,12 @@
 
     private async Task HandleDictation(InputFileChangeEventArgs args)
     {
+        if (!_aiStatus.IsConfigured)
+        {
+            DictationStatus = _aiStatus.Reason ?? "IA inactive.";
+            return;
+        }
+
         var file = args.File;
         await using var stream = file.OpenReadStream();
         var result = await TextGen.GenerateAsync($"Transcris {file.Name}");

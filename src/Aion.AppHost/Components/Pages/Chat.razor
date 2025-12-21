@@ -7,6 +7,7 @@
 @inject INoteInterpreter NoteInterpreter
 @inject IReportInterpreter ReportInterpreter
 @inject ISearchService SearchService
+@inject AiProviderSelector AiSelector
 
 <div class="grid columns-2">
     <div class="card">
@@ -20,6 +21,10 @@
                 @if (!string.IsNullOrWhiteSpace(ErrorMessage))
                 {
                     <p style="color:crimson; margin:0;">@ErrorMessage</p>
+                }
+                @if (!_aiStatus.IsConfigured)
+                {
+                    <p class="text-muted" style="margin:0;">IA inactive : @_aiStatus.Reason</p>
                 }
             </div>
         </div>
@@ -36,8 +41,8 @@
         </div>
 
         <div style="display:flex; gap:8px; margin-top:12px;">
-            <input class="input" placeholder="Demandez à AION d'orchestrer une action" @bind="CurrentInput" @bind:event="oninput" @onkeydown="HandleEnter" />
-            <button class="button" @onclick="SendMessageAsync" disabled="@IsProcessing">Envoyer</button>
+            <input class="input" placeholder="Demandez à AION d'orchestrer une action" @bind="CurrentInput" @bind:event="oninput" @onkeydown="HandleEnter" disabled="@(!_aiStatus.IsConfigured || IsProcessing)" />
+            <button class="button" @onclick="SendMessageAsync" disabled="@(!_aiStatus.IsConfigured || IsProcessing)">Envoyer</button>
         </div>
 
         <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
@@ -104,6 +109,7 @@
     private bool IsProcessing { get; set; }
     private List<SearchHit> ContextHits { get; set; } = new();
     private CancellationTokenSource? _cts;
+    private AiConfigurationStatus _aiStatus = AiConfigurationStatus.Inactive();
 
     private static readonly string[] Suggestions =
     [
@@ -113,8 +119,20 @@
         "Génère un rapport sur mon module Potager"
     ];
 
+    protected override void OnInitialized()
+    {
+        _aiStatus = AiSelector.GetStatus();
+    }
+
     private async Task SendMessageAsync()
     {
+        if (!_aiStatus.IsConfigured)
+        {
+            ErrorMessage = _aiStatus.Reason ?? "IA inactive.";
+            Messages.Add(new ChatMessage("Système", ErrorMessage, false));
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(CurrentInput))
         {
             return;

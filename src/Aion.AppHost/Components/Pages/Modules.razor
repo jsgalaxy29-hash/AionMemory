@@ -4,6 +4,7 @@
 @inject NavigationManager Navigation
 @inject IRecordQueryService RecordQueries
 @inject Aion.AppHost.Services.ITableDefinitionService Tables
+@inject AiProviderSelector AiSelector
 @implements IDisposable
 
 <h3>Modules</h3>
@@ -15,9 +16,13 @@
             <option value="favorite">Favoris</option>
             <option value="all">Tous</option>
         </select>
-        <button class="button" @onclick="GenerateModule">Créer Module par IA</button>
+        <button class="button" @onclick="GenerateModule" disabled="@(!_aiStatus.IsConfigured)">Créer Module par IA</button>
         <button class="button secondary" @onclick="NavigateToBuilder">Ouvrir Module Builder</button>
     </div>
+    @if (!_aiStatus.IsConfigured)
+    {
+        <p class="text-muted" style="margin:0;">IA inactive : @_aiStatus.Reason</p>
+    }
 </div>
 
 <div class="grid columns-3">
@@ -60,6 +65,7 @@
     private readonly Dictionary<Guid, int> RecordCounts = new();
     private string Search { get; set; } = string.Empty;
     private string Filter { get; set; } = "recent";
+    private AiConfigurationStatus _aiStatus = AiConfigurationStatus.Inactive();
 
     private IEnumerable<S_Module> FilteredModules =>
         string.IsNullOrWhiteSpace(Search)
@@ -68,6 +74,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _aiStatus = AiSelector.GetStatus();
         ModuleList = await Metadata.GetModulesAsync();
         await LoadRecordCounts();
     }
@@ -81,6 +88,11 @@
 
     private async Task GenerateModule()
     {
+        if (!_aiStatus.IsConfigured)
+        {
+            return;
+        }
+
         var module = await ModuleDesigner.CreateModuleFromPromptAsync("Assistant quotidien");
         ModuleList = (ModuleList ?? Array.Empty<S_Module>()).Append(module).ToArray();
         await LoadRecordCounts();
