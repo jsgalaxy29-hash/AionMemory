@@ -138,13 +138,17 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
     public async Task<F_Record> InsertAsync(Guid tableId, IDictionary<string, object?> data, CancellationToken cancellationToken = default)
     {
+        var (table, validated) = await ValidateRecordAsync(tableId, data, null, cancellationToken).ConfigureAwait(false);
+
         var record = new F_Record
         {
             TableId = tableId,
-            DataJson = await ValidateRecordAsync(tableId, data, null, cancellationToken).ConfigureAwait(false),
+            DataJson = validated.DataJson,
             CreatedAt = DateTimeOffset.UtcNow
         };
+
         await _db.Records.AddAsync(record, cancellationToken).ConfigureAwait(false);
+        await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} inserted for table {TableId}", record.Id, tableId);
         await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
@@ -162,9 +166,12 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         var record = await FilterByTable(_db.Records, table).FirstOrDefaultAsync(r => r.Id == id, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Record {id} not found for table {tableId}");
 
-        record.DataJson = await ValidateRecordAsync(tableId, data, id, cancellationToken).ConfigureAwait(false);
+        var validated = await ValidateRecordAsync(table, data, id, cancellationToken).ConfigureAwait(false);
+
+        record.DataJson = validated.DataJson;
         record.UpdatedAt = DateTimeOffset.UtcNow;
         _db.Records.Update(record);
+        await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} updated for table {TableId}", id, tableId);
         await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
@@ -203,20 +210,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Table {tableId} not found");
 
-        var query = FilterByTable(_db.Records.AsQueryable(), table);
-        query = ApplyViewFilters(query, table, spec.View);
-        query = ApplyStructuredFilters(query, table, spec.Filters);
-
-        if (!string.IsNullOrWhiteSpace(spec.FullText))
-        {
-            var fts = _db.RecordSearch.FromSqlRaw(
-                "SELECT RecordId, EntityTypeId, Content FROM RecordSearch WHERE EntityTypeId = {0} AND RecordSearch MATCH {1}",
-                tableId,
-                spec.FullText);
-
-            query = query.Where(r => fts.Select(s => s.RecordId).Contains(r.Id));
-        }
-
+        var query = BuildQueryable(table, spec);
         return await query.CountAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -226,21 +220,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Table {tableId} not found");
 
-        var query = FilterByTable(_db.Records.AsQueryable(), table);
-        query = ApplyViewFilters(query, table, spec.View);
-        query = ApplyStructuredFilters(query, table, spec.Filters);
-
-        if (!string.IsNullOrWhiteSpace(spec.FullText))
-        {
-            var fts = _db.RecordSearch.FromSqlRaw(
-                "SELECT RecordId, EntityTypeId, Content FROM RecordSearch WHERE EntityTypeId = {0} AND RecordSearch MATCH {1}",
-                tableId,
-                spec.FullText);
-
-            query = query.Where(r => fts.Select(s => s.RecordId).Contains(r.Id));
-        }
-
-        query = ApplyOrdering(query, table, spec);
+        var query = BuildQueryable(table, spec);
 
         if (spec.Skip.HasValue)
         {
@@ -284,6 +264,16 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         return query;
     }
 
+    private IQueryable<F_Record> BuildQueryable(STable table, QuerySpec spec)
+    {
+        var query = FilterByTable(_db.Records.AsQueryable(), table);
+        query = ApplyViewFilters(query, table, spec.View);
+        query = ApplyStructuredFilters(query, table, spec.Filters);
+        query = ApplyFullTextFilter(query, table.Id, spec.FullText);
+        query = ApplyOrdering(query, table, spec);
+        return query;
+    }
+
     private IQueryable<F_Record> ApplyViewFilters(IQueryable<F_Record> query, STable table, string? viewName)
     {
         var equals = ResolveViewFilter(viewName, table);
@@ -316,60 +306,135 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             var field = table.Fields.FirstOrDefault(f => string.Equals(f.Name, filter.Field, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException($"Field '{filter.Field}' is not defined for table {table.Name}");
 
-            query = ApplyFilter(query, field, filter);
+            query = ApplyFilter(query, table, field, filter);
         }
 
         return query;
     }
 
-    private IQueryable<F_Record> ApplyFilter(IQueryable<F_Record> query, SFieldDefinition field, QueryFilter filter)
+    private IQueryable<F_Record> ApplyFilter(IQueryable<F_Record> query, STable table, SFieldDefinition field, QueryFilter filter)
     {
-        var path = BuildJsonPath(field.Name);
-        var stringValue = filter.Value?.ToString();
-
-        if (filter.Operator == QueryFilterOperator.Contains)
-        {
-            throw new InvalidOperationException("Contains filters are not allowed. Use full-text search or structured equality filters.");
-        }
+        var indexes = _db.RecordIndexes
+            .Where(i => i.TableId == table.Id && i.FieldName == field.Name);
 
         switch (field.DataType)
         {
-            case FieldDataType.Number:
-            case FieldDataType.Decimal:
+            case FieldDataType.Number or FieldDataType.Decimal or FieldDataType.Int:
+            {
                 if (filter.Value is null)
                 {
                     return query;
                 }
 
-                var numeric = Convert.ToDouble(filter.Value);
-                query = filter.Operator switch
+                var numeric = Convert.ToDecimal(filter.Value, CultureInfo.InvariantCulture);
+                indexes = filter.Operator switch
                 {
-                    QueryFilterOperator.Equals => query.Where(r => EF.Functions.JsonExtract<double?>(r.DataJson, path) == numeric),
-                    QueryFilterOperator.GreaterThan => query.Where(r => EF.Functions.JsonExtract<double?>(r.DataJson, path) > numeric),
-                    QueryFilterOperator.GreaterThanOrEqual => query.Where(r => EF.Functions.JsonExtract<double?>(r.DataJson, path) >= numeric),
-                    QueryFilterOperator.LessThan => query.Where(r => EF.Functions.JsonExtract<double?>(r.DataJson, path) < numeric),
-                    QueryFilterOperator.LessThanOrEqual => query.Where(r => EF.Functions.JsonExtract<double?>(r.DataJson, path) <= numeric),
-                    _ => query
+                    QueryFilterOperator.Equals => indexes.Where(i => i.NumberValue == numeric),
+                    QueryFilterOperator.GreaterThan => indexes.Where(i => i.NumberValue > numeric),
+                    QueryFilterOperator.GreaterThanOrEqual => indexes.Where(i => i.NumberValue >= numeric),
+                    QueryFilterOperator.LessThan => indexes.Where(i => i.NumberValue < numeric),
+                    QueryFilterOperator.LessThanOrEqual => indexes.Where(i => i.NumberValue <= numeric),
+                    _ => throw new InvalidOperationException($"Operator {filter.Operator} is not supported for numeric fields")
                 };
                 break;
+            }
+            case FieldDataType.Boolean:
+            {
+                if (filter.Value is null)
+                {
+                    return query;
+                }
+
+                var boolean = Convert.ToBoolean(filter.Value, CultureInfo.InvariantCulture);
+                indexes = filter.Operator == QueryFilterOperator.Equals
+                    ? indexes.Where(i => i.BoolValue == boolean)
+                    : throw new InvalidOperationException("Only Equals is supported for boolean filters");
+                break;
+            }
+            case FieldDataType.Date or FieldDataType.DateTime:
+            {
+                if (filter.Value is null)
+                {
+                    return query;
+                }
+
+                var parsed = ParseDateValue(filter.Value);
+                indexes = filter.Operator switch
+                {
+                    QueryFilterOperator.Equals => indexes.Where(i => i.DateValue == parsed),
+                    QueryFilterOperator.GreaterThan => indexes.Where(i => i.DateValue > parsed),
+                    QueryFilterOperator.GreaterThanOrEqual => indexes.Where(i => i.DateValue >= parsed),
+                    QueryFilterOperator.LessThan => indexes.Where(i => i.DateValue < parsed),
+                    QueryFilterOperator.LessThanOrEqual => indexes.Where(i => i.DateValue <= parsed),
+                    _ => throw new InvalidOperationException($"Operator {filter.Operator} is not supported for date filters")
+                };
+                break;
+            }
             default:
+            {
+                var stringValue = filter.Value?.ToString();
                 if (string.IsNullOrWhiteSpace(stringValue))
                 {
                     return query;
                 }
 
-                query = filter.Operator switch
+                indexes = filter.Operator switch
                 {
-                    QueryFilterOperator.Equals => query.Where(r => EF.Functions.JsonExtract<string?>(r.DataJson, path) == stringValue),
-                    _ => query
+                    QueryFilterOperator.Equals => indexes.Where(i => i.StringValue == stringValue),
+                    QueryFilterOperator.Contains => indexes.Where(i => i.StringValue != null && EF.Functions.Like(i.StringValue, $"%{EscapeLike(stringValue)}%")),
+                    _ => throw new InvalidOperationException($"Operator {filter.Operator} is not supported for text filters")
                 };
                 break;
+            }
         }
 
-        return query;
+        return query.Where(r => indexes.Any(i => i.RecordId == r.Id));
     }
 
-    private static string BuildJsonPath(string fieldName) => $"$.{fieldName}";
+    private static string EscapeLike(string value)
+        => value.Replace("[", "[[]", StringComparison.Ordinal)
+            .Replace("%", "[%]", StringComparison.Ordinal)
+            .Replace("_", "[_]", StringComparison.Ordinal);
+
+    private static DateTimeOffset ParseDateValue(object value)
+    {
+        if (value is JsonElement element)
+        {
+            value = ExtractValue(element) ?? value;
+        }
+
+        if (value is DateTimeOffset dto)
+        {
+            return dto.ToUniversalTime();
+        }
+
+        if (value is DateTime dt)
+        {
+            return new DateTimeOffset(dt.ToUniversalTime());
+        }
+
+        if (value is string s && DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
+        {
+            return parsed.ToUniversalTime();
+        }
+
+        throw new InvalidOperationException("Invalid date filter value");
+    }
+
+    private IQueryable<F_Record> ApplyFullTextFilter(IQueryable<F_Record> query, Guid tableId, string? fullText)
+    {
+        if (string.IsNullOrWhiteSpace(fullText))
+        {
+            return query;
+        }
+
+        var fts = _db.RecordSearch.FromSqlRaw(
+            "SELECT RecordId, EntityTypeId, Content FROM RecordSearch WHERE EntityTypeId = {0} AND RecordSearch MATCH {1}",
+            tableId,
+            fullText);
+
+        return query.Where(r => fts.Any(s => s.RecordId == r.Id));
+    }
 
     private IQueryable<F_Record> ApplyOrdering(IQueryable<F_Record> query, STable table, QuerySpec spec)
     {
@@ -384,13 +449,22 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             return query.OrderByDescending(r => r.CreatedAt);
         }
 
-        var path = BuildJsonPath(field.Name);
+        var indexes = _db.RecordIndexes.Where(i => i.TableId == table.Id && i.FieldName == field.Name);
+
         return field.DataType switch
         {
-            FieldDataType.Number or FieldDataType.Decimal when spec.Descending => query.OrderByDescending(r => EF.Functions.JsonExtract<double?>(r.DataJson, path)),
-            FieldDataType.Number or FieldDataType.Decimal => query.OrderBy(r => EF.Functions.JsonExtract<double?>(r.DataJson, path)),
-            _ when spec.Descending => query.OrderByDescending(r => EF.Functions.JsonExtract<string?>(r.DataJson, path)),
-            _ => query.OrderBy(r => EF.Functions.JsonExtract<string?>(r.DataJson, path))
+            FieldDataType.Number or FieldDataType.Decimal => spec.Descending
+                ? query.OrderByDescending(r => indexes.Where(i => i.RecordId == r.Id).Select(i => i.NumberValue).FirstOrDefault())
+                : query.OrderBy(r => indexes.Where(i => i.RecordId == r.Id).Select(i => i.NumberValue).FirstOrDefault()),
+            FieldDataType.Boolean => spec.Descending
+                ? query.OrderByDescending(r => indexes.Where(i => i.RecordId == r.Id).Select(i => i.BoolValue).FirstOrDefault())
+                : query.OrderBy(r => indexes.Where(i => i.RecordId == r.Id).Select(i => i.BoolValue).FirstOrDefault()),
+            FieldDataType.Date or FieldDataType.DateTime => spec.Descending
+                ? query.OrderByDescending(r => indexes.Where(i => i.RecordId == r.Id).Select(i => i.DateValue).FirstOrDefault())
+                : query.OrderBy(r => indexes.Where(i => i.RecordId == r.Id).Select(i => i.DateValue).FirstOrDefault()),
+            _ => spec.Descending
+                ? query.OrderByDescending(r => indexes.Where(i => i.RecordId == r.Id).Select(i => i.StringValue).FirstOrDefault())
+                : query.OrderBy(r => indexes.Where(i => i.RecordId == r.Id).Select(i => i.StringValue).FirstOrDefault())
         };
     }
 
@@ -466,11 +540,22 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         }
     }
 
-    private async Task<string> ValidateRecordAsync(Guid tableId, IDictionary<string, object?> values, Guid? recordId, CancellationToken cancellationToken)
+    private sealed record ValidatedRecord(string DataJson, IReadOnlyDictionary<string, object?> Values);
+
+    private async Task<(STable Table, ValidatedRecord Validated)> ValidateRecordAsync(Guid tableId, IDictionary<string, object?> values, Guid? recordId, CancellationToken cancellationToken)
     {
-        var validated = await NormalizePayloadAsync(tableId, values, cancellationToken).ConfigureAwait(false);
-        await EnforceConstraintsAsync(tableId, validated, recordId, cancellationToken).ConfigureAwait(false);
-        return SerializeValues(validated);
+        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
+
+        var validated = await ValidateRecordAsync(table, values, recordId, cancellationToken).ConfigureAwait(false);
+        return (table, validated);
+    }
+
+    private async Task<ValidatedRecord> ValidateRecordAsync(STable table, IDictionary<string, object?> values, Guid? recordId, CancellationToken cancellationToken)
+    {
+        var normalized = await NormalizePayloadAsync(table, values, cancellationToken).ConfigureAwait(false);
+        await EnforceConstraintsAsync(table, normalized, recordId, cancellationToken).ConfigureAwait(false);
+        return new ValidatedRecord(SerializeValues(normalized), normalized);
     }
 
     private static object? ExtractValue(JsonElement element)
@@ -585,11 +670,8 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         }
     }
 
-    private async Task EnforceConstraintsAsync(Guid tableId, IDictionary<string, object?> values, Guid? recordId, CancellationToken cancellationToken)
+    private async Task EnforceConstraintsAsync(STable table, IDictionary<string, object?> values, Guid? recordId, CancellationToken cancellationToken)
     {
-        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Table {tableId} not found");
-
         foreach (var uniqueField in table.Fields.Where(f => f.IsUnique))
         {
             if (!values.TryGetValue(uniqueField.Name, out var uniqueValue) || uniqueValue is null)
@@ -597,18 +679,22 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
                 continue;
             }
 
-            var path = BuildJsonPath(uniqueField.Name);
-            var scoped = FilterByTable(_db.Records.AsQueryable(), table);
+            var scoped = _db.RecordIndexes.Where(i => i.TableId == table.Id && i.FieldName == uniqueField.Name);
 
             scoped = uniqueField.DataType switch
             {
-                FieldDataType.Number or FieldDataType.Decimal when uniqueValue is IConvertible convertible => scoped.Where(r => EF.Functions.JsonExtract<double?>(r.DataJson, path) == Convert.ToDouble(convertible)),
-                _ => scoped.Where(r => EF.Functions.JsonExtract<string?>(r.DataJson, path) == uniqueValue.ToString())
+                FieldDataType.Number or FieldDataType.Decimal or FieldDataType.Int when uniqueValue is IConvertible convertible
+                    => scoped.Where(i => i.NumberValue == Convert.ToDecimal(convertible, CultureInfo.InvariantCulture)),
+                FieldDataType.Boolean
+                    => scoped.Where(i => i.BoolValue == Convert.ToBoolean(uniqueValue, CultureInfo.InvariantCulture)),
+                FieldDataType.Date or FieldDataType.DateTime
+                    => scoped.Where(i => i.DateValue == ParseDateValue(uniqueValue)),
+                _ => scoped.Where(i => i.StringValue == uniqueValue.ToString())
             };
 
             if (recordId.HasValue)
             {
-                scoped = scoped.Where(r => r.Id != recordId.Value);
+                scoped = scoped.Where(r => r.RecordId != recordId.Value);
             }
 
             if (await scoped.AnyAsync(cancellationToken).ConfigureAwait(false))
@@ -618,11 +704,8 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         }
     }
 
-    private async Task<Dictionary<string, object?>> NormalizePayloadAsync(Guid tableId, IDictionary<string, object?> values, CancellationToken cancellationToken)
+    private async Task<Dictionary<string, object?>> NormalizePayloadAsync(STable table, IDictionary<string, object?> values, CancellationToken cancellationToken)
     {
-        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Table {tableId} not found");
-
         var sourceValues = new Dictionary<string, object?>(values, StringComparer.OrdinalIgnoreCase);
         var normalized = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
@@ -689,6 +772,60 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
                 => NormalizeDateValue(field, value),
             _ => throw new ArgumentOutOfRangeException(nameof(field.DataType), $"Unsupported data type {field.DataType}")
         };
+    }
+
+    private async Task UpsertRecordIndexesAsync(STable table, F_Record record, IReadOnlyDictionary<string, object?> values, CancellationToken cancellationToken)
+    {
+        var existing = _db.RecordIndexes.Where(i => i.RecordId == record.Id);
+        _db.RecordIndexes.RemoveRange(existing);
+
+        var indexes = new List<F_RecordIndex>();
+
+        foreach (var field in table.Fields)
+        {
+            if (!values.TryGetValue(field.Name, out var value) || value is null)
+            {
+                continue;
+            }
+
+            var index = new F_RecordIndex
+            {
+                TableId = table.Id,
+                RecordId = record.Id,
+                FieldName = field.Name
+            };
+
+            switch (field.DataType)
+            {
+                case FieldDataType.Number or FieldDataType.Int:
+                    index.NumberValue = Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+                    break;
+                case FieldDataType.Decimal:
+                    index.NumberValue = Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+                    break;
+                case FieldDataType.Boolean:
+                    index.BoolValue = Convert.ToBoolean(value, CultureInfo.InvariantCulture);
+                    break;
+                case FieldDataType.Date or FieldDataType.DateTime:
+                    index.DateValue = ParseDateValue(value);
+                    break;
+                default:
+                    index.StringValue = value.ToString();
+                    break;
+            }
+
+            if (index.StringValue is null && index.NumberValue is null && index.DateValue is null && index.BoolValue is null)
+            {
+                continue;
+            }
+
+            indexes.Add(index);
+        }
+
+        if (indexes.Count > 0)
+        {
+            await _db.RecordIndexes.AddRangeAsync(indexes, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static string NormalizeStringValue(SFieldDefinition field, object value)

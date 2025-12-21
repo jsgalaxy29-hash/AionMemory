@@ -194,10 +194,12 @@ public class DataEngineValidationTests
         await engine.CreateTableAsync(table);
         await engine.InsertAsync(table.Id, "{ \"Title\": \"Hello\" }");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => engine.QueryAsync(table.Id, new QuerySpec
+        var results = await engine.QueryAsync(table.Id, new QuerySpec
         {
             Filters = { new QueryFilter("Title", QueryFilterOperator.Contains, "Hel") }
-        }));
+        });
+
+        Assert.Single(results);
     }
 }
 

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using Aion.Domain;
 using Aion.Infrastructure.Services;
@@ -158,6 +159,21 @@ public class DataEngineCrudTests : IClassFixture<SqliteInMemoryFixture>
             Filters = { new QueryFilter("Title", QueryFilterOperator.Equals, "Gamma note") }
         });
         Assert.Single(filtered);
+
+        var range = await engine.QueryAsync(table.Id, new QuerySpec
+        {
+            Filters = { new QueryFilter("Priority", QueryFilterOperator.GreaterThan, 1) },
+            OrderBy = "Priority"
+        });
+
+        Assert.Equal(new[] { "Beta", "Gamma note" }, range.Select(r => ReadField(r, "Title")));
+
+        var contains = await engine.QueryAsync(table.Id, new QuerySpec
+        {
+            Filters = { new QueryFilter("Title", QueryFilterOperator.Contains, "note") }
+        });
+
+        Assert.Single(contains);
 
         var fts = await engine.QueryAsync(table.Id, new QuerySpec { FullText = "Gamma" });
         Assert.Single(fts);
