@@ -155,7 +155,7 @@ public class DataEngineCrudTests : IClassFixture<SqliteInMemoryFixture>
 
         var filtered = await engine.QueryAsync(table.Id, new QuerySpec
         {
-            Filters = { new QueryFilter("Title", QueryFilterOperator.Contains, "Gamma") }
+            Filters = { new QueryFilter("Title", QueryFilterOperator.Equals, "Gamma note") }
         });
         Assert.Single(filtered);
 
