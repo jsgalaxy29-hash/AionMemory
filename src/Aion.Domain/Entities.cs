@@ -288,6 +288,28 @@ public class F_Record
     public DateTimeOffset? DeletedAt { get; set; }
 }
 
+public class F_RecordIndex
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    [Column("EntityTypeId")]
+    public Guid TableId { get; set; }
+
+    public Guid RecordId { get; set; }
+
+    [Required, StringLength(128)]
+    public string FieldName { get; set; } = string.Empty;
+
+    [StringLength(2048)]
+    public string? StringValue { get; set; }
+
+    public decimal? NumberValue { get; set; }
+
+    public DateTimeOffset? DateValue { get; set; }
+
+    public bool? BoolValue { get; set; }
+}
+
 public sealed record LookupResolution(Guid TargetId, string? Label, Guid? TableId = null, string? TableName = null);
 
 public sealed record ResolvedRecord(F_Record Record, IReadOnlyDictionary<string, object?> Data, IReadOnlyDictionary<string, LookupResolution> Lookups);

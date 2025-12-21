@@ -29,6 +29,7 @@ public class AionDbContext : DbContext
     public DbSet<F_File> Files => Set<F_File>();
     public DbSet<F_FileLink> FileLinks => Set<F_FileLink>();
     public DbSet<F_Record> Records => Set<F_Record>();
+    public DbSet<F_RecordIndex> RecordIndexes => Set<F_RecordIndex>();
     public DbSet<NoteSearchEntry> NoteSearch => Set<NoteSearchEntry>();
     public DbSet<RecordSearchEntry> RecordSearch => Set<RecordSearchEntry>();
     public DbSet<FileSearchEntry> FileSearch => Set<FileSearchEntry>();
@@ -165,6 +166,19 @@ public class AionDbContext : DbContext
             builder.Property(r => r.DeletedAt);
             builder.HasIndex(r => new { r.TableId, r.CreatedAt });
             builder.HasOne<STable>().WithMany().HasForeignKey(r => r.TableId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<F_RecordIndex>(builder =>
+        {
+            builder.Property(r => r.TableId).HasColumnName("EntityTypeId");
+            builder.Property(r => r.FieldName).IsRequired().HasMaxLength(128);
+            builder.Property(r => r.StringValue).HasMaxLength(2048);
+            builder.HasIndex(r => new { r.TableId, r.FieldName, r.RecordId }).IsUnique();
+            builder.HasIndex(r => new { r.TableId, r.FieldName, r.StringValue });
+            builder.HasIndex(r => new { r.TableId, r.FieldName, r.NumberValue });
+            builder.HasIndex(r => new { r.TableId, r.FieldName, r.DateValue });
+            builder.HasIndex(r => new { r.TableId, r.FieldName, r.BoolValue });
+            builder.HasOne<F_Record>().WithMany().HasForeignKey(r => r.RecordId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<S_VisionAnalysis>(builder =>

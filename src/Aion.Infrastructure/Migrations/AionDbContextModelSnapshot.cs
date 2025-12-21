@@ -236,6 +236,55 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("Records");
                 });
 
+            modelBuilder.Entity("Aion.Domain.F_RecordIndex", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool?>("BoolValue")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("DateValue")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FieldName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("NumberValue")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RecordId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StringValue")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TableId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("EntityTypeId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RecordId");
+
+                    b.HasIndex("TableId", "FieldName", "BoolValue");
+
+                    b.HasIndex("TableId", "FieldName", "DateValue");
+
+                    b.HasIndex("TableId", "FieldName", "NumberValue");
+
+                    b.HasIndex("TableId", "FieldName", "RecordId")
+                        .IsUnique();
+
+                    b.HasIndex("TableId", "FieldName", "StringValue");
+
+                    b.ToTable("RecordIndexes");
+                });
+
             modelBuilder.Entity("Aion.Domain.J_Event_Link", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1135,6 +1184,15 @@ namespace Aion.Infrastructure.Migrations
                     b.HasOne("Aion.Domain.S_Module", null)
                         .WithMany("AutomationRules")
                         .HasForeignKey("ModuleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Aion.Domain.F_RecordIndex", b =>
+                {
+                    b.HasOne("Aion.Domain.F_Record", null)
+                        .WithMany()
+                        .HasForeignKey("RecordId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
