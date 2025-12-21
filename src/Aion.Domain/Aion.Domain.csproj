@@ -6,5 +6,6 @@
     <LangVersion>preview</LangVersion>
     <RootNamespace>Aion.Domain</RootNamespace>
     <AssemblyName>Aion.Domain</AssemblyName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 </Project>
