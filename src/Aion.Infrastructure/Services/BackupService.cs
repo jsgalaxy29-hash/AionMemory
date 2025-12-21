@@ -1,8 +1,8 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Aion.Domain;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -17,18 +17,23 @@ public sealed class BackupService : IBackupService
 
     private readonly AionDatabaseOptions _databaseOptions;
     private readonly BackupOptions _backupOptions;
+    private readonly StorageOptions _storageOptions;
     private readonly ILogger<BackupService> _logger;
     private readonly byte[] _encryptionKey;
+    private readonly string _storageRoot;
 
     public BackupService(
         IOptions<AionDatabaseOptions> databaseOptions,
         IOptions<BackupOptions> backupOptions,
+        IOptions<StorageOptions> storageOptions,
         ILogger<BackupService> logger)
     {
         _databaseOptions = databaseOptions.Value;
         _backupOptions = backupOptions.Value;
+        _storageOptions = storageOptions.Value;
         _logger = logger;
         _encryptionKey = DeriveKey(_databaseOptions.EncryptionKey);
+        _storageRoot = _storageOptions.RootPath ?? throw new InvalidOperationException("Storage root path must be configured");
 
         if (string.IsNullOrWhiteSpace(_backupOptions.BackupFolder))
         {
@@ -46,10 +51,20 @@ public sealed class BackupService : IBackupService
             throw new FileNotFoundException("Database file not found", databasePath);
         }
 
+        var databaseInfo = new FileInfo(databasePath);
+        if (databaseInfo.Length > _backupOptions.MaxDatabaseSizeBytes)
+        {
+            throw new InvalidOperationException($"Database exceeds the maximum backup size of {_backupOptions.MaxDatabaseSizeBytes / (1024 * 1024)} MB");
+        }
+
         var timestamp = DateTimeOffset.UtcNow;
+        var snapshotName = $"snapshot-{timestamp:yyyyMMddHHmmss}";
+        var snapshotFolder = Path.Combine(_backupOptions.BackupFolder!, snapshotName);
+        Directory.CreateDirectory(snapshotFolder);
+
         var extension = encrypt ? ".db.enc" : ".db";
-        var fileName = $"snapshot-{timestamp:yyyyMMddHHmmss}{extension}";
-        var destination = Path.Combine(_backupOptions.BackupFolder!, fileName);
+        var databaseFileName = $"database{extension}";
+        var destination = Path.Combine(snapshotFolder, databaseFileName);
 
         if (encrypt)
         {
@@ -76,18 +91,27 @@ public sealed class BackupService : IBackupService
             await source.CopyToAsync(dest, cancellationToken).ConfigureAwait(false);
         }
 
+        var storageArchiveName = "storage.zip";
+        var storageArchivePath = Path.Combine(snapshotFolder, storageArchiveName);
+        await CreateStorageArchiveAsync(storageArchivePath, cancellationToken).ConfigureAwait(false);
+
         var manifest = new BackupManifest
         {
-            FileName = fileName,
+            FileName = Path.Combine(snapshotName, databaseFileName),
             Size = new FileInfo(destination).Length,
             CreatedAt = timestamp,
             Sha256 = await ComputeHashAsync(destination, cancellationToken).ConfigureAwait(false),
             SourcePath = databasePath,
-            IsEncrypted = encrypt
+            IsEncrypted = encrypt,
+            StorageArchivePath = Path.Combine(snapshotName, storageArchiveName),
+            StorageSize = new FileInfo(storageArchivePath).Length,
+            StorageSha256 = await ComputeHashAsync(storageArchivePath, cancellationToken).ConfigureAwait(false),
+            StorageRoot = _storageRoot
         };
 
+        var manifestPath = Path.Combine(_backupOptions.BackupFolder!, $"{snapshotName}.json");
         await using (var manifestStream = new FileStream(
-                       Path.ChangeExtension(destination, ".json"),
+                       manifestPath,
                        FileMode.Create,
                        FileAccess.Write,
                        FileShare.None,
@@ -154,22 +178,69 @@ public sealed class BackupService : IBackupService
         var hash = await sha.ComputeHashAsync(stream, cancellationToken).ConfigureAwait(false);
         return Convert.ToHexString(hash);
     }
+
+    private async Task CreateStorageArchiveAsync(string archivePath, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(archivePath)!);
+        await using var archiveStream = new FileStream(
+            archivePath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            81920,
+            FileOptions.Asynchronous);
+
+        using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: true);
+        var backupFolder = Path.GetFullPath(_backupOptions.BackupFolder!);
+        var storageRoot = Path.GetFullPath(_storageRoot);
+
+        if (!Directory.Exists(storageRoot))
+        {
+            Directory.CreateDirectory(storageRoot);
+        }
+
+        foreach (var file in Directory.EnumerateFiles(storageRoot, "*", SearchOption.AllDirectories))
+        {
+            var fullPath = Path.GetFullPath(file);
+            if (fullPath.StartsWith(backupFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var entryName = Path.GetRelativePath(storageRoot, fullPath).Replace('\\', '/');
+            var entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+            await using var source = new FileStream(
+                fullPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                81920,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            await using var dest = entry.Open();
+            await source.CopyToAsync(dest, cancellationToken).ConfigureAwait(false);
+        }
+
+        await archiveStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
 }
 
 public sealed class RestoreService : IRestoreService
 {
     private readonly BackupOptions _backupOptions;
     private readonly AionDatabaseOptions _databaseOptions;
+    private readonly StorageOptions _storageOptions;
     private readonly ILogger<RestoreService> _logger;
     private readonly byte[] _encryptionKey;
 
     public RestoreService(
         IOptions<BackupOptions> backupOptions,
         IOptions<AionDatabaseOptions> databaseOptions,
+        IOptions<StorageOptions> storageOptions,
         ILogger<RestoreService> logger)
     {
         _backupOptions = backupOptions.Value;
         _databaseOptions = databaseOptions.Value;
+        _storageOptions = storageOptions.Value;
         _logger = logger;
         _encryptionKey = BackupService.DeriveKey(_databaseOptions.EncryptionKey);
     }
@@ -182,25 +253,25 @@ public sealed class RestoreService : IRestoreService
             throw new FileNotFoundException("No backup manifest found", _backupOptions.BackupFolder);
         }
 
-        var backupFile = Path.Combine(_backupOptions.BackupFolder!, manifest.FileName);
-        if (!File.Exists(backupFile))
+        var databaseBackupFile = Path.Combine(_backupOptions.BackupFolder!, manifest.FileName);
+        if (!File.Exists(databaseBackupFile))
         {
-            throw new FileNotFoundException("Backup file missing", backupFile);
+            throw new FileNotFoundException("Backup file missing", databaseBackupFile);
         }
 
         var destination = destinationPath ?? ResolveDatabasePath(_databaseOptions.ConnectionString);
         var tempPath = destination + ".restoring";
 
-        if (manifest.IsEncrypted || backupFile.EndsWith(".enc", StringComparison.OrdinalIgnoreCase))
+        if (manifest.IsEncrypted || databaseBackupFile.EndsWith(".enc", StringComparison.OrdinalIgnoreCase))
         {
-            var payload = await File.ReadAllBytesAsync(backupFile, cancellationToken).ConfigureAwait(false);
+            var payload = await File.ReadAllBytesAsync(databaseBackupFile, cancellationToken).ConfigureAwait(false);
             var decrypted = Decrypt(payload);
             await File.WriteAllBytesAsync(tempPath, decrypted, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             await using var source = new FileStream(
-                backupFile,
+                databaseBackupFile,
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.Read,
@@ -231,7 +302,13 @@ public sealed class RestoreService : IRestoreService
         }
 
         File.Move(tempPath, destination, overwrite: true);
-        _logger.LogInformation("Backup restored from {BackupFile} to {Destination}", backupFile, destination);
+
+        if (!string.IsNullOrWhiteSpace(manifest.StorageArchivePath))
+        {
+            await RestoreStorageAsync(manifest, cancellationToken).ConfigureAwait(false);
+        }
+
+        _logger.LogInformation("Backup restored from {BackupFile} to {Destination}", databaseBackupFile, destination);
     }
 
     private BackupManifest? LoadLatestManifest()
@@ -279,6 +356,68 @@ public sealed class RestoreService : IRestoreService
 
         return Path.GetFullPath(builder.DataSource);
     }
+
+    private async Task RestoreStorageAsync(BackupManifest manifest, CancellationToken cancellationToken)
+    {
+        var archivePath = Path.Combine(_backupOptions.BackupFolder!, manifest.StorageArchivePath!);
+        if (!File.Exists(archivePath))
+        {
+            throw new FileNotFoundException("Storage archive missing", archivePath);
+        }
+
+        if (_backupOptions.RequireIntegrityCheck && !string.IsNullOrWhiteSpace(manifest.StorageSha256))
+        {
+            var archiveHash = await BackupService.ComputeHashAsync(archivePath, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(archiveHash, manifest.StorageSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Storage archive integrity check failed: hash mismatch");
+            }
+        }
+
+        var destinationRoot = _storageOptions.RootPath ?? manifest.StorageRoot ?? throw new InvalidOperationException("Storage root path must be configured");
+        var restoringRoot = destinationRoot + ".restoring";
+        if (Directory.Exists(restoringRoot))
+        {
+            Directory.Delete(restoringRoot, recursive: true);
+        }
+
+        Directory.CreateDirectory(restoringRoot);
+        using (var archive = ZipFile.OpenRead(archivePath))
+        {
+            foreach (var entry in archive.Entries)
+            {
+                var targetPath = Path.Combine(restoringRoot, entry.FullName);
+                var directory = Path.GetDirectoryName(targetPath);
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                if (string.IsNullOrEmpty(entry.Name))
+                {
+                    continue;
+                }
+
+                await using var entryStream = entry.Open();
+                await using var fileStream = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                await entryStream.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        var backupExistingRoot = destinationRoot + ".bak";
+        if (Directory.Exists(backupExistingRoot))
+        {
+            Directory.Delete(backupExistingRoot, recursive: true);
+        }
+
+        if (Directory.Exists(destinationRoot))
+        {
+            Directory.Move(destinationRoot, backupExistingRoot);
+        }
+
+        Directory.Move(restoringRoot, destinationRoot);
+        _logger.LogInformation("Storage restored to {Destination}", destinationRoot);
+    }
 }
 
 public sealed class LogService : ILogService
@@ -300,7 +439,7 @@ public sealed class LogService : ILogService
         => _logger.LogError(exception, "{Message} {@Properties}", message, properties ?? new Dictionary<string, object?>());
 }
 
-public sealed class BackupSchedulerService : BackgroundService
+public sealed class BackupSchedulerService : Microsoft.Extensions.Hosting.BackgroundService
 {
     private readonly IBackupService _backupService;
     private readonly ILogger<BackupSchedulerService> _logger;

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using Aion.Domain;
 using Microsoft.Extensions.Hosting;
@@ -48,26 +49,35 @@ public sealed class BackupCleanupService : BackgroundService
         var manifests = Directory.EnumerateFiles(_options.BackupFolder, "*.json")
             .Select(path => ReadManifest(path))
             .Where(m => m.Manifest is not null)
-            .Select(m => m.Manifest!)
-            .OrderByDescending(m => m.CreatedAt)
+            .OrderByDescending(m => m.Manifest!.CreatedAt)
             .ToList();
 
-        var removalQueue = new List<BackupManifest>();
+        var removalQueue = new List<(BackupManifest Manifest, string ManifestPath)>();
         for (var i = 0; i < manifests.Count; i++)
         {
             var manifest = manifests[i];
-            if (manifest.CreatedAt < cutoff || i >= _options.MaxBackups)
+            if (manifest.Manifest!.CreatedAt < cutoff || i >= _options.MaxBackups)
             {
-                removalQueue.Add(manifest);
+                removalQueue.Add((manifest.Manifest!, manifest.Path));
             }
         }
 
         foreach (var manifest in removalQueue)
         {
-            var backupPath = Path.Combine(_options.BackupFolder, manifest.FileName);
-            var manifestPath = Path.ChangeExtension(backupPath, ".json");
-            TryDelete(manifestPath);
+            var backupPath = Path.Combine(_options.BackupFolder, manifest.Manifest.FileName);
+            TryDelete(manifest.ManifestPath);
             TryDelete(backupPath);
+
+            if (!string.IsNullOrWhiteSpace(manifest.Manifest.StorageArchivePath))
+            {
+                TryDelete(Path.Combine(_options.BackupFolder, manifest.Manifest.StorageArchivePath));
+            }
+
+            var snapshotFolder = Path.GetDirectoryName(backupPath);
+            if (!string.IsNullOrWhiteSpace(snapshotFolder) && Directory.Exists(snapshotFolder) && !Directory.EnumerateFileSystemEntries(snapshotFolder).Any())
+            {
+                TryDelete(snapshotFolder);
+            }
         }
 
         _logger.LogInformation("Backup cleanup completed. Removed {Count} backups", removalQueue.Count);
@@ -101,6 +111,10 @@ public sealed class BackupCleanupService : BackgroundService
             if (File.Exists(path))
             {
                 File.Delete(path);
+            }
+            else if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
             }
         }
         catch (Exception ex)

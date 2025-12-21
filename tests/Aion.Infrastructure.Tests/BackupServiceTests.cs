@@ -19,13 +19,23 @@ public class BackupServiceTests
         Directory.CreateDirectory(tempRoot);
 
         var databasePath = Path.Combine(tempRoot, "aion.db");
+        var storageRoot = Path.Combine(tempRoot, "storage");
         var backupFolder = Path.Combine(tempRoot, "backups");
         Directory.CreateDirectory(backupFolder);
+        Directory.CreateDirectory(storageRoot);
+
+        var storageFile = Path.Combine(storageRoot, "sample.txt");
+        await File.WriteAllTextAsync(storageFile, "before");
 
         var dbOptions = Options.Create(new AionDatabaseOptions
         {
             ConnectionString = $"Data Source={databasePath}",
             EncryptionKey = new string('k', 32)
+        });
+        var storageOptions = Options.Create(new StorageOptions
+        {
+            RootPath = storageRoot,
+            EncryptPayloads = false
         });
         var backupOptions = Options.Create(new BackupOptions
         {
@@ -42,7 +52,7 @@ public class BackupServiceTests
             await command.ExecuteNonQueryAsync();
         }
 
-        var backupService = new BackupService(dbOptions, backupOptions, NullLogger<BackupService>.Instance);
+        var backupService = new BackupService(dbOptions, backupOptions, storageOptions, NullLogger<BackupService>.Instance);
         var manifest = await backupService.CreateBackupAsync(cancellationToken: default);
 
         await using (var connection = new SqliteConnection(dbOptions.Value.ConnectionString))
@@ -51,9 +61,10 @@ public class BackupServiceTests
             var command = connection.CreateCommand();
             command.CommandText = "INSERT INTO sample(value) VALUES('after');";
             await command.ExecuteNonQueryAsync();
+            await File.WriteAllTextAsync(storageFile, "after");
         }
 
-        var restoreService = new RestoreService(backupOptions, dbOptions, NullLogger<RestoreService>.Instance);
+        var restoreService = new RestoreService(backupOptions, dbOptions, storageOptions, NullLogger<RestoreService>.Instance);
         await restoreService.RestoreLatestAsync(cancellationToken: default);
 
         await using var verifyConnection = new SqliteConnection(dbOptions.Value.ConnectionString);
@@ -64,5 +75,6 @@ public class BackupServiceTests
 
         Assert.False(manifest.IsEncrypted);
         Assert.Equal(1, count);
+        Assert.Equal("before", await File.ReadAllTextAsync(storageFile));
     }
 }

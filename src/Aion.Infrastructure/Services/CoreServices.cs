@@ -1336,29 +1336,24 @@ public sealed class AgendaService : IAionAgendaService, IAgendaService
 
 public sealed class FileStorageService : IFileStorageService
 {
-    private readonly string _storageRoot;
     private readonly StorageOptions _options;
     private readonly AionDbContext _db;
     private readonly ISearchService _search;
     private readonly ILogger<FileStorageService> _logger;
-    private readonly byte[] _encryptionKey;
+    private readonly IStorageService _storage;
 
-    public FileStorageService(IOptions<StorageOptions> options, AionDbContext db, ISearchService search, ILogger<FileStorageService> logger)
+    public FileStorageService(IOptions<StorageOptions> options, AionDbContext db, ISearchService search, IStorageService storage, ILogger<FileStorageService> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options.Value;
-        _storageRoot = _options.RootPath ?? throw new InvalidOperationException("Storage root path must be provided");
         _db = db;
         _search = search;
+        _storage = storage;
         _logger = logger;
-        _encryptionKey = DeriveKey(_options.EncryptionKey ?? throw new InvalidOperationException("Storage encryption key missing"));
-        Directory.CreateDirectory(_storageRoot);
     }
 
     public async Task<F_File> SaveAsync(string fileName, Stream content, string mimeType, CancellationToken cancellationToken = default)
     {
-        var id = Guid.NewGuid();
-        var path = Path.Combine(_storageRoot, id.ToString());
         await using var buffer = new MemoryStream();
         await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
 
@@ -1370,26 +1365,23 @@ public sealed class FileStorageService : IFileStorageService
         await EnsureStorageQuotaAsync(buffer.Length, cancellationToken).ConfigureAwait(false);
 
         buffer.Position = 0;
-        var hash = ComputeHash(buffer);
-        buffer.Position = 0;
-
-        var encryptedPayload = Encrypt(buffer.ToArray());
-        await File.WriteAllBytesAsync(path, encryptedPayload, cancellationToken).ConfigureAwait(false);
+        var id = Guid.NewGuid();
+        var stored = await _storage.SaveAsync(fileName, buffer, cancellationToken).ConfigureAwait(false);
 
         var file = new F_File
         {
             Id = id,
             FileName = fileName,
             MimeType = mimeType,
-            StoragePath = path,
-            Size = buffer.Length,
-            Sha256 = hash,
+            StoragePath = stored.Path,
+            Size = stored.Size,
+            Sha256 = stored.Sha256,
             UploadedAt = DateTimeOffset.UtcNow
         };
 
         await _db.Files.AddAsync(file, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("File {FileId} stored at {Path}", id, path);
+        _logger.LogInformation("File {FileId} stored at {Path}", id, stored.Path);
         await _search.IndexFileAsync(file, cancellationToken).ConfigureAwait(false);
         return file;
     }
@@ -1397,19 +1389,8 @@ public sealed class FileStorageService : IFileStorageService
     public async Task<Stream> OpenAsync(Guid fileId, CancellationToken cancellationToken = default)
     {
         var file = await _db.Files.FirstAsync(f => f.Id == fileId, cancellationToken).ConfigureAwait(false);
-        var encryptedBytes = await File.ReadAllBytesAsync(file.StoragePath, cancellationToken).ConfigureAwait(false);
-        var decrypted = Decrypt(encryptedBytes);
-
-        if (_options.RequireIntegrityCheck && !string.IsNullOrWhiteSpace(file.Sha256))
-        {
-            var computedHash = ComputeHash(new MemoryStream(decrypted));
-            if (!string.Equals(computedHash, file.Sha256, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("File integrity validation failed");
-            }
-        }
-
-        return new MemoryStream(decrypted, writable: false);
+        return await _storage.OpenReadAsync(file.StoragePath, _options.RequireIntegrityCheck ? file.Sha256 : null, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task DeleteAsync(Guid fileId, CancellationToken cancellationToken = default)
@@ -1430,10 +1411,7 @@ public sealed class FileStorageService : IFileStorageService
         _db.Files.Remove(file);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        if (File.Exists(file.StoragePath))
-        {
-            File.Delete(file.StoragePath);
-        }
+        await _storage.DeleteAsync(file.StoragePath, cancellationToken).ConfigureAwait(false);
 
         await _search.RemoveAsync("File", fileId, cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("File {FileId} deleted with {LinkCount} link(s) removed", fileId, links.Count);
@@ -1472,63 +1450,6 @@ public sealed class FileStorageService : IFileStorageService
         {
             throw new InvalidOperationException("Storage quota exceeded; delete files before uploading new content.");
         }
-    }
-
-    private static byte[] DeriveKey(string material)
-    {
-        try
-        {
-            return Convert.FromBase64String(material);
-        }
-        catch (FormatException)
-        {
-            return SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material));
-        }
-    }
-
-    private byte[] Encrypt(ReadOnlySpan<byte> plaintext)
-    {
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        var ciphertext = new byte[plaintext.Length];
-        var tag = new byte[16];
-
-        using var aes = new AesGcm(_encryptionKey);
-        aes.Encrypt(nonce, plaintext, ciphertext, tag);
-
-        var payload = new byte[nonce.Length + tag.Length + ciphertext.Length];
-        Buffer.BlockCopy(nonce, 0, payload, 0, nonce.Length);
-        Buffer.BlockCopy(tag, 0, payload, nonce.Length, tag.Length);
-        Buffer.BlockCopy(ciphertext, 0, payload, nonce.Length + tag.Length, ciphertext.Length);
-        return payload;
-    }
-
-    private byte[] Decrypt(ReadOnlySpan<byte> payload)
-    {
-        var nonce = payload[..12];
-        var tag = payload[12..28];
-        var cipher = payload[28..];
-        var plaintext = new byte[cipher.Length];
-
-        using var aes = new AesGcm(_encryptionKey);
-        aes.Decrypt(nonce, cipher, tag, plaintext);
-        return plaintext;
-    }
-
-    private static string ComputeHash(Stream stream)
-    {
-        if (stream.CanSeek)
-        {
-            stream.Position = 0;
-        }
-
-        using var sha = SHA256.Create();
-        var hash = sha.ComputeHash(stream);
-        if (stream.CanSeek)
-        {
-            stream.Position = 0;
-        }
-
-        return Convert.ToHexString(hash);
     }
 }
 

@@ -15,6 +15,7 @@ public sealed record StorageOptions
     public long MaxTotalBytes { get; set; } = 512L * 1024 * 1024;
     public long MaxFileSizeBytes { get; set; } = 50L * 1024 * 1024;
     public bool RequireIntegrityCheck { get; set; } = true;
+    public bool EncryptPayloads { get; set; } = true;
 }
 
 public sealed record MarketplaceOptions
