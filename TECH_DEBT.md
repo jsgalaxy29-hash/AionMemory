@@ -10,6 +10,9 @@
 - **Indexation FTS limitée au contenu brut**  
   **Impact :** les labels résolus ou champs calculés ne sont pas présents dans l’index, ce qui réduit la pertinence des recherches.  
   **Priorité :** moyenne.
+- **Absence de stratégies de versionnage de schéma modules**  
+  **Impact :** l’évolution des modules (ajout/suppression de champs) repose sur des migrations manuelles, avec risque de divergence entre environnements.  
+  **Priorité :** élevée.
 
 ## Infrastructure / stockage
 - **Rotation des clés SQLCipher et du stockage fichier non outillée**  
@@ -21,6 +24,9 @@
 - **Surveillance temps-réel des migrations absente**  
   **Impact :** en cas d’échec migration en production, l’application peut rester partiellement initialisée sans alerte centralisée.  
   **Priorité :** moyenne.
+- **Journalisation système/plateforme peu normalisée**  
+  **Impact :** corrélation difficile entre logs applicatifs et événements OS (suspension, reprise, crash mobiles).  
+  **Priorité :** basse.
 
 ## Aion.AI
 - **Pas de gestion centralisée des timeouts/réessais par provider HTTP**  
@@ -29,6 +35,9 @@
 - **Réponses non structurées tolérées uniquement par fallback**  
   **Impact :** risque de perte d’intention ou de paramètres ; nécessite un durcissement des prompts ou une validation plus stricte.  
   **Priorité :** moyenne.
+- **Métriques IA non persistées**  
+  **Impact :** absence de visibilité sur le coût, le taux d’erreur ou la dérive des modèles utilisés en production.  
+  **Priorité :** basse.
 
 ## UI / MAUI Blazor
 - **Couverture de tests UI minimale**  
@@ -37,3 +46,9 @@
 - **Offline/synchronisation non simulés dans les tests**  
   **Impact :** comportements spécifiques aux plateformes mobiles non validés en CI.  
   **Priorité :** moyenne.
+- **Permissions avancées non modélisées (partage sélectif, scopes par module)**  
+  **Impact :** blocages fonctionnels pour les équipes multi-rôles ; contournements probables côté client.  
+  **Priorité :** élevée.
+- **Absence de mode accessibilité étendu (gestures, contrastes)**  
+  **Impact :** frein à l’adoption sur mobiles/tablettes pour certains utilisateurs.  
+  **Priorité :** basse.
