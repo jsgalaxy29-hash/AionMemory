@@ -1,3 +1,5 @@
+using Aion.Domain;
+
 namespace Aion.AI;
 
 /// <summary>
@@ -22,4 +24,20 @@ public interface ILLMProvider
 public interface IEmbeddingProvider
 {
     Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default);
+}
+
+public interface IChatModel : ILLMProvider
+{
+}
+
+public interface IEmbeddingsModel : IEmbeddingProvider
+{
+}
+
+public interface ITranscriptionModel : IAudioTranscriptionProvider
+{
+}
+
+public interface IVisionModel : IVisionService
+{
 }
