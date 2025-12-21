@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Data.Common;
 using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
@@ -250,6 +251,116 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         }
 
         return resolved;
+    }
+
+    public async Task<IEnumerable<RecordSearchHit>> SearchAsync(Guid tableId, string query, SearchOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return Array.Empty<RecordSearchHit>();
+        }
+
+        var validated = NormalizeSearchOptions(options);
+        _ = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
+
+        var connection = _db.Database.GetDbConnection();
+        var shouldClose = connection.State != System.Data.ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            await using var command = BuildSearchCommand(connection, query, tableId, validated);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var results = new List<RecordSearchHit>();
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var recordId = reader.GetGuid(0);
+                var score = reader.IsDBNull(1) ? 0d : reader.GetDouble(1);
+                var snippet = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
+                var content = reader.IsDBNull(3) ? string.Empty : reader.GetString(3);
+
+                if (string.IsNullOrWhiteSpace(snippet))
+                {
+                    snippet = BuildFallbackSnippet(content, validated.HighlightBefore, validated.HighlightAfter);
+                }
+
+                results.Add(new RecordSearchHit(recordId, score, snippet));
+            }
+
+            return results;
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static SearchOptions NormalizeSearchOptions(SearchOptions? options)
+    {
+        var normalized = options ?? new SearchOptions();
+        var take = Math.Clamp(normalized.Take, 1, SearchOptions.MaxPageSize);
+        var defaults = new SearchOptions();
+        return normalized with
+        {
+            Take = take,
+            Skip = Math.Max(0, normalized.Skip),
+            HighlightBefore = string.IsNullOrEmpty(normalized.HighlightBefore) ? defaults.HighlightBefore : normalized.HighlightBefore,
+            HighlightAfter = string.IsNullOrEmpty(normalized.HighlightAfter) ? defaults.HighlightAfter : normalized.HighlightAfter,
+            SnippetTokens = normalized.SnippetTokens <= 0 ? SearchOptions.DefaultSnippetTokens : normalized.SnippetTokens
+        };
+    }
+
+    private static DbCommand BuildSearchCommand(DbConnection connection, string query, Guid tableId, SearchOptions options)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+SELECT RecordId,
+       COALESCE(1.0 / (bm25(RecordSearch) + 1), 0) AS Score,
+       snippet(RecordSearch, 2, $before, $after, ' … ', $tokens) AS Snippet,
+       Content
+FROM RecordSearch
+WHERE EntityTypeId = $tableId AND RecordSearch MATCH $query
+ORDER BY Score DESC, RecordId
+LIMIT $take OFFSET $skip;
+""";
+
+        AddParameter(command, "$tableId", tableId);
+        AddParameter(command, "$query", query);
+        AddParameter(command, "$before", options.HighlightBefore);
+        AddParameter(command, "$after", options.HighlightAfter);
+        AddParameter(command, "$tokens", options.SnippetTokens);
+        AddParameter(command, "$take", options.Take);
+        AddParameter(command, "$skip", options.Skip);
+
+        return command;
+    }
+
+    private static void AddParameter(DbCommand command, string name, object? value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value ?? DBNull.Value;
+        command.Parameters.Add(parameter);
+    }
+
+    private static string BuildFallbackSnippet(string content, string before, string after)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return string.Empty;
+        }
+
+        const int limit = 160;
+        var snippet = content.Length <= limit ? content : content[..limit] + "…";
+        return $"{before}{snippet}{after}";
     }
 
     private static IQueryable<F_Record> FilterByTable(IQueryable<F_Record> query, STable table)
