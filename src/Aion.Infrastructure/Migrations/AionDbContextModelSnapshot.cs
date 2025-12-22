@@ -296,6 +296,51 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("RecordIndexes");
                 });
 
+            modelBuilder.Entity("Aion.Domain.F_RecordAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("ChangedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<string>("ChangeType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DataJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PreviousDataJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RecordId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TableId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("EntityTypeId");
+
+                    b.Property<long>("Version")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1L);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TableId", "RecordId", "ChangedAt");
+
+                    b.HasIndex("TableId", "RecordId", "Version")
+                        .IsUnique();
+
+                    b.ToTable("RecordAudits");
+                });
+
             modelBuilder.Entity("Aion.Domain.J_Event_Link", b =>
                 {
                     b.Property<Guid>("Id")

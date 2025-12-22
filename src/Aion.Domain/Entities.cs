@@ -316,9 +316,39 @@ public class F_RecordIndex
     public bool? BoolValue { get; set; }
 }
 
+public class F_RecordAudit
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    [Column("EntityTypeId")]
+    public Guid TableId { get; set; }
+
+    public Guid RecordId { get; set; }
+
+    public ChangeType ChangeType { get; set; }
+
+    public long Version { get; set; }
+
+    [Required]
+    public string DataJson { get; set; } = string.Empty;
+
+    public string? PreviousDataJson { get; set; }
+
+    public DateTimeOffset ChangedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed record LookupResolution(Guid TargetId, string? Label, Guid? TableId = null, string? TableName = null);
 
 public sealed record ResolvedRecord(F_Record Record, IReadOnlyDictionary<string, object?> Data, IReadOnlyDictionary<string, LookupResolution> Lookups);
+
+public enum ChangeType
+{
+    Create,
+    Update,
+    Delete
+}
+
+public sealed record ChangeSet(Guid TableId, Guid RecordId, ChangeType ChangeType, long Version, DateTimeOffset ChangedAt, string DataJson, string? PreviousDataJson);
 
 public class S_VisionAnalysis
 {

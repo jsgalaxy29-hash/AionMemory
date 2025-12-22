@@ -59,6 +59,9 @@ public sealed class AuthorizedDataEngine : IDataEngine
     public Task DeleteAsync(Guid tableId, Guid id, CancellationToken cancellationToken = default)
         => ExecuteAsync(PermissionAction.Delete, tableId, () => _inner.DeleteAsync(tableId, id, cancellationToken), cancellationToken, id);
 
+    public Task<IEnumerable<ChangeSet>> GetHistoryAsync(Guid tableId, Guid recordId, CancellationToken cancellationToken = default)
+        => ExecuteAsync(PermissionAction.Read, tableId, () => _inner.GetHistoryAsync(tableId, recordId, cancellationToken), cancellationToken, recordId);
+
     public Task<int> CountAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default)
         => ExecuteAsync(PermissionAction.Read, tableId, () => _inner.CountAsync(tableId, spec, cancellationToken), cancellationToken);
 
