@@ -54,9 +54,12 @@ public class AionDbContext : DbContext
         {
             builder.Property(m => m.Name).IsRequired().HasMaxLength(128);
             builder.Property(m => m.Description).HasMaxLength(1024);
+            builder.Property(m => m.ModifiedAt).IsRequired().HasDefaultValueSql("CURRENT_TIMESTAMP");
+            builder.Property(m => m.Version).IsRequired().HasDefaultValue(1L);
             builder.HasMany(m => m.EntityTypes).WithOne().HasForeignKey(e => e.ModuleId);
             builder.HasMany(m => m.Reports).WithOne().HasForeignKey(r => r.ModuleId);
             builder.HasMany(m => m.AutomationRules).WithOne().HasForeignKey(r => r.ModuleId);
+            builder.HasIndex(m => m.ModifiedAt);
         });
 
         modelBuilder.Entity<S_EntityType>(builder =>
@@ -166,7 +169,10 @@ public class AionDbContext : DbContext
             builder.Property(r => r.DataJson).IsRequired();
             builder.Property(r => r.TableId).HasColumnName("EntityTypeId");
             builder.Property(r => r.DeletedAt);
+            builder.Property(r => r.ModifiedAt).IsRequired().HasDefaultValueSql("CURRENT_TIMESTAMP");
+            builder.Property(r => r.Version).IsRequired().HasDefaultValue(1L);
             builder.HasIndex(r => new { r.TableId, r.CreatedAt });
+            builder.HasIndex(r => new { r.TableId, r.ModifiedAt });
             builder.HasOne<STable>().WithMany().HasForeignKey(r => r.TableId).OnDelete(DeleteBehavior.Cascade);
         });
 

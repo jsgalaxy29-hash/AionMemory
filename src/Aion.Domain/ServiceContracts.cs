@@ -147,3 +147,13 @@ public interface IPersonaEngine
     Task<UserPersona> SavePersonaAsync(UserPersona persona, CancellationToken cancellationToken = default);
 }
 
+public interface ISyncBackend
+{
+    Task<IReadOnlyCollection<SyncItem>> ListAsync(CancellationToken cancellationToken = default);
+}
+
+public interface ISyncEngine
+{
+    Task<IReadOnlyCollection<SyncState>> PlanAsync(ISyncBackend local, ISyncBackend remote, CancellationToken cancellationToken = default);
+}
+

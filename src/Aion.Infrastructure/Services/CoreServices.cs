@@ -29,8 +29,12 @@ public sealed class MetadataService : IMetadataService
 
     public async Task<S_EntityType> AddEntityTypeAsync(Guid moduleId, S_EntityType entityType, CancellationToken cancellationToken = default)
     {
+        var module = await _db.Modules.FirstOrDefaultAsync(m => m.Id == moduleId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Module {moduleId} not found");
+
         entityType.ModuleId = moduleId;
         await _db.EntityTypes.AddAsync(entityType, cancellationToken).ConfigureAwait(false);
+        TouchModule(module);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Entity type {Name} added to module {Module}", entityType.Name, moduleId);
         return entityType;
@@ -38,6 +42,7 @@ public sealed class MetadataService : IMetadataService
 
     public async Task<S_Module> CreateModuleAsync(S_Module module, CancellationToken cancellationToken = default)
     {
+        InitializeModuleMetadata(module);
         await _db.Modules.AddAsync(module, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Module {Name} created", module.Name);
@@ -52,6 +57,20 @@ public sealed class MetadataService : IMetadataService
             .Include(m => m.AutomationRules).ThenInclude(r => r.Conditions)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+
+    private static void InitializeModuleMetadata(S_Module module)
+    {
+        var now = DateTimeOffset.UtcNow;
+        module.ModifiedAt = module.ModifiedAt == default ? now : module.ModifiedAt;
+        module.Version = module.Version <= 0 ? 1 : module.Version;
+    }
+
+    private static void TouchModule(S_Module module)
+    {
+        var now = DateTimeOffset.UtcNow;
+        module.ModifiedAt = now;
+        module.Version = Math.Max(1, module.Version + 1);
+    }
 }
 
 public sealed class AionDataEngine : IAionDataEngine, IDataEngine
@@ -207,12 +226,15 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         using var operation = BeginOperation("DataEngine.Insert", tableId);
 
         var (table, validated) = await ValidateRecordAsync(tableId, data, null, cancellationToken).ConfigureAwait(false);
+        var now = DateTimeOffset.UtcNow;
 
         var record = new F_Record
         {
             TableId = tableId,
             DataJson = validated.DataJson,
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = now,
+            ModifiedAt = now,
+            Version = 1
         };
 
         await _db.Records.AddAsync(record, cancellationToken).ConfigureAwait(false);
@@ -238,8 +260,11 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
         var validated = await ValidateRecordAsync(table, data, id, cancellationToken).ConfigureAwait(false);
 
+        var now = DateTimeOffset.UtcNow;
         record.DataJson = validated.DataJson;
-        record.UpdatedAt = DateTimeOffset.UtcNow;
+        record.ModifiedAt = now;
+        record.UpdatedAt = now;
+        record.Version += 1;
         _db.Records.Update(record);
         await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -263,7 +288,10 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
         if (table.SupportsSoftDelete)
         {
-            record.DeletedAt = DateTimeOffset.UtcNow;
+            var now = DateTimeOffset.UtcNow;
+            record.DeletedAt = now;
+            record.ModifiedAt = now;
+            record.Version += 1;
             _db.Records.Update(record);
         }
         else
@@ -1881,6 +1909,7 @@ public sealed class TemplateService : IAionTemplateMarketplaceService, ITemplate
     {
         var module = JsonSerializer.Deserialize<S_Module>(package.Payload) ?? new S_Module { Name = package.Name };
         await CreateOrUpdateMarketplaceEntry(package, cancellationToken).ConfigureAwait(false);
+        EnsureModuleMetadata(module);
         await _db.Modules.AddAsync(module, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return module;
@@ -1910,6 +1939,20 @@ public sealed class TemplateService : IAionTemplateMarketplaceService, ITemplate
         }
 
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void EnsureModuleMetadata(S_Module module)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (module.ModifiedAt == default)
+        {
+            module.ModifiedAt = now;
+        }
+
+        if (module.Version <= 0)
+        {
+            module.Version = 1;
+        }
     }
 
     public async Task<IEnumerable<MarketplaceItem>> GetMarketplaceAsync(CancellationToken cancellationToken = default)

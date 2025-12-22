@@ -100,6 +100,8 @@ public class S_Module
     public string Name { get; set; } = string.Empty;
     [StringLength(1024)]
     public string? Description { get; set; }
+    public DateTimeOffset ModifiedAt { get; set; } = DateTimeOffset.UtcNow;
+    public long Version { get; set; } = 1;
     public ICollection<S_EntityType> EntityTypes { get; set; } = new List<S_EntityType>();
     public ICollection<S_ReportDefinition> Reports { get; set; } = new List<S_ReportDefinition>();
     public ICollection<S_AutomationRule> AutomationRules { get; set; } = new List<S_AutomationRule>();
@@ -282,6 +284,10 @@ public class F_Record
     public string DataJson { get; set; } = string.Empty;
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public DateTimeOffset ModifiedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public long Version { get; set; } = 1;
 
     public DateTimeOffset? UpdatedAt { get; set; }
 
