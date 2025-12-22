@@ -239,6 +239,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
         await _db.Records.AddAsync(record, cancellationToken).ConfigureAwait(false);
         await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
+        await AddAuditEntryAsync(tableId, record.Id, ChangeType.Create, record.DataJson, null, record.Version, now, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} inserted for table {TableId} in {ElapsedMs}ms", record.Id, tableId, operation.Elapsed.TotalMilliseconds);
         await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
@@ -258,6 +259,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         var record = await FilterByTable(_db.Records, table).FirstOrDefaultAsync(r => r.Id == id, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Record {id} not found for table {tableId}");
 
+        var previousDataJson = record.DataJson;
         var validated = await ValidateRecordAsync(table, data, id, cancellationToken).ConfigureAwait(false);
 
         var now = DateTimeOffset.UtcNow;
@@ -267,6 +269,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         record.Version += 1;
         _db.Records.Update(record);
         await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
+        await AddAuditEntryAsync(tableId, id, ChangeType.Update, record.DataJson, previousDataJson, record.Version, now, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} updated for table {TableId} in {ElapsedMs}ms", id, tableId, operation.Elapsed.TotalMilliseconds);
         await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
@@ -286,12 +289,15 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             return;
         }
 
+        var snapshotJson = record.DataJson;
+        var now = DateTimeOffset.UtcNow;
+        var nextVersion = record.Version + 1;
+
         if (table.SupportsSoftDelete)
         {
-            var now = DateTimeOffset.UtcNow;
             record.DeletedAt = now;
             record.ModifiedAt = now;
-            record.Version += 1;
+            record.Version = nextVersion;
             _db.Records.Update(record);
         }
         else
@@ -299,9 +305,38 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             _db.Records.Remove(record);
         }
 
+        await AddAuditEntryAsync(tableId, id, ChangeType.Delete, snapshotJson, snapshotJson, nextVersion, now, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} deleted for table {TableId} in {ElapsedMs}ms", id, tableId, operation.Elapsed.TotalMilliseconds);
         await _search.RemoveAsync("Record", id, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IEnumerable<ChangeSet>> GetHistoryAsync(Guid tableId, Guid recordId, CancellationToken cancellationToken = default)
+    {
+        using var operation = BeginOperation("DataEngine.GetHistory", tableId, recordId);
+
+        _ = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
+
+        var audits = await _db.RecordAudits.AsNoTracking()
+            .Where(a => a.TableId == tableId && a.RecordId == recordId)
+            .OrderBy(a => a.Version)
+            .ThenBy(a => a.ChangedAt)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var history = audits
+            .Select(a => new ChangeSet(a.TableId, a.RecordId, a.ChangeType, a.Version, a.ChangedAt, a.DataJson, a.PreviousDataJson))
+            .ToList();
+
+        _logger.LogInformation(
+            "History returned {Count} change(s) for record {RecordId} in table {TableId} in {ElapsedMs}ms",
+            history.Count,
+            recordId,
+            tableId,
+            operation.Elapsed.TotalMilliseconds);
+
+        return history;
     }
 
     public async Task<int> CountAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default)
@@ -474,6 +509,22 @@ LIMIT $take OFFSET $skip;
         const int limit = 160;
         var snippet = content.Length <= limit ? content : content[..limit] + "…";
         return $"{before}{snippet}{after}";
+    }
+
+    private async Task AddAuditEntryAsync(Guid tableId, Guid recordId, ChangeType changeType, string dataJson, string? previousDataJson, long version, DateTimeOffset changedAt, CancellationToken cancellationToken)
+    {
+        var audit = new F_RecordAudit
+        {
+            TableId = tableId,
+            RecordId = recordId,
+            ChangeType = changeType,
+            Version = version,
+            DataJson = dataJson,
+            PreviousDataJson = previousDataJson,
+            ChangedAt = changedAt
+        };
+
+        await _db.RecordAudits.AddAsync(audit, cancellationToken).ConfigureAwait(false);
     }
 
     private static IQueryable<F_Record> FilterByTable(IQueryable<F_Record> query, STable table)

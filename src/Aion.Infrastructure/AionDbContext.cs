@@ -30,6 +30,7 @@ public class AionDbContext : DbContext
     public DbSet<F_FileLink> FileLinks => Set<F_FileLink>();
     public DbSet<F_Record> Records => Set<F_Record>();
     public DbSet<F_RecordIndex> RecordIndexes => Set<F_RecordIndex>();
+    public DbSet<F_RecordAudit> RecordAudits => Set<F_RecordAudit>();
     public DbSet<NoteSearchEntry> NoteSearch => Set<NoteSearchEntry>();
     public DbSet<RecordSearchEntry> RecordSearch => Set<RecordSearchEntry>();
     public DbSet<FileSearchEntry> FileSearch => Set<FileSearchEntry>();
@@ -187,6 +188,19 @@ public class AionDbContext : DbContext
             builder.HasIndex(r => new { r.TableId, r.FieldName, r.DateValue });
             builder.HasIndex(r => new { r.TableId, r.FieldName, r.BoolValue });
             builder.HasOne<F_Record>().WithMany().HasForeignKey(r => r.RecordId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<F_RecordAudit>(builder =>
+        {
+            builder.ToTable("RecordAudits");
+            builder.Property(r => r.TableId).HasColumnName("EntityTypeId");
+            builder.Property(r => r.ChangeType).HasConversion<string>().HasMaxLength(16);
+            builder.Property(r => r.DataJson).IsRequired();
+            builder.Property(r => r.PreviousDataJson);
+            builder.Property(r => r.Version).IsRequired().HasDefaultValue(1L);
+            builder.Property(r => r.ChangedAt).IsRequired().HasDefaultValueSql("CURRENT_TIMESTAMP");
+            builder.HasIndex(r => new { r.TableId, r.RecordId, r.Version }).IsUnique();
+            builder.HasIndex(r => new { r.TableId, r.RecordId, r.ChangedAt });
         });
 
         modelBuilder.Entity<S_VisionAnalysis>(builder =>

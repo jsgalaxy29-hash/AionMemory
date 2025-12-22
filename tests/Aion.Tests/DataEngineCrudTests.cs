@@ -180,6 +180,53 @@ public class DataEngineCrudTests : IClassFixture<SqliteInMemoryFixture>
         Assert.Equal("Gamma note", ReadField(fts.First(), "Title"));
     }
 
+    [Fact]
+    public async Task DataEngine_tracks_record_history_across_lifecycle()
+    {
+        var table = new STable
+        {
+            Name = "history",
+            DisplayName = "History",
+            Fields =
+            [
+                new() { Name = "Title", Label = "Titre", DataType = FieldDataType.Text, IsRequired = true }
+            ]
+        };
+
+        var engine = _fixture.CreateDataEngine();
+        await engine.CreateTableAsync(table);
+
+        var record = await engine.InsertAsync(table.Id, new Dictionary<string, object?> { ["Title"] = "Initial" });
+        await engine.UpdateAsync(table.Id, record.Id, new Dictionary<string, object?> { ["Title"] = "Updated" });
+        await engine.DeleteAsync(table.Id, record.Id);
+
+        var history = (await engine.GetHistoryAsync(table.Id, record.Id)).ToList();
+
+        Assert.Equal(3, history.Count);
+
+        Assert.Collection(history,
+            change =>
+            {
+                Assert.Equal(ChangeType.Create, change.ChangeType);
+                Assert.Equal(1, change.Version);
+                Assert.Contains("Initial", change.DataJson);
+            },
+            change =>
+            {
+                Assert.Equal(ChangeType.Update, change.ChangeType);
+                Assert.Equal(2, change.Version);
+                Assert.NotNull(change.PreviousDataJson);
+                Assert.Contains("Updated", change.DataJson);
+                Assert.Contains("Initial", change.PreviousDataJson!);
+            },
+            change =>
+            {
+                Assert.Equal(ChangeType.Delete, change.ChangeType);
+                Assert.Equal(3, change.Version);
+                Assert.Contains("Updated", change.DataJson);
+            });
+    }
+
     private static string? ReadField(F_Record record, string fieldName)
     {
         using var doc = JsonDocument.Parse(record.DataJson);

@@ -42,6 +42,7 @@ public interface IDataEngine
     Task<F_Record> UpdateAsync(Guid tableId, Guid id, string dataJson, CancellationToken cancellationToken = default);
     Task<F_Record> UpdateAsync(Guid tableId, Guid id, IDictionary<string, object?> data, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid tableId, Guid id, CancellationToken cancellationToken = default);
+    Task<IEnumerable<ChangeSet>> GetHistoryAsync(Guid tableId, Guid recordId, CancellationToken cancellationToken = default);
     Task<int> CountAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default);
     Task<IEnumerable<F_Record>> QueryAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default);
     Task<IEnumerable<ResolvedRecord>> QueryResolvedAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default);
