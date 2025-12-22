@@ -83,6 +83,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAgendaInterpreter, AgendaInterpreter>();
         services.AddScoped<INoteInterpreter, NoteInterpreter>();
         services.AddScoped<IReportInterpreter, ReportInterpreter>();
+        services.AddScoped<IMemoryAnalyzer, MemoryAnalyzer>();
 
         return services;
     }

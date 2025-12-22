@@ -33,6 +33,7 @@ public static class AiAdapterServiceCollectionExtensions
         services.TryAddScoped<IAgendaInterpreter, SimpleAgendaInterpreter>();
         services.TryAddScoped<INoteInterpreter, SimpleNoteInterpreter>();
         services.TryAddScoped<IReportInterpreter, SimpleReportInterpreter>();
+        services.TryAddScoped<IMemoryAnalyzer, MemoryAnalyzer>();
 
         return services;
     }
