@@ -222,6 +222,11 @@ namespace Aion.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset>("ModifiedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
                     b.Property<Guid>("TableId")
                         .HasColumnType("TEXT")
                         .HasColumnName("EntityTypeId");
@@ -229,9 +234,15 @@ namespace Aion.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("Version")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1L);
+
                     b.HasKey("Id");
 
                     b.HasIndex("TableId", "CreatedAt");
+                    b.HasIndex("TableId", "ModifiedAt");
 
                     b.ToTable("Records");
                 });
@@ -653,12 +664,24 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset>("ModifiedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("Version")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1L);
+
                     b.HasKey("Id");
+
+                    b.HasIndex("ModifiedAt");
 
                     b.ToTable("Modules");
                 });
