@@ -337,6 +337,17 @@ public class F_RecordAudit
     public DateTimeOffset ChangedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public class F_RecordEmbedding
+{
+    [Column("EntityTypeId")]
+    public Guid TableId { get; set; }
+
+    public Guid RecordId { get; set; }
+
+    [Required, StringLength(16000)]
+    public string Vector { get; set; } = string.Empty;
+}
+
 public sealed record LookupResolution(Guid TargetId, string? Label, Guid? TableId = null, string? TableName = null);
 
 public sealed record ResolvedRecord(F_Record Record, IReadOnlyDictionary<string, object?> Data, IReadOnlyDictionary<string, LookupResolution> Lookups);

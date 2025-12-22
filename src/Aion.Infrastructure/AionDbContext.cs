@@ -31,6 +31,7 @@ public class AionDbContext : DbContext
     public DbSet<F_Record> Records => Set<F_Record>();
     public DbSet<F_RecordIndex> RecordIndexes => Set<F_RecordIndex>();
     public DbSet<F_RecordAudit> RecordAudits => Set<F_RecordAudit>();
+    public DbSet<F_RecordEmbedding> Embeddings => Set<F_RecordEmbedding>();
     public DbSet<NoteSearchEntry> NoteSearch => Set<NoteSearchEntry>();
     public DbSet<RecordSearchEntry> RecordSearch => Set<RecordSearchEntry>();
     public DbSet<FileSearchEntry> FileSearch => Set<FileSearchEntry>();
@@ -202,6 +203,17 @@ public class AionDbContext : DbContext
             builder.Property(r => r.ChangedAt).IsRequired().HasDefaultValueSql("CURRENT_TIMESTAMP");
             builder.HasIndex(r => new { r.TableId, r.RecordId, r.Version }).IsUnique();
             builder.HasIndex(r => new { r.TableId, r.RecordId, r.ChangedAt });
+        });
+
+        modelBuilder.Entity<F_RecordEmbedding>(builder =>
+        {
+            builder.ToTable("Embeddings");
+            builder.HasKey(e => e.RecordId);
+            builder.Property(e => e.RecordId).ValueGeneratedNever();
+            builder.Property(e => e.TableId).HasColumnName("EntityTypeId");
+            builder.Property(e => e.Vector).IsRequired().HasMaxLength(16000);
+            builder.HasIndex(e => new { e.TableId, e.RecordId }).IsUnique();
+            builder.HasOne<F_Record>().WithOne().HasForeignKey<F_RecordEmbedding>(e => e.RecordId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<S_VisionAnalysis>(builder =>

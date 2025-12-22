@@ -74,6 +74,9 @@ public sealed class AuthorizedDataEngine : IDataEngine
     public Task<IEnumerable<RecordSearchHit>> SearchAsync(Guid tableId, string query, SearchOptions? options = null, CancellationToken cancellationToken = default)
         => ExecuteAsync(PermissionAction.Read, tableId, () => _inner.SearchAsync(tableId, query, options, cancellationToken), cancellationToken);
 
+    public Task<IEnumerable<RecordSearchHit>> SearchSmartAsync(Guid tableId, string query, SearchOptions? options = null, CancellationToken cancellationToken = default)
+        => ExecuteAsync(PermissionAction.Read, tableId, () => _inner.SearchSmartAsync(tableId, query, options, cancellationToken), cancellationToken);
+
     private async Task<T> ExecuteAsync<T>(PermissionAction action, Guid tableId, Func<Task<T>> callback, CancellationToken cancellationToken, Guid? recordId = null)
     {
         await EnsureAuthorizedAsync(action, tableId, recordId, cancellationToken).ConfigureAwait(false);

@@ -341,6 +341,28 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("RecordAudits");
                 });
 
+            modelBuilder.Entity("Aion.Domain.F_RecordEmbedding", b =>
+                {
+                    b.Property<Guid>("RecordId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TableId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("EntityTypeId");
+
+                    b.Property<string>("Vector")
+                        .IsRequired()
+                        .HasMaxLength(16000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("RecordId");
+
+                    b.HasIndex("TableId", "RecordId")
+                        .IsUnique();
+
+                    b.ToTable("Embeddings");
+                });
+
             modelBuilder.Entity("Aion.Domain.J_Event_Link", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1342,6 +1364,15 @@ namespace Aion.Infrastructure.Migrations
                     b.HasOne("Aion.Domain.F_Record", null)
                         .WithMany()
                         .HasForeignKey("RecordId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Aion.Domain.F_RecordEmbedding", b =>
+                {
+                    b.HasOne("Aion.Domain.F_Record", null)
+                        .WithOne()
+                        .HasForeignKey("Aion.Domain.F_RecordEmbedding", "RecordId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
