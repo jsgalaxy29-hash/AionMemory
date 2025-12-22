@@ -120,6 +120,11 @@ public interface IReportInterpreter
     Task<ReportBuildResult> BuildReportAsync(ReportBuildRequest request, CancellationToken cancellationToken = default);
 }
 
+public interface IMemoryAnalyzer
+{
+    Task<MemoryAnalysisResult> AnalyzeAsync(MemoryAnalysisRequest request, CancellationToken cancellationToken = default);
+}
+
 public interface IAionVisionService : IVisionService
 {
 }

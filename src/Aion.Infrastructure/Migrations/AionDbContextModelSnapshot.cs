@@ -457,6 +457,42 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("Predictions");
                 });
 
+            modelBuilder.Entity("Aion.Domain.MemoryInsight", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("GeneratedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RecordCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Scope")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SuggestedLinksJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TopicsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GeneratedAt");
+
+                    b.ToTable("MemoryInsights");
+                });
+
             modelBuilder.Entity("Aion.Domain.RecordSearchEntry", b =>
                 {
                     b.Property<string>("Content");

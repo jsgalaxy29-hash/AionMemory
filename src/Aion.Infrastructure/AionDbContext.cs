@@ -48,6 +48,7 @@ public class AionDbContext : DbContext
     public DbSet<UserPersona> Personas => Set<UserPersona>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<Permission> Permissions => Set<Permission>();
+    public DbSet<MemoryInsight> MemoryInsights => Set<MemoryInsight>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -340,6 +341,17 @@ public class AionDbContext : DbContext
                 owned.Property(s => s.RecordId).HasColumnName("RecordId");
                 owned.HasIndex(s => new { s.TableId, s.RecordId });
             });
+        });
+
+        modelBuilder.Entity<MemoryInsight>(builder =>
+        {
+            builder.Property(i => i.Scope).HasMaxLength(128);
+            builder.Property(i => i.Summary).IsRequired().HasMaxLength(2048);
+            builder.Property(i => i.TopicsJson).IsRequired();
+            builder.Property(i => i.SuggestedLinksJson).IsRequired();
+            builder.Property(i => i.RecordCount).IsRequired();
+            builder.Property(i => i.GeneratedAt).IsRequired();
+            builder.HasIndex(i => i.GeneratedAt);
         });
 
         base.OnModelCreating(modelBuilder);

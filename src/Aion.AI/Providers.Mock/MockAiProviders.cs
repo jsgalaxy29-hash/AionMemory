@@ -51,3 +51,30 @@ public sealed class HttpMockVisionModel : IVisionModel
         });
     }
 }
+
+public sealed class MockMemoryAnalyzer : IMemoryAnalyzer
+{
+    public Task<MemoryAnalysisResult> AnalyzeAsync(MemoryAnalysisRequest request, CancellationToken cancellationToken = default)
+    {
+        var topics = new[]
+        {
+            new MemoryTopic("Routine", new[] { "habits", "daily" }),
+            new MemoryTopic("Objectifs", new[] { "goals" })
+        };
+
+        var links = request.Records
+            .Take(2)
+            .Select(r => r.Id)
+            .ToArray();
+
+        var suggestions = links.Length == 2
+            ? new[] { new MemoryLinkSuggestion(links[0], links[1], "Thèmes similaires", request.Records.First().SourceType, request.Records.Last().SourceType) }
+            : Array.Empty<MemoryLinkSuggestion>();
+
+        var summary = request.Records.Count == 0
+            ? "Aucune donnée à analyser (mock)."
+            : $"Mock summary for {request.Records.Count} records";
+
+        return Task.FromResult(new MemoryAnalysisResult(summary, topics, suggestions, "mock"));
+    }
+}

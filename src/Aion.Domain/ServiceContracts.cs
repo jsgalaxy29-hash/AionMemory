@@ -148,6 +148,12 @@ public interface IPersonaEngine
     Task<UserPersona> SavePersonaAsync(UserPersona persona, CancellationToken cancellationToken = default);
 }
 
+public interface IMemoryIntelligenceService
+{
+    Task<MemoryInsight> AnalyzeAsync(MemoryAnalysisRequest request, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<MemoryInsight>> GetRecentAsync(int take = 20, CancellationToken cancellationToken = default);
+}
+
 public interface ISyncBackend
 {
     Task<IReadOnlyCollection<SyncItem>> ListAsync(CancellationToken cancellationToken = default);
