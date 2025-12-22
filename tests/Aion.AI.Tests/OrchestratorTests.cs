@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Aion.AI;
 using Aion.Domain;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Aion.AI.Tests;
@@ -12,7 +13,8 @@ public class OrchestratorTests
     public async Task IntentRecognizer_parses_structured_response()
     {
         var provider = new StubLlmProvider("{\"intent\":\"create_note\",\"parameters\":{\"title\":\"Hello\"},\"confidence\":0.82}");
-        var recognizer = new IntentRecognizer(provider, NullLogger<IntentRecognizer>.Instance);
+        var options = Options.Create(new AionAiOptions());
+        var recognizer = new IntentRecognizer(provider, NullLogger<IntentRecognizer>.Instance, options, new NoopOperationScopeFactory());
 
         var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "ajoute une note" });
 
@@ -26,7 +28,8 @@ public class OrchestratorTests
     public async Task IntentRecognizer_handles_missing_context()
     {
         var provider = new StubLlmProvider("{\"intent\":\"chat\",\"parameters\":{},\"confidence\":0.5}");
-        var recognizer = new IntentRecognizer(provider, NullLogger<IntentRecognizer>.Instance);
+        var options = Options.Create(new AionAiOptions());
+        var recognizer = new IntentRecognizer(provider, NullLogger<IntentRecognizer>.Instance, options, new NoopOperationScopeFactory());
 
         var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "bonjour", Context = null! });
 

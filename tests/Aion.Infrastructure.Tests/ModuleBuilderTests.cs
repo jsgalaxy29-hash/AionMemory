@@ -5,6 +5,7 @@ using System.Linq;
 using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
 using Aion.Infrastructure.ModuleBuilder;
+using Aion.Infrastructure.Observability;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -25,7 +26,7 @@ public class ModuleBuilderTests
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context);
-        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance);
+        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
 
         var spec = BuildSimpleSpec();
         await validator.ValidateAndThrowAsync(spec);
@@ -55,7 +56,7 @@ public class ModuleBuilderTests
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context);
-        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance);
+        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
 
         var initialSpec = BuildSimpleSpec();
         await applier.ApplyAsync(initialSpec);
@@ -136,7 +137,7 @@ public class ModuleBuilderTests
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context);
-        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance);
+        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
 
         var spec = BuildSimpleSpec();
         spec.Tables[0].Views = new List<ViewSpec>

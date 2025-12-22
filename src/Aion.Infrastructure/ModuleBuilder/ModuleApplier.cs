@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -17,16 +18,19 @@ public sealed class ModuleApplier : IModuleApplier
     private readonly AionDbContext _db;
     private readonly IModuleValidator _validator;
     private readonly ILogger<ModuleApplier> _logger;
+    private readonly IOperationScopeFactory _operationScopeFactory;
 
-    public ModuleApplier(AionDbContext db, IModuleValidator validator, ILogger<ModuleApplier> logger)
+    public ModuleApplier(AionDbContext db, IModuleValidator validator, ILogger<ModuleApplier> logger, IOperationScopeFactory operationScopeFactory)
     {
         _db = db;
         _validator = validator;
         _logger = logger;
+        _operationScopeFactory = operationScopeFactory;
     }
 
     public async Task<IReadOnlyList<STable>> ApplyAsync(ModuleSpec spec, CancellationToken cancellationToken = default)
     {
+        using var operation = BeginOperation(spec.Slug);
         await _validator.ValidateAndThrowAsync(spec, cancellationToken).ConfigureAwait(false);
 
         var applied = new List<STable>();
@@ -57,8 +61,57 @@ public sealed class ModuleApplier : IModuleApplier
         }
 
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Applied module spec {Slug} with {TableCount} table(s).", spec.Slug, applied.Count);
+        _logger.LogInformation(
+            "Applied module spec {Slug} with {TableCount} table(s) in {ElapsedMs}ms",
+            spec.Slug,
+            applied.Count,
+            operation.Elapsed.TotalMilliseconds);
         return applied;
+    }
+
+    private OperationScopeContext BeginOperation(string moduleSlug)
+    {
+        var scope = _operationScopeFactory.Start("Module.Apply");
+        var logScope = _logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["Operation"] = "Module.Apply",
+            ["CorrelationId"] = scope.Context.CorrelationId,
+            ["OperationId"] = scope.Context.OperationId,
+            ["ModuleSpec"] = moduleSlug
+        }) ?? NullScope.Instance;
+
+        return new OperationScopeContext(scope, logScope);
+    }
+
+    private sealed class OperationScopeContext : IDisposable
+    {
+        private readonly IOperationScope _operationScope;
+        private readonly IDisposable _logScope;
+        private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
+
+        public OperationScopeContext(IOperationScope operationScope, IDisposable logScope)
+        {
+            _operationScope = operationScope;
+            _logScope = logScope;
+        }
+
+        public TimeSpan Elapsed => _stopwatch.Elapsed;
+
+        public void Dispose()
+        {
+            _stopwatch.Stop();
+            _logScope.Dispose();
+            _operationScope.Dispose();
+        }
+    }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static readonly NullScope Instance = new();
+
+        public void Dispose()
+        {
+        }
     }
 
     private static void UpdateTable(STable table, TableSpec spec)
