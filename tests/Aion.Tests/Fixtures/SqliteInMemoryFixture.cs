@@ -1,3 +1,4 @@
+using Aion.AI;
 using Aion.Domain;
 using Aion.Infrastructure;
 using Aion.Infrastructure.Observability;
@@ -40,10 +41,10 @@ public sealed class SqliteInMemoryFixture : IAsyncLifetime
 
     public AionDbContext CreateContext() => new(Options);
 
-    public AionDataEngine CreateDataEngine(ISearchService? search = null)
+    public AionDataEngine CreateDataEngine(ISearchService? search = null, IEmbeddingProvider? embeddingProvider = null)
     {
         var logger = _loggerFactory.CreateLogger<AionDataEngine>();
-        return new AionDataEngine(CreateContext(), logger, search ?? new NullSearchService(), new OperationScopeFactory());
+        return new AionDataEngine(CreateContext(), logger, search ?? new NullSearchService(), new OperationScopeFactory(), embeddingProvider);
     }
 }
 

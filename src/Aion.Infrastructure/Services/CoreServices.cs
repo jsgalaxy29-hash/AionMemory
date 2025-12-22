@@ -75,17 +75,28 @@ public sealed class MetadataService : IMetadataService
 
 public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 {
+    private const double FullTextWeight = 0.65;
+    private const double SemanticWeight = 0.35;
+    private static readonly JsonSerializerOptions EmbeddingSerializerOptions = new(JsonSerializerDefaults.Web);
+
     private readonly AionDbContext _db;
     private readonly ILogger<AionDataEngine> _logger;
     private readonly ISearchService _search;
+    private readonly IEmbeddingProvider? _embeddingProvider;
     private readonly IOperationScopeFactory _operationScopeFactory;
 
-    public AionDataEngine(AionDbContext db, ILogger<AionDataEngine> logger, ISearchService search, IOperationScopeFactory operationScopeFactory)
+    public AionDataEngine(
+        AionDbContext db,
+        ILogger<AionDataEngine> logger,
+        ISearchService search,
+        IOperationScopeFactory operationScopeFactory,
+        IEmbeddingProvider? embeddingProvider = null)
     {
         _db = db;
         _logger = logger;
         _search = search;
         _operationScopeFactory = operationScopeFactory;
+        _embeddingProvider = embeddingProvider;
     }
 
     private OperationMetricsScope BeginOperation(string operationName, Guid? tableId = null, Guid? recordId = null)
@@ -239,6 +250,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
         await _db.Records.AddAsync(record, cancellationToken).ConfigureAwait(false);
         await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
+        await UpsertRecordEmbeddingAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
         await AddAuditEntryAsync(tableId, record.Id, ChangeType.Create, record.DataJson, null, record.Version, now, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} inserted for table {TableId} in {ElapsedMs}ms", record.Id, tableId, operation.Elapsed.TotalMilliseconds);
@@ -269,6 +281,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         record.Version += 1;
         _db.Records.Update(record);
         await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
+        await UpsertRecordEmbeddingAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
         await AddAuditEntryAsync(tableId, id, ChangeType.Update, record.DataJson, previousDataJson, record.Version, now, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} updated for table {TableId} in {ElapsedMs}ms", id, tableId, operation.Elapsed.TotalMilliseconds);
@@ -407,6 +420,50 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         _ = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Table {tableId} not found");
 
+        var hits = await ExecuteFullTextSearchAsync(tableId, query, validated, cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation(
+            "Search returned {Count} result(s) for table {TableId} in {ElapsedMs}ms",
+            hits.Count,
+            tableId,
+            operation.Elapsed.TotalMilliseconds);
+        return hits.Select(h => new RecordSearchHit(h.RecordId, h.Score, h.Snippet));
+    }
+
+    public async Task<IEnumerable<RecordSearchHit>> SearchSmartAsync(Guid tableId, string query, SearchOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return Array.Empty<RecordSearchHit>();
+        }
+
+        using var operation = BeginOperation("DataEngine.SearchSmart", tableId);
+
+        var validated = NormalizeSearchOptions(options);
+        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
+
+        var expandedOptions = validated with
+        {
+            Skip = 0,
+            Take = Math.Min(SearchOptions.MaxPageSize, Math.Max(validated.Take * 3, validated.Take))
+        };
+
+        var fullTextHits = await ExecuteFullTextSearchAsync(tableId, query, expandedOptions, cancellationToken).ConfigureAwait(false);
+        var semanticScores = await ComputeSemanticScoresAsync(table.Id, query, cancellationToken).ConfigureAwait(false);
+        var combined = await CombineSearchSignalsAsync(table.Id, fullTextHits, semanticScores, validated, cancellationToken).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Smart search returned {Count} result(s) for table {TableId} in {ElapsedMs}ms",
+            combined.Count,
+            tableId,
+            operation.Elapsed.TotalMilliseconds);
+        return combined;
+    }
+
+    private sealed record FullTextHit(Guid RecordId, double Score, string Snippet, string Content);
+
+    private async Task<List<FullTextHit>> ExecuteFullTextSearchAsync(Guid tableId, string query, SearchOptions options, CancellationToken cancellationToken)
+    {
         var connection = _db.Database.GetDbConnection();
         var shouldClose = connection.State != System.Data.ConnectionState.Open;
         if (shouldClose)
@@ -416,9 +473,9 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
         try
         {
-            await using var command = BuildSearchCommand(connection, query, tableId, validated);
+            await using var command = BuildSearchCommand(connection, query, tableId, options);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            var results = new List<RecordSearchHit>();
+            var results = new List<FullTextHit>();
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -429,17 +486,12 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
                 if (string.IsNullOrWhiteSpace(snippet))
                 {
-                    snippet = BuildFallbackSnippet(content, validated.HighlightBefore, validated.HighlightAfter);
+                    snippet = BuildFallbackSnippet(content, options.HighlightBefore, options.HighlightAfter);
                 }
 
-                results.Add(new RecordSearchHit(recordId, score, snippet));
+                results.Add(new FullTextHit(recordId, score, snippet, content));
             }
 
-            _logger.LogInformation(
-                "Search returned {Count} result(s) for table {TableId} in {ElapsedMs}ms",
-                results.Count,
-                tableId,
-                operation.Elapsed.TotalMilliseconds);
             return results;
         }
         finally
@@ -509,6 +561,231 @@ LIMIT $take OFFSET $skip;
         const int limit = 160;
         var snippet = content.Length <= limit ? content : content[..limit] + "…";
         return $"{before}{snippet}{after}";
+    }
+
+    private async Task<List<RecordSearchHit>> CombineSearchSignalsAsync(
+        Guid tableId,
+        IReadOnlyList<FullTextHit> fullTextHits,
+        IReadOnlyDictionary<Guid, double> semanticScores,
+        SearchOptions options,
+        CancellationToken cancellationToken)
+    {
+        var combined = new Dictionary<Guid, (double Score, string Snippet)>();
+
+        foreach (var hit in fullTextHits)
+        {
+            var semanticScore = semanticScores.TryGetValue(hit.RecordId, out var semantic) ? semantic : 0d;
+            combined[hit.RecordId] = (CombineScores(hit.Score, semanticScore), hit.Snippet);
+        }
+
+        var semanticOnlyIds = semanticScores.Keys.Except(combined.Keys).ToList();
+        if (semanticOnlyIds.Count > 0)
+        {
+            var contents = await LoadRecordContentsAsync(tableId, semanticOnlyIds, cancellationToken).ConfigureAwait(false);
+            foreach (var recordId in semanticOnlyIds)
+            {
+                var snippet = contents.TryGetValue(recordId, out var content)
+                    ? BuildFallbackSnippet(content, options.HighlightBefore, options.HighlightAfter)
+                    : string.Empty;
+                combined[recordId] = (CombineScores(0, semanticScores[recordId]), snippet);
+            }
+        }
+
+        return combined
+            .OrderByDescending(kv => kv.Value.Score)
+            .ThenBy(kv => kv.Key)
+            .Skip(options.Skip)
+            .Take(options.Take)
+            .Select(kv => new RecordSearchHit(kv.Key, kv.Value.Score, kv.Value.Snippet))
+            .ToList();
+    }
+
+    private async Task<Dictionary<Guid, string>> LoadRecordContentsAsync(Guid tableId, IReadOnlyCollection<Guid> recordIds, CancellationToken cancellationToken)
+    {
+        if (recordIds.Count == 0)
+        {
+            return new Dictionary<Guid, string>();
+        }
+
+        var ids = recordIds.ToList();
+        return await _db.RecordSearch.AsNoTracking()
+            .Where(r => r.TableId == tableId && ids.Contains(r.RecordId))
+            .ToDictionaryAsync(r => r.RecordId, r => r.Content, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<Dictionary<Guid, double>> ComputeSemanticScoresAsync(Guid tableId, string query, CancellationToken cancellationToken)
+    {
+        if (_embeddingProvider is null)
+        {
+            return new Dictionary<Guid, double>();
+        }
+
+        float[] queryEmbedding;
+        try
+        {
+            queryEmbedding = (await _embeddingProvider.EmbedAsync(query, cancellationToken).ConfigureAwait(false)).Vector;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Smart search falling back to FTS only for table {TableId}", tableId);
+            return new Dictionary<Guid, double>();
+        }
+
+        var entries = await _db.Embeddings.AsNoTracking()
+            .Where(e => e.TableId == tableId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var scores = new Dictionary<Guid, double>();
+        foreach (var entry in entries)
+        {
+            var vector = ParseEmbedding(entry.Vector);
+            if (vector is null)
+            {
+                continue;
+            }
+
+            var similarity = ComputeCosineSimilarity(queryEmbedding, vector);
+            if (similarity > 0)
+            {
+                scores[entry.RecordId] = similarity;
+            }
+        }
+
+        return scores;
+    }
+
+    private async Task UpsertRecordEmbeddingAsync(STable table, F_Record record, IReadOnlyDictionary<string, object?> values, CancellationToken cancellationToken)
+    {
+        var serialized = await TryGenerateEmbeddingAsync(table, values, cancellationToken).ConfigureAwait(false);
+        if (serialized is null)
+        {
+            return;
+        }
+
+        var existing = await _db.Embeddings.FirstOrDefaultAsync(e => e.RecordId == record.Id, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+        {
+            await _db.Embeddings.AddAsync(new F_RecordEmbedding
+            {
+                TableId = table.Id,
+                RecordId = record.Id,
+                Vector = serialized
+            }, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        existing.TableId = table.Id;
+        existing.Vector = serialized;
+        _db.Embeddings.Update(existing);
+    }
+
+    private async Task<string?> TryGenerateEmbeddingAsync(STable table, IReadOnlyDictionary<string, object?> values, CancellationToken cancellationToken)
+    {
+        if (_embeddingProvider is null)
+        {
+            return null;
+        }
+
+        var document = BuildEmbeddingDocument(table, values);
+        if (string.IsNullOrWhiteSpace(document))
+        {
+            return null;
+        }
+
+        try
+        {
+            var embedding = await _embeddingProvider.EmbedAsync(document, cancellationToken).ConfigureAwait(false);
+            return SerializeEmbedding(embedding.Vector);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Unable to generate embedding for table {TableId}", table.Id);
+            return null;
+        }
+    }
+
+    private static string BuildEmbeddingDocument(STable table, IReadOnlyDictionary<string, object?> values)
+    {
+        var parts = new List<string>
+        {
+            string.IsNullOrWhiteSpace(table.DisplayName) ? table.Name : table.DisplayName
+        };
+
+        foreach (var field in table.Fields.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!values.TryGetValue(field.Name, out var value) || value is null)
+            {
+                continue;
+            }
+
+            parts.Add($"{(string.IsNullOrWhiteSpace(field.Label) ? field.Name : field.Label)}: {value}");
+        }
+
+        return string.Join(Environment.NewLine, parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+    }
+
+    private static string SerializeEmbedding(float[] vector)
+        => JsonSerializer.Serialize(vector, EmbeddingSerializerOptions);
+
+    private static float[]? ParseEmbedding(string? serialized)
+    {
+        if (string.IsNullOrWhiteSpace(serialized))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<float[]>(serialized, EmbeddingSerializerOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static double CombineScores(double fullTextScore, double semanticScore)
+    {
+        var positiveSemantic = Math.Max(0, semanticScore);
+        if (fullTextScore <= 0)
+        {
+            return positiveSemantic;
+        }
+
+        if (positiveSemantic <= 0)
+        {
+            return fullTextScore;
+        }
+
+        return (fullTextScore * FullTextWeight) + (positiveSemantic * SemanticWeight);
+    }
+
+    private static double ComputeCosineSimilarity(IReadOnlyList<float> vector1, IReadOnlyList<float> vector2)
+    {
+        if (vector1.Count == 0 || vector2.Count == 0 || vector1.Count != vector2.Count)
+        {
+            return 0;
+        }
+
+        double dot = 0;
+        double normA = 0;
+        double normB = 0;
+
+        for (var i = 0; i < vector1.Count; i++)
+        {
+            dot += vector1[i] * vector2[i];
+            normA += vector1[i] * vector1[i];
+            normB += vector2[i] * vector2[i];
+        }
+
+        if (normA <= 0 || normB <= 0)
+        {
+            return 0;
+        }
+
+        return dot / (Math.Sqrt(normA) * Math.Sqrt(normB));
     }
 
     private async Task AddAuditEntryAsync(Guid tableId, Guid recordId, ChangeType changeType, string dataJson, string? previousDataJson, long version, DateTimeOffset changedAt, CancellationToken cancellationToken)
