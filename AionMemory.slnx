@@ -10,6 +10,7 @@
   <Project Path="tests/Aion.Domain.Tests/Aion.Domain.Tests.csproj" />
   <Project Path="tests/Aion.Infrastructure.Tests/Aion.Infrastructure.Tests.csproj" />
   <Project Path="tests/Aion.AI.Tests/Aion.AI.Tests.csproj" />
+  <Project Path="tests/Aion.Benchmarks/Aion.Benchmarks.csproj" />
   <Project Path="tests/Aion.Tests/Aion.Tests.csproj" />
   <Project Path="tests/Aion.AppHost.UI.Tests/Aion.AppHost.UI.Tests.csproj" />
 </Solution>
