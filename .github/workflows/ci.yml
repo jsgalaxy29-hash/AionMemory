@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [ main, feature/** ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
 
@@ -16,6 +17,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate release tag metadata
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: ./tools/validate-release-tag.ps1 -Tag "${{ github.ref_name }}"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -51,6 +57,43 @@ jobs:
         with:
           name: test-results-${{ runner.os }}
           path: "**/*.trx"
+
+  publish-apphost:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    needs: build-and-test
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.100-preview.6.24452.5'
+          global-json-file: global.json
+          include-prerelease: true
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            **/*.props
+            **/*.targets
+            **/packages.lock.json
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui
+
+      - name: Publish AppHost (Windows)
+        shell: pwsh
+        run: ./tools/publish.ps1 -Targets windows -Configuration Release
+
+      - name: Upload AppHost artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apphost-${{ github.ref_name }}-windows
+          path: artifacts/publish/Aion.AppHost/Aion.AppHost-windows.zip
 
   secret-scan:
     runs-on: ubuntu-latest

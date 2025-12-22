@@ -4,7 +4,7 @@ Ce dépôt utilise une CI GitHub Actions pour éviter les régressions sur les b
 
 ## Workflow principal (`.github/workflows/ci.yml`)
 
-- **Déclencheurs** : `push` sur `main` ou `feature/**`, et `pull_request` vers `main`.
+- **Déclencheurs** : `push` sur `main`, `feature/**` et les tags `v*`, ainsi que `pull_request` vers `main`.
 - **Plateforme** : Windows (`windows-latest`) afin de couvrir le projet MAUI.
 - **SDK .NET** : version alignée sur `global.json` (`10.0.100-preview.6.24452.5`), avec installation préalable du workload `maui`.
 - **Pipeline** :
@@ -18,6 +18,13 @@ Ce dépôt utilise une CI GitHub Actions pour éviter les régressions sur les b
   - `TreatWarningsAsErrors` appliqué aux projets Domain, Infrastructure et AI (ainsi qu'en CI via `CI=true`).
   - Build déterministe (`/p:ContinuousIntegrationBuild=true`).
 - **Sécurité** : job `secret-scan` exécuté sur Ubuntu avec `gitleaks` pour prévenir toute fuite de secrets. Aucune configuration sensible réelle n'est versionnée ; seules des variantes `appsettings.*.example.json` sont fournies.
+
+### Flux release (tag `v*`)
+- Condition : tag `vMAJOR.MINOR.PATCH` (pré-releases `-beta.N`/`-rc.N` acceptées) poussé sur le dépôt.
+- Étapes additionnelles :
+  1. Validation du tag et des release notes via `tools/validate-release-tag.ps1 -Tag ${{ github.ref_name }}` (vérifie la présence de `docs/release-notes/<tag>.md` et des sections obligatoires).
+  2. Publication des artefacts AppHost Windows en Release (non signés) via `tools/publish.ps1 -Targets windows -Configuration Release`, puis upload du `.zip` dans les artefacts d'action.
+- Les builds restent non signés (`WindowsPackageType=None`) ; documenter les besoins de signature éventuels avant diffusion externe.
 
 ## Commandes locales recommandées
 
