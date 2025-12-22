@@ -1,9 +1,13 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text.Json;
 using Aion.AI;
 using Aion.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Aion.AI.Adapters;
 
@@ -11,6 +15,8 @@ public static class AiAdapterServiceCollectionExtensions
 {
     public static IServiceCollection AddAiAdapters(this IServiceCollection services)
     {
+        services.AddOptions<AionAiOptions>();
+        services.TryAddSingleton<IOperationScopeFactory, NoopOperationScopeFactory>();
         services.TryAddSingleton<EchoLlmProvider>();
         services.TryAddSingleton<DeterministicEmbeddingProvider>();
         services.TryAddScoped<StubAudioTranscriptionProvider>();
@@ -65,24 +71,41 @@ public sealed class BasicIntentDetector : IIntentDetector
 {
     private readonly IChatModel _provider;
     private readonly ILogger<BasicIntentDetector> _logger;
+    private readonly IOptionsMonitor<AionAiOptions> _options;
+    private readonly IOperationScopeFactory _operationScopeFactory;
 
-    public BasicIntentDetector(IChatModel provider, ILogger<BasicIntentDetector> logger)
+    public BasicIntentDetector(IChatModel provider, ILogger<BasicIntentDetector> logger, IOptionsMonitor<AionAiOptions> options, IOperationScopeFactory operationScopeFactory)
     {
         _provider = provider;
         _logger = logger;
+        _options = options;
+        _operationScopeFactory = operationScopeFactory;
     }
 
     public async Task<IntentDetectionResult> DetectAsync(IntentDetectionRequest request, CancellationToken cancellationToken = default)
     {
+        var safePrompt = request.Input.ToSafeLogValue(_options.CurrentValue, _logger);
+        using var operation = _operationScopeFactory.Start("AI.BasicIntent");
+        using var scope = _logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["Operation"] = "AI.BasicIntent",
+            ["CorrelationId"] = operation.Context.CorrelationId,
+            ["OperationId"] = operation.Context.OperationId,
+            ["Prompt"] = safePrompt
+        }) ?? NullScope.Instance;
+        var stopwatch = Stopwatch.StartNew();
+
         var response = await _provider.GenerateAsync($"Analyse l'intention: {request.Input}", cancellationToken).ConfigureAwait(false);
         var raw = response.RawResponse ?? response.Content;
+        var elapsedMs = stopwatch.Elapsed.TotalMilliseconds;
 
         if (TryParseIntent(raw, out var parsed))
         {
+            _logger.LogInformation("Intent detection parsed response in {ElapsedMs}ms via {Provider}", elapsedMs, _provider.GetType().Name);
             return parsed with { RawResponse = raw };
         }
 
-        _logger.LogDebug("Intent not parsed, fallback to chat intent for '{Input}'", request.Input);
+        _logger.LogWarning("Intent not parsed, fallback to chat intent after {ElapsedMs}ms ({Prompt})", elapsedMs, safePrompt);
         return new IntentDetectionResult("chat", new Dictionary<string, string> { ["query"] = request.Input }, 0.42, raw);
     }
 
@@ -146,6 +169,15 @@ public sealed class BasicIntentDetector : IIntentDetector
         catch (JsonException)
         {
             return false;
+        }
+    }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static readonly NullScope Instance = new();
+
+        public void Dispose()
+        {
         }
     }
 }

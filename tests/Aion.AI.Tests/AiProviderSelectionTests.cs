@@ -1,3 +1,4 @@
+using Aion.Domain;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -58,7 +59,11 @@ public class AiProviderSelectionTests
     [Fact]
     public async Task IntentRecognizer_returns_fallback_on_invalid_payload()
     {
-        var recognizer = new IntentRecognizer(new StubProvider("not-json"), NullLogger<IntentRecognizer>.Instance);
+        var recognizer = new IntentRecognizer(
+            new StubProvider("not-json"),
+            NullLogger<IntentRecognizer>.Instance,
+            Options.Create(new AionAiOptions()),
+            new NoopOperationScopeFactory());
 
         var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "ping" });
 
@@ -69,7 +74,11 @@ public class AiProviderSelectionTests
     [Fact]
     public async Task IntentRecognizer_returns_fallback_on_provider_timeout()
     {
-        var recognizer = new IntentRecognizer(new ThrowingProvider(new TaskCanceledException("timeout")), NullLogger<IntentRecognizer>.Instance);
+        var recognizer = new IntentRecognizer(
+            new ThrowingProvider(new TaskCanceledException("timeout")),
+            NullLogger<IntentRecognizer>.Instance,
+            Options.Create(new AionAiOptions()),
+            new NoopOperationScopeFactory());
 
         var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "ping" });
 

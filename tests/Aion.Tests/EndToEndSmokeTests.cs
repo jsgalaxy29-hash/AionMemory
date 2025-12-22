@@ -4,6 +4,7 @@ using System.Text.Json;
 using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
 using Aion.Infrastructure.ModuleBuilder;
+using Aion.Infrastructure.Observability;
 using Aion.Tests.Fixtures;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -24,7 +25,7 @@ public class EndToEndSmokeTests : IClassFixture<SqliteInMemoryFixture>
     {
         await using var context = _fixture.CreateContext();
         var validator = new ModuleValidator(context);
-        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance);
+        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
 
         var spec = BuildSmokeSpec();
         var appliedTables = await applier.ApplyAsync(spec);

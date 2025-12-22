@@ -3,6 +3,7 @@ using System.IO;
 using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
 using Aion.Infrastructure.ModuleBuilder;
+using Aion.Infrastructure.Observability;
 using Aion.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -84,6 +85,7 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IStorageService, StorageService>();
         services.AddScoped<IFileStorageService, FileStorageService>();
         services.AddScoped<IMetadataService, MetadataService>();
+        services.AddSingleton<IOperationScopeFactory, OperationScopeFactory>();
         services.AddScoped<IAionDataEngine, AionDataEngine>();
         services.AddScoped<IDataEngine, AuthorizedDataEngine>();
         services.AddScoped<IAuthorizationService, AuthorizationService>();

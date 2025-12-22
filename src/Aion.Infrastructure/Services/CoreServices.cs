@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Data.Common;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
@@ -58,32 +59,96 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
     private readonly AionDbContext _db;
     private readonly ILogger<AionDataEngine> _logger;
     private readonly ISearchService _search;
+    private readonly IOperationScopeFactory _operationScopeFactory;
 
-    public AionDataEngine(AionDbContext db, ILogger<AionDataEngine> logger, ISearchService search)
+    public AionDataEngine(AionDbContext db, ILogger<AionDataEngine> logger, ISearchService search, IOperationScopeFactory operationScopeFactory)
     {
         _db = db;
         _logger = logger;
         _search = search;
+        _operationScopeFactory = operationScopeFactory;
+    }
+
+    private OperationMetricsScope BeginOperation(string operationName, Guid? tableId = null, Guid? recordId = null)
+    {
+        var operationScope = _operationScopeFactory.Start(operationName);
+        var scope = new Dictionary<string, object?>
+        {
+            ["Operation"] = operationName,
+            ["CorrelationId"] = operationScope.Context.CorrelationId,
+            ["OperationId"] = operationScope.Context.OperationId
+        };
+
+        if (tableId.HasValue)
+        {
+            scope["TableId"] = tableId.Value;
+        }
+
+        if (recordId.HasValue)
+        {
+            scope["RecordId"] = recordId.Value;
+        }
+
+        var logScope = _logger.BeginScope(scope) ?? NullScope.Instance;
+        return new OperationMetricsScope(operationScope, logScope, operationName);
+    }
+
+    private sealed class OperationMetricsScope : IDisposable
+    {
+        private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
+        private readonly IOperationScope _operationScope;
+        private readonly IDisposable _logScope;
+
+        public OperationMetricsScope(IOperationScope operationScope, IDisposable logScope, string operationName)
+        {
+            _operationScope = operationScope;
+            _logScope = logScope;
+            OperationName = operationName;
+        }
+
+        public string OperationName { get; }
+        public OperationContext Context => _operationScope.Context;
+        public TimeSpan Elapsed => _stopwatch.Elapsed;
+
+        public void Dispose()
+        {
+            _stopwatch.Stop();
+            _logScope.Dispose();
+            _operationScope.Dispose();
+        }
+    }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static readonly NullScope Instance = new();
+
+        public void Dispose()
+        {
+        }
     }
 
     public async Task<STable> CreateTableAsync(STable table, CancellationToken cancellationToken = default)
     {
+        using var operation = BeginOperation("DataEngine.CreateTable", table.Id);
+
         var added = EnsureBasicViews(table);
         NormalizeTableDefinition(table);
         ValidateTableDefinition(table);
 
         await _db.Tables.AddAsync(table, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Table {Table} created with {FieldCount} fields", table.Name, table.Fields.Count);
+        _logger.LogInformation("Table {Table} created with {FieldCount} fields in {ElapsedMs}ms", table.Name, table.Fields.Count, operation.Elapsed.TotalMilliseconds);
         if (added > 0)
         {
-            _logger.LogInformation("{ViewCount} default view(s) created for table {Table}", added, table.Name);
+            _logger.LogInformation("{ViewCount} default view(s) created for table {Table} in {ElapsedMs}ms", added, table.Name, operation.Elapsed.TotalMilliseconds);
         }
         return table;
     }
 
     public async Task<IEnumerable<SViewDefinition>> GenerateSimpleViewsAsync(Guid tableId, CancellationToken cancellationToken = default)
     {
+        using var operation = BeginOperation("DataEngine.GenerateViews", tableId);
+
         var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Table {tableId} not found");
 
@@ -93,7 +158,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             NormalizeTableDefinition(table);
             _db.Tables.Update(table);
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("Generated {Count} simple view(s) for table {Table}", added, table.Name);
+            _logger.LogInformation("Generated {Count} simple view(s) for table {Table} in {ElapsedMs}ms", added, table.Name, operation.Elapsed.TotalMilliseconds);
         }
 
         return table.Views;
@@ -139,6 +204,8 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
     public async Task<F_Record> InsertAsync(Guid tableId, IDictionary<string, object?> data, CancellationToken cancellationToken = default)
     {
+        using var operation = BeginOperation("DataEngine.Insert", tableId);
+
         var (table, validated) = await ValidateRecordAsync(tableId, data, null, cancellationToken).ConfigureAwait(false);
 
         var record = new F_Record
@@ -151,7 +218,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         await _db.Records.AddAsync(record, cancellationToken).ConfigureAwait(false);
         await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Record {RecordId} inserted for table {TableId}", record.Id, tableId);
+        _logger.LogInformation("Record {RecordId} inserted for table {TableId} in {ElapsedMs}ms", record.Id, tableId, operation.Elapsed.TotalMilliseconds);
         await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
         return record;
     }
@@ -161,6 +228,8 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
     public async Task<F_Record> UpdateAsync(Guid tableId, Guid id, IDictionary<string, object?> data, CancellationToken cancellationToken = default)
     {
+        using var operation = BeginOperation("DataEngine.Update", tableId, id);
+
         var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Table {tableId} not found");
 
@@ -174,13 +243,15 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         _db.Records.Update(record);
         await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Record {RecordId} updated for table {TableId}", id, tableId);
+        _logger.LogInformation("Record {RecordId} updated for table {TableId} in {ElapsedMs}ms", id, tableId, operation.Elapsed.TotalMilliseconds);
         await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
         return record;
     }
 
     public async Task DeleteAsync(Guid tableId, Guid id, CancellationToken cancellationToken = default)
     {
+        using var operation = BeginOperation("DataEngine.Delete", tableId, id);
+
         var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Table {tableId} not found");
 
@@ -201,7 +272,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         }
 
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Record {RecordId} deleted for table {TableId}", id, tableId);
+        _logger.LogInformation("Record {RecordId} deleted for table {TableId} in {ElapsedMs}ms", id, tableId, operation.Elapsed.TotalMilliseconds);
         await _search.RemoveAsync("Record", id, cancellationToken).ConfigureAwait(false);
     }
 
@@ -217,6 +288,8 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
     public async Task<IEnumerable<F_Record>> QueryAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default)
     {
+        using var operation = BeginOperation("DataEngine.Query", tableId);
+
         spec ??= new QuerySpec();
         var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Table {tableId} not found");
@@ -233,11 +306,15 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             query = query.Take(spec.Take.Value);
         }
 
-        return await query.ToListAsync(cancellationToken).ConfigureAwait(false);
+        var results = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("Query returned {Count} record(s) for table {TableId} in {ElapsedMs}ms", results.Count, tableId, operation.Elapsed.TotalMilliseconds);
+        return results;
     }
 
     public async Task<IEnumerable<ResolvedRecord>> QueryResolvedAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default)
     {
+        using var operation = BeginOperation("DataEngine.QueryResolved", tableId);
+
         var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Table {tableId} not found");
 
@@ -250,6 +327,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             resolved.Add(resolvedRecord);
         }
 
+        _logger.LogInformation("Resolved query returned {Count} record(s) for table {TableId} in {ElapsedMs}ms", resolved.Count, tableId, operation.Elapsed.TotalMilliseconds);
         return resolved;
     }
 
@@ -259,6 +337,8 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         {
             return Array.Empty<RecordSearchHit>();
         }
+
+        using var operation = BeginOperation("DataEngine.Search", tableId);
 
         var validated = NormalizeSearchOptions(options);
         _ = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
@@ -292,6 +372,11 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
                 results.Add(new RecordSearchHit(recordId, score, snippet));
             }
 
+            _logger.LogInformation(
+                "Search returned {Count} result(s) for table {TableId} in {ElapsedMs}ms",
+                results.Count,
+                tableId,
+                operation.Elapsed.TotalMilliseconds);
             return results;
         }
         finally

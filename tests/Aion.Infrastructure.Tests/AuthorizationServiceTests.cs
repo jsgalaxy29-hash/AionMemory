@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Aion.Domain;
 using Aion.Infrastructure;
+using Aion.Infrastructure.Observability;
 using Aion.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -62,7 +63,7 @@ public class AuthorizationServiceTests
     private static AuthorizedDataEngine CreateAuthorizedEngine(AionDbContext context, Guid userId)
     {
         var auth = new AuthorizationService(context, NullLogger<AuthorizationService>.Instance);
-        var inner = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService());
+        var inner = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory());
         var current = new StubCurrentUserService(userId);
         return new AuthorizedDataEngine(inner, auth, current, NullLogger<AuthorizedDataEngine>.Instance);
     }
@@ -79,7 +80,7 @@ public class AuthorizationServiceTests
             }
         };
 
-        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService());
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory());
         await engine.CreateTableAsync(table);
         return table;
     }

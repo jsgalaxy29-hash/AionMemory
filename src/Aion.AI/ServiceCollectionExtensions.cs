@@ -1,7 +1,9 @@
 using Aion.AI.ModuleBuilder;
+using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Aion.AI;
@@ -18,6 +20,7 @@ public static class ServiceCollectionExtensions
         optionsBuilder.Services.AddSingleton<IValidateOptions<AionAiOptions>, AionAiOptionsValidator>();
         optionsBuilder.ValidateOnStart();
 
+        services.TryAddSingleton<IOperationScopeFactory, NoopOperationScopeFactory>();
         services.AddHttpClient(HttpClientNames.Llm, ConfigureClient(HttpClientNames.Llm));
         services.AddHttpClient(HttpClientNames.Embeddings, ConfigureClient(HttpClientNames.Embeddings));
         services.AddHttpClient(HttpClientNames.Transcription, ConfigureClient(HttpClientNames.Transcription));

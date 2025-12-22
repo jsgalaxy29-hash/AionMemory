@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Aion.Domain;
 using Aion.Infrastructure;
+using Aion.Infrastructure.Observability;
 using Aion.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -36,7 +37,7 @@ public class DataEngineValidationTests
             }
         };
 
-        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService());
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory());
         await engine.CreateTableAsync(table);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => engine.InsertAsync(table.Id, "{}"));
@@ -76,7 +77,7 @@ public class DataEngineValidationTests
             }
         };
 
-        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService());
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory());
         await engine.CreateTableAsync(table);
 
         await engine.InsertAsync(table.Id, "{ \"Title\": \"A\", \"Category\": \"work\" }");
@@ -135,7 +136,7 @@ public class DataEngineValidationTests
             }
         };
 
-        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService());
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory());
 
         await engine.CreateTableAsync(peopleTable);
         await engine.CreateTableAsync(projectsTable);
@@ -190,7 +191,7 @@ public class DataEngineValidationTests
             }
         };
 
-        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService());
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory());
         await engine.CreateTableAsync(table);
         await engine.InsertAsync(table.Id, "{ \"Title\": \"Hello\" }");
 

@@ -44,6 +44,7 @@ public sealed record AionAiOptions
     public string? Organization { get; init; }
     public int? MaxTokens { get; init; }
     public double Temperature { get; init; } = 0.2;
+    public bool EnablePromptTracing { get; init; }
 
     public string? EmbeddingsEndpoint { get; init; }
     public string? EmbeddingModel { get; init; }

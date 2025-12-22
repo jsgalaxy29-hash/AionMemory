@@ -1,11 +1,14 @@
+using System;
+using System.Diagnostics;
+using System.Linq;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using System.Linq;
 using Aion.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+
 namespace Aion.AI;
 public static class HttpClientNames
 {
@@ -269,15 +272,31 @@ public sealed class IntentRecognizer : IIntentDetector
 {
     private readonly IChatModel _provider;
     private readonly ILogger<IntentRecognizer> _logger;
+    private readonly IOptionsMonitor<AionAiOptions> _options;
+    private readonly IOperationScopeFactory _operationScopeFactory;
 
-    public IntentRecognizer(IChatModel provider, ILogger<IntentRecognizer> logger)
+    public IntentRecognizer(IChatModel provider, ILogger<IntentRecognizer> logger, IOptionsMonitor<AionAiOptions> options, IOperationScopeFactory operationScopeFactory)
     {
         _provider = provider;
         _logger = logger;
+        _options = options;
+        _operationScopeFactory = operationScopeFactory;
     }
 
     public async Task<IntentDetectionResult> DetectAsync(IntentDetectionRequest request, CancellationToken cancellationToken = default)
     {
+        var options = _options.CurrentValue;
+        var safePrompt = request.Input.ToSafeLogValue(options, _logger);
+        using var operation = _operationScopeFactory.Start("AI.IntentDetection");
+        using var scope = _logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["Operation"] = "AI.IntentDetection",
+            ["CorrelationId"] = operation.Context.CorrelationId,
+            ["OperationId"] = operation.Context.OperationId,
+            ["Prompt"] = safePrompt
+        }) ?? NullScope.Instance;
+        var stopwatch = Stopwatch.StartNew();
+
         var context = request.Context ?? new Dictionary<string, string?>();
         var contextLines = context.Count == 0
             ? "aucun contexte"
@@ -305,7 +324,7 @@ public sealed class IntentRecognizer : IIntentDetector
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Intent detection failed for input '{Input}'", request.Input);
+            _logger.LogWarning(ex, "Intent detection failed after {ElapsedMs}ms ({Prompt})", stopwatch.Elapsed.TotalMilliseconds, safePrompt);
             return BuildFallback(request.Input, null, ex.Message, 0.05);
         }
 
@@ -313,10 +332,11 @@ public sealed class IntentRecognizer : IIntentDetector
 
         if (TryParseIntent(json, out var parsed))
         {
+            _logger.LogInformation("Intent detection parsed response in {ElapsedMs}ms (confidence={Confidence:F2})", stopwatch.Elapsed.TotalMilliseconds, parsed.Confidence);
             return parsed with { RawResponse = response.RawResponse ?? json };
         }
 
-        _logger.LogWarning("Intent parsing failed, returning fallback intent for input '{Input}'", request.Input);
+        _logger.LogWarning("Intent parsing failed after {ElapsedMs}ms ({Prompt})", stopwatch.Elapsed.TotalMilliseconds, safePrompt);
         return BuildFallback(request.Input, response.RawResponse ?? json);
     }
     private bool TryParseIntent(string json, out IntentDetectionResult result)
@@ -383,6 +403,15 @@ public sealed class IntentRecognizer : IIntentDetector
         }
 
         return new IntentDetectionResult("unknown", parameters, confidence, rawResponse);
+    }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static readonly NullScope Instance = new();
+
+        public void Dispose()
+        {
+        }
     }
 }
 public sealed class ModuleDesigner : IModuleDesigner
