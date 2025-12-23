@@ -119,6 +119,11 @@ public interface IAutomationOrchestrator
     Task<IEnumerable<AutomationExecution>> GetRecentExecutionsAsync(int take = 50, CancellationToken cancellationToken = default);
 }
 
+public interface IAutomationRuleEngine
+{
+    Task<IReadOnlyCollection<AutomationExecution>> ExecuteAsync(AutomationEvent automationEvent, CancellationToken cancellationToken = default);
+}
+
 public interface IDashboardService
 {
     Task<IEnumerable<DashboardWidget>> GetWidgetsAsync(CancellationToken cancellationToken = default);
