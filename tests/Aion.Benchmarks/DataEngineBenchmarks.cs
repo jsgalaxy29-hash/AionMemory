@@ -37,7 +37,7 @@ public class DataEngineBenchmarks : IAsyncDisposable
         _context = new AionDbContext(options);
         await _context.Database.MigrateAsync().ConfigureAwait(false);
 
-        _engine = new AionDataEngine(_context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory());
+        _engine = new AionDataEngine(_context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine());
 
         await CreateTablesAsync().ConfigureAwait(false);
         await SeedQueryDataAsync().ConfigureAwait(false);
@@ -214,5 +214,11 @@ public class DataEngineBenchmarks : IAsyncDisposable
         public Task IndexFileAsync(F_File file, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task RemoveAsync(string targetType, Guid targetId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class NullAutomationRuleEngine : IAutomationRuleEngine
+    {
+        public Task<IReadOnlyCollection<AutomationExecution>> ExecuteAsync(AutomationEvent automationEvent, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<AutomationExecution>>(Array.Empty<AutomationExecution>());
     }
 }

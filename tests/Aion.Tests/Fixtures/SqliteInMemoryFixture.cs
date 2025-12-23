@@ -44,7 +44,7 @@ public sealed class SqliteInMemoryFixture : IAsyncLifetime
     public AionDataEngine CreateDataEngine(ISearchService? search = null, IEmbeddingProvider? embeddingProvider = null)
     {
         var logger = _loggerFactory.CreateLogger<AionDataEngine>();
-        return new AionDataEngine(CreateContext(), logger, search ?? new NullSearchService(), new OperationScopeFactory(), embeddingProvider);
+        return new AionDataEngine(CreateContext(), logger, search ?? new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine(), embeddingProvider);
     }
 }
 
@@ -60,4 +60,10 @@ file sealed class NullSearchService : ISearchService
     public Task IndexFileAsync(F_File file, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     public Task RemoveAsync(string targetType, Guid targetId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+}
+
+file sealed class NullAutomationRuleEngine : IAutomationRuleEngine
+{
+    public Task<IReadOnlyCollection<AutomationExecution>> ExecuteAsync(AutomationEvent automationEvent, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyCollection<AutomationExecution>>(Array.Empty<AutomationExecution>());
 }

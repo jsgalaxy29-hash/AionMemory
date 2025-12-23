@@ -50,6 +50,8 @@ public class AionDbContext : DbContext
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<Permission> Permissions => Set<Permission>();
     public DbSet<MemoryInsight> MemoryInsights => Set<MemoryInsight>();
+    public DbSet<KnowledgeNode> KnowledgeNodes => Set<KnowledgeNode>();
+    public DbSet<KnowledgeEdge> KnowledgeEdges => Set<KnowledgeEdge>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -364,6 +366,23 @@ public class AionDbContext : DbContext
             builder.Property(i => i.RecordCount).IsRequired();
             builder.Property(i => i.GeneratedAt).IsRequired();
             builder.HasIndex(i => i.GeneratedAt);
+        });
+
+        modelBuilder.Entity<KnowledgeNode>(builder =>
+        {
+            builder.Property(n => n.Title).IsRequired().HasMaxLength(256);
+            builder.Property(n => n.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+            builder.HasIndex(n => new { n.TableId, n.RecordId }).IsUnique();
+        });
+
+        modelBuilder.Entity<KnowledgeEdge>(builder =>
+        {
+            builder.Property(e => e.RelationType).HasConversion<string>().HasMaxLength(32);
+            builder.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+            builder.HasOne<KnowledgeNode>().WithMany().HasForeignKey(e => e.FromNodeId).OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<KnowledgeNode>().WithMany().HasForeignKey(e => e.ToNodeId).OnDelete(DeleteBehavior.Cascade);
+            builder.HasIndex(e => new { e.FromNodeId, e.ToNodeId, e.RelationType }).IsUnique();
+            builder.HasIndex(e => e.RelationType);
         });
 
         base.OnModelCreating(modelBuilder);
