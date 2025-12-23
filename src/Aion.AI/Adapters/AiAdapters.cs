@@ -34,6 +34,8 @@ public static class AiAdapterServiceCollectionExtensions
         services.TryAddScoped<INoteInterpreter, SimpleNoteInterpreter>();
         services.TryAddScoped<IReportInterpreter, SimpleReportInterpreter>();
         services.TryAddScoped<IMemoryAnalyzer, MemoryAnalyzer>();
+        services.TryAddScoped<IMemoryContextBuilder, MemoryContextBuilder>();
+        services.TryAddScoped<IChatAnswerer, ChatAnswerer>();
 
         return services;
     }
