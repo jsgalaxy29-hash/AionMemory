@@ -48,6 +48,18 @@ public interface IDataEngine
     Task<IEnumerable<ResolvedRecord>> QueryResolvedAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default);
     Task<IEnumerable<RecordSearchHit>> SearchAsync(Guid tableId, string query, SearchOptions? options = null, CancellationToken cancellationToken = default);
     Task<IEnumerable<RecordSearchHit>> SearchSmartAsync(Guid tableId, string query, SearchOptions? options = null, CancellationToken cancellationToken = default);
+    Task<KnowledgeEdge> LinkRecordsAsync(
+        Guid fromTableId,
+        Guid fromRecordId,
+        Guid toTableId,
+        Guid toRecordId,
+        KnowledgeRelationType relationType,
+        CancellationToken cancellationToken = default);
+    Task<KnowledgeGraphSlice> GetKnowledgeGraphAsync(
+        Guid tableId,
+        Guid recordId,
+        int depth = 1,
+        CancellationToken cancellationToken = default);
 }
 
 public interface INoteService

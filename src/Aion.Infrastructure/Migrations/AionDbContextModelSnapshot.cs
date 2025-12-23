@@ -515,6 +515,70 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("MemoryInsights");
                 });
 
+            modelBuilder.Entity("Aion.Domain.KnowledgeEdge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<Guid>("FromNodeId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RelationType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ToNodeId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RelationType");
+
+                    b.HasIndex("ToNodeId");
+
+                    b.HasIndex("FromNodeId", "ToNodeId", "RelationType")
+                        .IsUnique();
+
+                    b.ToTable("KnowledgeEdges");
+                });
+
+            modelBuilder.Entity("Aion.Domain.KnowledgeNode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<Guid>("RecordId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TableId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TableId", "RecordId")
+                        .IsUnique();
+
+                    b.ToTable("KnowledgeNodes");
+                });
+
             modelBuilder.Entity("Aion.Domain.RecordSearchEntry", b =>
                 {
                     b.Property<string>("Content");
@@ -1310,6 +1374,21 @@ namespace Aion.Infrastructure.Migrations
                     b.HasOne("Aion.Domain.S_AutomationRule", null)
                         .WithMany()
                         .HasForeignKey("RuleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Aion.Domain.KnowledgeEdge", b =>
+                {
+                    b.HasOne("Aion.Domain.KnowledgeNode", null)
+                        .WithMany()
+                        .HasForeignKey("FromNodeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Aion.Domain.KnowledgeNode", null)
+                        .WithMany()
+                        .HasForeignKey("ToNodeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

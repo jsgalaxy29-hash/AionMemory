@@ -502,6 +502,147 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         return combined;
     }
 
+    public async Task<KnowledgeEdge> LinkRecordsAsync(
+        Guid fromTableId,
+        Guid fromRecordId,
+        Guid toTableId,
+        Guid toRecordId,
+        KnowledgeRelationType relationType,
+        CancellationToken cancellationToken = default)
+    {
+        using var operation = BeginOperation("DataEngine.LinkRecords", fromTableId, fromRecordId);
+
+        var fromTable = await GetTableAsync(fromTableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {fromTableId} not found");
+        var toTable = await GetTableAsync(toTableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {toTableId} not found");
+
+        var fromRecord = await FilterByTable(_db.Records.AsNoTracking(), fromTable)
+            .FirstOrDefaultAsync(r => r.Id == fromRecordId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Record {fromRecordId} not found for table {fromTableId}");
+
+        var toRecord = await FilterByTable(_db.Records.AsNoTracking(), toTable)
+            .FirstOrDefaultAsync(r => r.Id == toRecordId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Record {toRecordId} not found for table {toTableId}");
+
+        var fromNode = await UpsertKnowledgeNodeAsync(fromTable, fromRecord, cancellationToken).ConfigureAwait(false);
+        var toNode = await UpsertKnowledgeNodeAsync(toTable, toRecord, cancellationToken).ConfigureAwait(false);
+
+        var existing = await _db.KnowledgeEdges.FirstOrDefaultAsync(
+            e => e.FromNodeId == fromNode.Id && e.ToNodeId == toNode.Id && e.RelationType == relationType,
+            cancellationToken).ConfigureAwait(false);
+
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var edge = new KnowledgeEdge
+        {
+            FromNodeId = fromNode.Id,
+            ToNodeId = toNode.Id,
+            RelationType = relationType,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+
+        await _db.KnowledgeEdges.AddAsync(edge, cancellationToken).ConfigureAwait(false);
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Knowledge edge {EdgeId} created from {FromRecord} to {ToRecord} with relation {Relation} in {ElapsedMs}ms",
+            edge.Id,
+            fromRecordId,
+            toRecordId,
+            relationType,
+            operation.Elapsed.TotalMilliseconds);
+
+        return edge;
+    }
+
+    public async Task<KnowledgeGraphSlice> GetKnowledgeGraphAsync(
+        Guid tableId,
+        Guid recordId,
+        int depth = 1,
+        CancellationToken cancellationToken = default)
+    {
+        using var operation = BeginOperation("DataEngine.GetKnowledgeGraph", tableId, recordId);
+
+        if (depth < 0)
+        {
+            throw new InvalidOperationException("Depth must be zero or greater.");
+        }
+
+        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Table {tableId} not found");
+
+        var record = await FilterByTable(_db.Records.AsNoTracking(), table)
+            .FirstOrDefaultAsync(r => r.Id == recordId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Record {recordId} not found for table {tableId}");
+
+        var rootNode = await UpsertKnowledgeNodeAsync(table, record, cancellationToken).ConfigureAwait(false);
+
+        var nodes = new Dictionary<Guid, KnowledgeNode>
+        {
+            [rootNode.Id] = rootNode
+        };
+        var edges = new Dictionary<Guid, KnowledgeEdge>();
+        var frontier = new Queue<(KnowledgeNode Node, int Depth)>();
+        frontier.Enqueue((rootNode, 0));
+
+        while (frontier.Count > 0)
+        {
+            var (current, currentDepth) = frontier.Dequeue();
+            if (currentDepth >= depth)
+            {
+                continue;
+            }
+
+            var connected = await _db.KnowledgeEdges.AsNoTracking()
+                .Where(e => e.FromNodeId == current.Id || e.ToNodeId == current.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var edge in connected)
+            {
+                if (!edges.ContainsKey(edge.Id))
+                {
+                    edges[edge.Id] = edge;
+                }
+
+                var neighborId = edge.FromNodeId == current.Id ? edge.ToNodeId : edge.FromNodeId;
+                if (nodes.ContainsKey(neighborId))
+                {
+                    continue;
+                }
+
+                var neighbor = await _db.KnowledgeNodes.AsNoTracking()
+                    .FirstOrDefaultAsync(n => n.Id == neighborId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (neighbor is null)
+                {
+                    continue;
+                }
+
+                nodes[neighbor.Id] = neighbor;
+                frontier.Enqueue((neighbor, currentDepth + 1));
+            }
+        }
+
+        var slice = new KnowledgeGraphSlice(rootNode, nodes.Values.ToList(), edges.Values.ToList());
+        _logger.LogInformation(
+            "Knowledge graph slice for record {RecordId} returned {NodeCount} node(s) and {EdgeCount} edge(s) in {ElapsedMs}ms",
+            recordId,
+            nodes.Count,
+            edges.Count,
+            operation.Elapsed.TotalMilliseconds);
+
+        return slice;
+    }
+
     private sealed record FullTextHit(Guid RecordId, double Score, string Snippet, string Content);
 
     private async Task<List<FullTextHit>> ExecuteFullTextSearchAsync(Guid tableId, string query, SearchOptions options, CancellationToken cancellationToken)
@@ -1636,6 +1777,57 @@ LIMIT $take OFFSET $skip;
             JsonElement element when element.ValueKind == JsonValueKind.String && Guid.TryParse(element.GetString(), out var parsed) => parsed,
             _ => null
         };
+
+    private async Task<KnowledgeNode> UpsertKnowledgeNodeAsync(STable table, F_Record record, CancellationToken cancellationToken)
+    {
+        var title = BuildRecordTitle(table, record);
+        var existing = await _db.KnowledgeNodes.FirstOrDefaultAsync(
+            n => n.TableId == table.Id && n.RecordId == record.Id,
+            cancellationToken).ConfigureAwait(false);
+
+        if (existing is not null)
+        {
+            if (!string.Equals(existing.Title, title, StringComparison.Ordinal))
+            {
+                existing.Title = title;
+                _db.KnowledgeNodes.Update(existing);
+                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return existing;
+        }
+
+        var node = new KnowledgeNode
+        {
+            TableId = table.Id,
+            RecordId = record.Id,
+            Title = title,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+
+        await _db.KnowledgeNodes.AddAsync(node, cancellationToken).ConfigureAwait(false);
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return node;
+    }
+
+    private string BuildRecordTitle(STable table, F_Record record)
+    {
+        var values = ParseJsonPayload(record.DataJson);
+        var templateTitle = ApplyRowLabelTemplate(table.RowLabelTemplate, values);
+        if (!string.IsNullOrWhiteSpace(templateTitle))
+        {
+            return templateTitle!;
+        }
+
+        var firstText = GetFirstTextValue(table, values);
+        if (!string.IsNullOrWhiteSpace(firstText))
+        {
+            return firstText!;
+        }
+
+        var prefix = string.IsNullOrWhiteSpace(table.DisplayName) ? table.Name : table.DisplayName;
+        return $"{prefix} #{record.Id.ToString()[..8]}";
+    }
 
     private async Task EnsureLookupTargetExists(SFieldDefinition field, Guid lookupId, CancellationToken cancellationToken)
     {

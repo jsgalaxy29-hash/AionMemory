@@ -77,6 +77,27 @@ public sealed class AuthorizedDataEngine : IDataEngine
     public Task<IEnumerable<RecordSearchHit>> SearchSmartAsync(Guid tableId, string query, SearchOptions? options = null, CancellationToken cancellationToken = default)
         => ExecuteAsync(PermissionAction.Read, tableId, () => _inner.SearchSmartAsync(tableId, query, options, cancellationToken), cancellationToken);
 
+    public Task<KnowledgeEdge> LinkRecordsAsync(
+        Guid fromTableId,
+        Guid fromRecordId,
+        Guid toTableId,
+        Guid toRecordId,
+        KnowledgeRelationType relationType,
+        CancellationToken cancellationToken = default)
+        => ExecuteAsync(
+            PermissionAction.Write,
+            fromTableId,
+            () => _inner.LinkRecordsAsync(fromTableId, fromRecordId, toTableId, toRecordId, relationType, cancellationToken),
+            cancellationToken,
+            fromRecordId);
+
+    public Task<KnowledgeGraphSlice> GetKnowledgeGraphAsync(
+        Guid tableId,
+        Guid recordId,
+        int depth = 1,
+        CancellationToken cancellationToken = default)
+        => ExecuteAsync(PermissionAction.Read, tableId, () => _inner.GetKnowledgeGraphAsync(tableId, recordId, depth, cancellationToken), cancellationToken, recordId);
+
     private async Task<T> ExecuteAsync<T>(PermissionAction action, Guid tableId, Func<Task<T>> callback, CancellationToken cancellationToken, Guid? recordId = null)
     {
         await EnsureAuthorizedAsync(action, tableId, recordId, cancellationToken).ConfigureAwait(false);
