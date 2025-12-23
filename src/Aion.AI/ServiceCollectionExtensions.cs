@@ -84,6 +84,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INoteInterpreter, NoteInterpreter>();
         services.AddScoped<IReportInterpreter, ReportInterpreter>();
         services.AddScoped<IMemoryAnalyzer, MemoryAnalyzer>();
+        services.AddScoped<IMemoryContextBuilder, MemoryContextBuilder>();
+        services.AddScoped<IChatAnswerer, ChatAnswerer>();
 
         return services;
     }

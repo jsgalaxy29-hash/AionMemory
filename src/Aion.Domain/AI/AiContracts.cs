@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using System.Linq;
 using Aion.Domain;
 
 namespace Aion.AI;
@@ -73,6 +75,68 @@ public readonly record struct ReportBuildRequest
 
 public readonly record struct ReportBuildResult(S_ReportDefinition Report, string RawResponse);
 
+public sealed record MemoryContextRequest
+{
+    public string Query { get; init; } = string.Empty;
+    public string Locale { get; init; } = "fr-FR";
+    public int RecordLimit { get; init; } = 6;
+    public int HistoryLimit { get; init; } = 4;
+    public int InsightLimit { get; init; } = 3;
+}
+
+public sealed record MemoryContextItem(
+    Guid RecordId,
+    string SourceType,
+    string Title,
+    string Snippet,
+    DateTimeOffset? Timestamp = null,
+    Guid? TableId = null,
+    string? Scope = null,
+    double Score = 0
+);
+
+public sealed record MemoryContextResult(
+    IReadOnlyCollection<MemoryContextItem> Records,
+    IReadOnlyCollection<MemoryContextItem> History,
+    IReadOnlyCollection<MemoryContextItem> Insights)
+{
+    public bool IsEmpty => Records.Count == 0 && History.Count == 0 && Insights.Count == 0;
+    public IReadOnlyCollection<MemoryContextItem> All => new ReadOnlyCollection<MemoryContextItem>(Records.Concat(History).Concat(Insights).ToList());
+}
+
+public readonly record struct AssistantAnswerRequest
+{
+    public required string Question { get; init; }
+    public string Locale { get; init; } = "fr-FR";
+    public MemoryContextRequest Context { get; init; } = new();
+
+    public AssistantAnswerRequest(string question, string locale = "fr-FR", MemoryContextRequest? context = null)
+    {
+        Question = question;
+        Locale = locale;
+
+        var resolvedContext = context ?? new MemoryContextRequest();
+        if (string.IsNullOrWhiteSpace(resolvedContext.Query))
+        {
+            resolvedContext = resolvedContext with { Query = question, Locale = locale };
+        }
+        else if (string.IsNullOrWhiteSpace(resolvedContext.Locale))
+        {
+            resolvedContext = resolvedContext with { Locale = locale };
+        }
+
+        Context = resolvedContext;
+    }
+}
+
+public sealed record AssistantAnswer(
+    string Message,
+    IReadOnlyCollection<Guid> Citations,
+    MemoryContextResult Context,
+    string RawResponse,
+    bool UsedFallback = false
+);
+
 public readonly record struct VisionAnalysisRequest
 {
     public required Guid FileId { get; init; }
@@ -123,6 +187,16 @@ public interface IReportInterpreter
 public interface IMemoryAnalyzer
 {
     Task<MemoryAnalysisResult> AnalyzeAsync(MemoryAnalysisRequest request, CancellationToken cancellationToken = default);
+}
+
+public interface IMemoryContextBuilder
+{
+    Task<MemoryContextResult> BuildAsync(MemoryContextRequest request, CancellationToken cancellationToken = default);
+}
+
+public interface IChatAnswerer
+{
+    Task<AssistantAnswer> AnswerAsync(AssistantAnswerRequest request, CancellationToken cancellationToken = default);
 }
 
 public interface IAionVisionService : IVisionService
