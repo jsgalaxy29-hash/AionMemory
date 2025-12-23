@@ -37,7 +37,7 @@ public class DataEngineValidationTests
             }
         };
 
-        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory());
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine());
         await engine.CreateTableAsync(table);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => engine.InsertAsync(table.Id, "{}"));
@@ -77,7 +77,7 @@ public class DataEngineValidationTests
             }
         };
 
-        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory());
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine());
         await engine.CreateTableAsync(table);
 
         await engine.InsertAsync(table.Id, "{ \"Title\": \"A\", \"Category\": \"work\" }");
@@ -136,7 +136,7 @@ public class DataEngineValidationTests
             }
         };
 
-        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory());
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine());
 
         await engine.CreateTableAsync(peopleTable);
         await engine.CreateTableAsync(projectsTable);
@@ -191,7 +191,7 @@ public class DataEngineValidationTests
             }
         };
 
-        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory());
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine());
         await engine.CreateTableAsync(table);
         await engine.InsertAsync(table.Id, "{ \"Title\": \"Hello\" }");
 
@@ -216,4 +216,10 @@ file sealed class NullSearchService : ISearchService
     public Task IndexFileAsync(F_File file, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     public Task RemoveAsync(string targetType, Guid targetId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+}
+
+file sealed class NullAutomationRuleEngine : IAutomationRuleEngine
+{
+    public Task<IReadOnlyCollection<AutomationExecution>> ExecuteAsync(AutomationEvent automationEvent, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyCollection<AutomationExecution>>(Array.Empty<AutomationExecution>());
 }

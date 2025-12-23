@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Aion.AI;
 using Aion.Domain;
+using Aion.Infrastructure.Services.Automation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -84,18 +85,21 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
     private readonly ISearchService _search;
     private readonly IEmbeddingProvider? _embeddingProvider;
     private readonly IOperationScopeFactory _operationScopeFactory;
+    private readonly IAutomationRuleEngine _automationRuleEngine;
 
     public AionDataEngine(
         AionDbContext db,
         ILogger<AionDataEngine> logger,
         ISearchService search,
         IOperationScopeFactory operationScopeFactory,
+        IAutomationRuleEngine automationRuleEngine,
         IEmbeddingProvider? embeddingProvider = null)
     {
         _db = db;
         _logger = logger;
         _search = search;
         _operationScopeFactory = operationScopeFactory;
+        _automationRuleEngine = automationRuleEngine;
         _embeddingProvider = embeddingProvider;
     }
 
@@ -155,6 +159,16 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         public void Dispose()
         {
         }
+    }
+
+    private async Task TriggerAutomationAsync(AutomationEvent automationEvent, CancellationToken cancellationToken)
+    {
+        if (AutomationExecutionContext.IsSuppressed)
+        {
+            return;
+        }
+
+        await _automationRuleEngine.ExecuteAsync(automationEvent, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<STable> CreateTableAsync(STable table, CancellationToken cancellationToken = default)
@@ -255,6 +269,16 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} inserted for table {TableId} in {ElapsedMs}ms", record.Id, tableId, operation.Elapsed.TotalMilliseconds);
         await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
+
+        var automationPayload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["tableId"] = tableId,
+            ["recordId"] = record.Id,
+            ["data"] = validated.Values
+        };
+
+        var automationEvent = new AutomationEvent("record.created", AutomationTriggerType.OnCreate, automationPayload, null, table.Id);
+        await TriggerAutomationAsync(automationEvent, cancellationToken).ConfigureAwait(false);
         return record;
     }
 
@@ -286,6 +310,15 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} updated for table {TableId} in {ElapsedMs}ms", id, tableId, operation.Elapsed.TotalMilliseconds);
         await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
+
+        var automationPayload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["tableId"] = tableId,
+            ["recordId"] = record.Id,
+            ["data"] = validated.Values
+        };
+        var automationEvent = new AutomationEvent("record.updated", AutomationTriggerType.OnUpdate, automationPayload, null, table.Id);
+        await TriggerAutomationAsync(automationEvent, cancellationToken).ConfigureAwait(false);
         return record;
     }
 
@@ -322,6 +355,15 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} deleted for table {TableId} in {ElapsedMs}ms", id, tableId, operation.Elapsed.TotalMilliseconds);
         await _search.RemoveAsync("Record", id, cancellationToken).ConfigureAwait(false);
+
+        var automationPayload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["tableId"] = tableId,
+            ["recordId"] = id,
+            ["data"] = ParseJsonPayload(snapshotJson)
+        };
+        var automationEvent = new AutomationEvent("record.deleted", AutomationTriggerType.OnDelete, automationPayload, null, table.Id);
+        await TriggerAutomationAsync(automationEvent, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IEnumerable<ChangeSet>> GetHistoryAsync(Guid tableId, Guid recordId, CancellationToken cancellationToken = default)

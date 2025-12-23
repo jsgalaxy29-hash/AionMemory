@@ -5,6 +5,7 @@ using Aion.Domain.ModuleBuilder;
 using Aion.Infrastructure.ModuleBuilder;
 using Aion.Infrastructure.Observability;
 using Aion.Infrastructure.Services;
+using Aion.Infrastructure.Services.Automation;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -88,6 +89,12 @@ public static class DependencyInjectionExtensions
         services.AddSingleton<IOperationScopeFactory, OperationScopeFactory>();
         services.AddScoped<IAionDataEngine, AionDataEngine>();
         services.AddScoped<IDataEngine, AuthorizedDataEngine>();
+        services.AddScoped<IAutomationRuleEngine>(sp => new AutomationRuleEngine(
+            sp.GetRequiredService<AionDbContext>(),
+            sp.GetRequiredService<INoteService>(),
+            sp.GetRequiredService<IAgendaService>(),
+            () => sp.GetRequiredService<IAionDataEngine>(),
+            sp.GetRequiredService<ILogger<AutomationRuleEngine>>()));
         services.AddScoped<IAuthorizationService, AuthorizationService>();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<IAionNoteService, NoteService>();

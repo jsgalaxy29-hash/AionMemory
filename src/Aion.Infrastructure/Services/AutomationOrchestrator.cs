@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Aion.Domain;
+using Aion.Infrastructure.Services.Automation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -8,66 +9,25 @@ namespace Aion.Infrastructure.Services;
 public sealed class AutomationOrchestrator : IAutomationOrchestrator
 {
     private readonly AionDbContext _db;
+    private readonly IAutomationRuleEngine _ruleEngine;
     private readonly ILogger<AutomationOrchestrator> _logger;
 
-    public AutomationOrchestrator(AionDbContext db, ILogger<AutomationOrchestrator> logger)
+    public AutomationOrchestrator(AionDbContext db, IAutomationRuleEngine ruleEngine, ILogger<AutomationOrchestrator> logger)
     {
         _db = db;
+        _ruleEngine = ruleEngine;
         _logger = logger;
     }
 
     public async Task<IEnumerable<AutomationExecution>> TriggerAsync(string eventName, object payload, CancellationToken cancellationToken = default)
     {
-        var rules = await _db.AutomationRules
-            .Include(r => r.Conditions)
-            .Include(r => r.Actions)
-            .Where(r => r.IsEnabled && string.Equals(r.TriggerFilter, eventName, StringComparison.OrdinalIgnoreCase))
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        var automationEvent = new AutomationEvent(
+            eventName,
+            AutomationTriggerType.Event,
+            ToPayloadDictionary(payload));
 
-        var executions = new List<AutomationExecution>();
-        foreach (var rule in rules)
-        {
-            var execution = new AutomationExecution
-            {
-                RuleId = rule.Id,
-                Trigger = eventName,
-                PayloadSnapshot = SerializePayload(payload),
-                Status = AutomationExecutionStatus.Running,
-                StartedAt = DateTimeOffset.UtcNow,
-                Outcome = ""
-            };
-
-            await _db.AutomationExecutions.AddAsync(execution, cancellationToken).ConfigureAwait(false);
-            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-            try
-            {
-                var conditionSummary = rule.Conditions.Count == 0
-                    ? "no conditions"
-                    : string.Join("; ", rule.Conditions.Select(c => c.Expression));
-
-                var actionSummary = rule.Actions.Count == 0
-                    ? "no actions"
-                    : string.Join(", ", rule.Actions.Select(a => a.ActionType.ToString()));
-
-                execution.Outcome = $"Conditions: {conditionSummary} | Actions: {actionSummary}";
-                execution.Status = AutomationExecutionStatus.Succeeded;
-                execution.CompletedAt = DateTimeOffset.UtcNow;
-                _logger.LogInformation("[automation] Rule {Rule} executed for {Event} with actions {Actions}", rule.Name, eventName, actionSummary);
-            }
-            catch (Exception ex)
-            {
-                execution.Status = AutomationExecutionStatus.Failed;
-                execution.CompletedAt = DateTimeOffset.UtcNow;
-                execution.Outcome = ex.Message;
-                _logger.LogWarning(ex, "[automation] Rule {Rule} failed during execution", rule.Name);
-            }
-
-            executions.Add(execution);
-            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
-
+        var executions = await _ruleEngine.ExecuteAsync(automationEvent, cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("[automation] Triggered {Event} -> {Count} execution(s)", eventName, executions.Count);
         return executions;
     }
 
@@ -78,15 +38,17 @@ public sealed class AutomationOrchestrator : IAutomationOrchestrator
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-    private static string SerializePayload(object payload)
+    private static IReadOnlyDictionary<string, object?> ToPayloadDictionary(object payload)
     {
         try
         {
-            return JsonSerializer.Serialize(payload, payload.GetType());
+            var json = JsonSerializer.Serialize(payload, payload.GetType());
+            return JsonSerializer.Deserialize<Dictionary<string, object?>>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+                   ?? new Dictionary<string, object?>();
         }
         catch (Exception)
         {
-            return payload.ToString() ?? string.Empty;
+            return new Dictionary<string, object?> { ["raw"] = payload.ToString() };
         }
     }
 }

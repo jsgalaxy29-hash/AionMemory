@@ -57,7 +57,10 @@ public enum AutomationActionType
     UpdateRecord,
     RunScript,
     TriggerWebhook,
-    GenerateNote
+    GenerateNote,
+    Tag,
+    CreateNote,
+    ScheduleReminder
 }
 
 public enum AutomationExecutionStatus

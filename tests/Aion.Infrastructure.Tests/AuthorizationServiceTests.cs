@@ -63,7 +63,7 @@ public class AuthorizationServiceTests
     private static AuthorizedDataEngine CreateAuthorizedEngine(AionDbContext context, Guid userId)
     {
         var auth = new AuthorizationService(context, NullLogger<AuthorizationService>.Instance);
-        var inner = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory());
+        var inner = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine());
         var current = new StubCurrentUserService(userId);
         return new AuthorizedDataEngine(inner, auth, current, NullLogger<AuthorizedDataEngine>.Instance);
     }
@@ -80,7 +80,7 @@ public class AuthorizationServiceTests
             }
         };
 
-        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory());
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine());
         await engine.CreateTableAsync(table);
         return table;
     }
@@ -110,4 +110,10 @@ file sealed class NullSearchService : ISearchService
     public Task IndexFileAsync(F_File file, System.Threading.CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     public Task RemoveAsync(string targetType, Guid targetId, System.Threading.CancellationToken cancellationToken = default) => Task.CompletedTask;
+}
+
+file sealed class NullAutomationRuleEngine : IAutomationRuleEngine
+{
+    public Task<IReadOnlyCollection<AutomationExecution>> ExecuteAsync(AutomationEvent automationEvent, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyCollection<AutomationExecution>>(Array.Empty<AutomationExecution>());
 }
