@@ -73,9 +73,45 @@ function Assert-NoDangerousConfig {
     }
 }
 
+function Assert-ContractVersionBump {
+    $contractRoot = "src/Aion.Domain/"
+    $versionFile = "docs/ARCHITECTURE_FREEZE_V1.md"
+
+    $baseBranch = if ($env:GITHUB_BASE_REF) { $env:GITHUB_BASE_REF } else { "main" }
+    $baseRef = "origin/$baseBranch"
+
+    try {
+        git fetch origin $baseBranch --depth=1 | Out-Null
+    }
+    catch {
+        Write-Warning "Unable to fetch $baseRef for contract validation; falling back to HEAD~1."
+    }
+
+    $mergeBase = git merge-base HEAD $baseRef 2>$null
+    if (-not $mergeBase) {
+        $mergeBase = "HEAD~1"
+    }
+
+    $changedFiles = git diff --name-only $mergeBase HEAD
+    if (-not $changedFiles) {
+        return
+    }
+
+    $contractChanges = $changedFiles | Where-Object { $_ -like "$contractRoot*" }
+    if (-not $contractChanges) {
+        return
+    }
+
+    if (-not ($changedFiles -contains $versionFile)) {
+        $contractList = $contractChanges -join [Environment]::NewLine
+        throw "Contract changes detected in '$contractRoot' without version bump in '$versionFile'.`n$contractList"
+    }
+}
+
 Assert-NoUiInfrastructureDependency
 Assert-NoSecretsInRepo
 Assert-NoDangerousConfig
+Assert-ContractVersionBump
 
 dotnet restore AionMemory.slnx
 dotnet build AionMemory.slnx --configuration Release --no-restore /p:ContinuousIntegrationBuild=true
