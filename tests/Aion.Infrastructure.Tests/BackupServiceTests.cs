@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Aion.Domain;
 using Aion.Infrastructure;
 using Aion.Infrastructure.Services;
 using Microsoft.Data.Sqlite;

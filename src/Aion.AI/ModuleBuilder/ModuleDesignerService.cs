@@ -2,10 +2,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Aion.AI;
 using Aion.Domain;
 
-namespace Aion.Infrastructure.Services;
+namespace Aion.AI.ModuleBuilder;
 
 public class ModuleDesignerService
 {

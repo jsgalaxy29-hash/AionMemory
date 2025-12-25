@@ -1,6 +1,6 @@
 using System;
 
-namespace Aion.Infrastructure;
+namespace Aion.Domain;
 
 public sealed record AionDatabaseOptions
 {

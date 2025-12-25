@@ -1,11 +1,11 @@
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Aion.Domain;
+using Aion.Composition;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Aion.Infrastructure;
-using Aion.Domain;
 
 namespace Aion.AppHost.Services;
 

@@ -2,6 +2,7 @@
   <Project Path="src/Aion.Domain/Aion.Domain.csproj" />
   <Project Path="src/Aion.Infrastructure/Aion.Infrastructure.csproj" />
   <Project Path="src/Aion.AI/Aion.AI.csproj" />
+  <Project Path="src/Aion.Composition/Aion.Composition.csproj" />
   <Project Path="src/Aion.AI/Providers.OpenAI/Aion.AI.Providers.OpenAI.csproj" />
   <Project Path="src/Aion.AI/Providers.Mistral/Aion.AI.Providers.Mistral.csproj" />
   <Project Path="src/Aion.AppHost/Aion.AppHost.csproj">
