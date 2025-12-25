@@ -2,6 +2,21 @@
 
 Application MAUI Blazor qui orchestre l’agent mémoire AION (domaine, infrastructure et IA) dans une app mobile/desktop. Ce dépôt inclut les projets de base (domain, infrastructure, IA) ainsi que l’hôte MAUI.
 
+## Vision
+AionMemory est une mémoire personnelle, souveraine et local-first. Les données
+restent locales par défaut, le fonctionnement offline est garanti, et toute
+interaction réseau est explicite et traçable.
+
+## Design Principles
+- **Local-first** : données stockées localement par défaut, synchronisation
+  optionnelle et explicite.
+- **Confidentialité par défaut** : chiffrement local, absence d’envoi implicite.
+- **Explicabilité** : résultats IA reliés aux sources et aux règles appliquées.
+- **Contrôle humain** : actions sensibles validées par l’utilisateur.
+- **Résilience offline** : comportements déterministes sans réseau.
+
+Voir [docs/AION_MANIFEST.md](./docs/AION_MANIFEST.md) pour le manifeste produit.
+
 ## Prérequis
 - .NET 10 (SDK preview) avec les workloads MAUI installés (`dotnet workload install maui-android maui-ios maui-maccatalyst`).
 - Un émulateur ou un appareil pour la plateforme ciblée (Android, iOS, macOS Catalyst ou Windows via `net10.0-windows10.0.19041.0`).
