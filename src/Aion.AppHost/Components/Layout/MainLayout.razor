@@ -89,6 +89,7 @@
                     <div class="badge" style="background-color:#c0392b; color:#fff;" title="@_aiStatus.Reason">IA inactive</div>
                 }
                 <button class="button secondary" @onclick="NavigateModules">Modules</button>
+                <button class="button secondary" @onclick="NavigateExtensions">Extensions</button>
                 <button class="button" @onclick="NavigateMarketplace">Marketplace</button>
             </div>
         </header>
@@ -138,6 +139,7 @@
         Navigation.NavigateTo($"/dashboard/{target}");
     }
     private void NavigateModules() => Navigation.NavigateTo("/modules");
+    private void NavigateExtensions() => Navigation.NavigateTo("/extensions");
     private void NavigateMarketplace() => Navigation.NavigateTo("/marketplace");
 
     private void NavigateToModule(S_Module module)

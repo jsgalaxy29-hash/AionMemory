@@ -114,6 +114,7 @@ public static class MauiProgram
         services.AddScoped<IWorkspaceContextAccessor, WorkspaceContext>();
         services.AddScoped<IWorkspaceContext>(sp => sp.GetRequiredService<IWorkspaceContextAccessor>());
         services.AddScoped<WorkspaceSelectionState>();
+        services.AddSingleton<IExtensionState, PreferencesExtensionState>();
     }
 }
 
