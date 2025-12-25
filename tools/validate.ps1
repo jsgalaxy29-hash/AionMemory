@@ -37,8 +37,45 @@ function Assert-NoSecretsInRepo {
     }
 }
 
+function Assert-NoDangerousConfig {
+    $configFiles = Get-ChildItem -Path $repoRoot -Recurse -File -Include "appsettings*.json" |
+        Where-Object { $_.Name -notmatch "\\.example\\.json$" } |
+        Where-Object { $_.FullName -notmatch "[/\\\\](bin|obj)[/\\\\]" }
+
+    if (-not $configFiles) {
+        return
+    }
+
+    $devKey = "aion-dev-sqlcipher-key-change-me-32chars"
+    foreach ($file in $configFiles) {
+        try {
+            $json = Get-Content -Raw -Path $file.FullName | ConvertFrom-Json
+        }
+        catch {
+            throw "Invalid JSON configuration detected in $($file.FullName)."
+        }
+
+        if ($null -ne $json.Aion.Storage -and $json.Aion.Storage.EncryptPayloads -eq $false) {
+            throw "Storage encryption is disabled in $($file.FullName)."
+        }
+
+        if ($null -ne $json.Aion.Ai -and $json.Aion.Ai.EnablePromptTracing -eq $true) {
+            throw "Prompt tracing is enabled in $($file.FullName)."
+        }
+
+        if ($null -ne $json.Aion.Database -and $json.Aion.Database.EncryptionKey -eq $devKey) {
+            throw "Development database encryption key detected in $($file.FullName)."
+        }
+
+        if ($null -ne $json.Aion.Storage -and $json.Aion.Storage.EncryptionKey -eq $devKey) {
+            throw "Development storage encryption key detected in $($file.FullName)."
+        }
+    }
+}
+
 Assert-NoUiInfrastructureDependency
 Assert-NoSecretsInRepo
+Assert-NoDangerousConfig
 
 dotnet restore AionMemory.slnx
 dotnet build AionMemory.slnx --configuration Release --no-restore /p:ContinuousIntegrationBuild=true
