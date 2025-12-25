@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq.Expressions;
 using Aion.Domain;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,10 +12,18 @@ namespace Aion.Infrastructure;
 // - Action : consolidation ci-dessous avec support SQLCipher et migrations.
 public class AionDbContext : DbContext
 {
-    public AionDbContext(DbContextOptions<AionDbContext> options) : base(options)
+    private readonly IWorkspaceContext _workspaceContext;
+
+    public AionDbContext(DbContextOptions<AionDbContext> options, IWorkspaceContext workspaceContext) : base(options)
     {
+        _workspaceContext = workspaceContext;
     }
 
+    public Guid CurrentWorkspaceId => _workspaceContext.WorkspaceId;
+
+    public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<Workspace> Workspaces => Set<Workspace>();
+    public DbSet<Profile> Profiles => Set<Profile>();
     public DbSet<S_Module> Modules => Set<S_Module>();
     public DbSet<S_EntityType> EntityTypes => Set<S_EntityType>();
     public DbSet<S_Field> Fields => Set<S_Field>();
@@ -55,6 +66,34 @@ public class AionDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Tenant>(builder =>
+        {
+            builder.Property(t => t.Name).IsRequired().HasMaxLength(128);
+            builder.Property(t => t.Kind).HasConversion<string>().HasMaxLength(16);
+            builder.Property(t => t.CreatedAt).IsRequired().HasDefaultValueSql("CURRENT_TIMESTAMP");
+            builder.HasMany(t => t.Workspaces).WithOne().HasForeignKey(w => w.TenantId);
+            builder.HasIndex(t => t.Name);
+        });
+
+        modelBuilder.Entity<Workspace>(builder =>
+        {
+            builder.Property(w => w.Name).IsRequired().HasMaxLength(128);
+            builder.Property(w => w.Description).HasMaxLength(1024);
+            builder.Property(w => w.IsDefault).HasDefaultValue(false);
+            builder.Property(w => w.CreatedAt).IsRequired().HasDefaultValueSql("CURRENT_TIMESTAMP");
+            builder.HasMany(w => w.Profiles).WithOne().HasForeignKey(p => p.WorkspaceId);
+            builder.HasIndex(w => new { w.TenantId, w.Name });
+        });
+
+        modelBuilder.Entity<Profile>(builder =>
+        {
+            builder.Property(p => p.DisplayName).IsRequired().HasMaxLength(128);
+            builder.Property(p => p.Initials).HasMaxLength(12);
+            builder.Property(p => p.AccentColor).HasMaxLength(16);
+            builder.Property(p => p.CreatedAt).IsRequired().HasDefaultValueSql("CURRENT_TIMESTAMP");
+            builder.HasIndex(p => new { p.WorkspaceId, p.DisplayName });
+        });
+
         modelBuilder.Entity<S_Module>(builder =>
         {
             builder.Property(m => m.Name).IsRequired().HasMaxLength(128);
@@ -283,7 +322,7 @@ public class AionDbContext : DbContext
             builder.Property(t => t.RowLabelTemplate).HasMaxLength(256);
             builder.HasMany(t => t.Fields).WithOne().HasForeignKey(f => f.TableId);
             builder.HasMany(t => t.Views).WithOne().HasForeignKey(v => v.TableId);
-            builder.HasIndex(t => t.Name).IsUnique();
+            builder.HasIndex("WorkspaceId", nameof(STable.Name)).IsUnique();
         });
 
         modelBuilder.Entity<SFieldDefinition>(builder =>
@@ -332,7 +371,7 @@ public class AionDbContext : DbContext
             builder.Property(e => e.Title).IsRequired().HasMaxLength(256);
             builder.Property(e => e.Content).IsRequired();
             builder.Property(e => e.EmbeddingJson).HasMaxLength(16000);
-            builder.HasIndex(e => new { e.TargetType, e.TargetId }).IsUnique();
+            builder.HasIndex("WorkspaceId", nameof(SemanticSearchEntry.TargetType), nameof(SemanticSearchEntry.TargetId)).IsUnique();
             builder.HasIndex(e => e.IndexedAt);
         });
 
@@ -340,7 +379,7 @@ public class AionDbContext : DbContext
         {
             builder.Property(r => r.UserId).IsRequired();
             builder.Property(r => r.Kind).HasConversion<string>().HasMaxLength(16);
-            builder.HasIndex(r => new { r.UserId, r.Kind }).IsUnique();
+            builder.HasIndex("WorkspaceId", nameof(Role.UserId), nameof(Role.Kind)).IsUnique();
         });
 
         modelBuilder.Entity<Permission>(builder =>
@@ -385,6 +424,75 @@ public class AionDbContext : DbContext
             builder.HasIndex(e => e.RelationType);
         });
 
+        ConfigureWorkspacePartitioning(modelBuilder);
+
         base.OnModelCreating(modelBuilder);
+    }
+
+    private void ConfigureWorkspacePartitioning(ModelBuilder modelBuilder)
+    {
+        var excludedTypes = new HashSet<Type>
+        {
+            typeof(Tenant),
+            typeof(Workspace),
+            typeof(Profile)
+        };
+
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            if (entityType.ClrType is null || entityType.IsOwned() || entityType.IsKeyless || excludedTypes.Contains(entityType.ClrType))
+            {
+                continue;
+            }
+
+            modelBuilder.Entity(entityType.ClrType).Property<Guid>("WorkspaceId").IsRequired();
+            modelBuilder.Entity(entityType.ClrType).HasIndex("WorkspaceId");
+
+            var parameter = Expression.Parameter(entityType.ClrType, "e");
+            var propertyMethod = typeof(EF).GetMethod(nameof(EF.Property))!.MakeGenericMethod(typeof(Guid));
+            var propertyExpression = Expression.Call(propertyMethod, parameter, Expression.Constant("WorkspaceId"));
+            var workspaceExpression = Expression.Property(Expression.Constant(this), nameof(CurrentWorkspaceId));
+            var body = Expression.Equal(propertyExpression, workspaceExpression);
+            var lambda = Expression.Lambda(body, parameter);
+
+            modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
+        }
+    }
+
+    public override int SaveChanges()
+    {
+        ApplyWorkspacePartition();
+        return base.SaveChanges();
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        ApplyWorkspacePartition();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private void ApplyWorkspacePartition()
+    {
+        var workspaceId = _workspaceContext.WorkspaceId;
+        if (workspaceId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Workspace context must be initialized before writing data.");
+        }
+
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.State != EntityState.Added)
+            {
+                continue;
+            }
+
+            var property = entry.Metadata.FindProperty("WorkspaceId");
+            if (property is null)
+            {
+                continue;
+            }
+
+            entry.Property("WorkspaceId").CurrentValue = workspaceId;
+        }
     }
 }

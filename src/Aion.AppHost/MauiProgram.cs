@@ -111,6 +111,9 @@ public static class MauiProgram
         services.AddScoped<IRecordQueryService, RecordQueryService>();
         services.AddScoped<IModuleViewService, ModuleViewService>();
         services.AddScoped<UiState>();
+        services.AddScoped<IWorkspaceContextAccessor, WorkspaceContext>();
+        services.AddScoped<IWorkspaceContext>(sp => sp.GetRequiredService<IWorkspaceContextAccessor>());
+        services.AddScoped<WorkspaceSelectionState>();
     }
 }
 

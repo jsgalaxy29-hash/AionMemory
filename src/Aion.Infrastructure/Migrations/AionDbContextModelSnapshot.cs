@@ -36,9 +36,14 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AutomationRuleId");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("AutomationActions");
                 });
@@ -57,9 +62,14 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AutomationRuleId");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("AutomationConditions");
                 });
@@ -99,13 +109,116 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("RuleId");
 
                     b.HasIndex("StartedAt");
 
+                    b.HasIndex("WorkspaceId");
+
                     b.ToTable("AutomationExecutions");
+                });
+
+            modelBuilder.Entity("Aion.Domain.Tenant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name");
+
+                    b.ToTable("Tenants");
+                });
+
+            modelBuilder.Entity("Aion.Domain.Workspace", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDefault")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Name");
+
+                    b.ToTable("Workspaces");
+                });
+
+            modelBuilder.Entity("Aion.Domain.Profile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AccentColor")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Initials")
+                        .HasMaxLength(12)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.HasIndex("WorkspaceId", "DisplayName");
+
+                    b.ToTable("Profiles");
                 });
 
             modelBuilder.Entity("Aion.Domain.DashboardWidget", b =>
@@ -132,7 +245,12 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Widgets");
                 });
@@ -173,7 +291,12 @@ namespace Aion.Infrastructure.Migrations
                     b.Property<long>("Size")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Files");
                 });
@@ -199,9 +322,14 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("FileId");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("FileLinks");
                 });
@@ -239,10 +367,15 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(1L);
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("TableId", "CreatedAt");
                     b.HasIndex("TableId", "ModifiedAt");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Records");
                 });
@@ -278,6 +411,9 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("EntityTypeId");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("RecordId");
@@ -292,6 +428,8 @@ namespace Aion.Infrastructure.Migrations
                         .IsUnique();
 
                     b.HasIndex("TableId", "FieldName", "StringValue");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("RecordIndexes");
                 });
@@ -331,12 +469,17 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(1L);
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("TableId", "RecordId", "ChangedAt");
 
                     b.HasIndex("TableId", "RecordId", "Version")
                         .IsUnique();
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("RecordAudits");
                 });
@@ -355,10 +498,15 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(16000)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("RecordId");
 
                     b.HasIndex("TableId", "RecordId")
                         .IsUnique();
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Embeddings");
                 });
@@ -380,9 +528,14 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EventId");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("EventLinks");
                 });
@@ -404,9 +557,14 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("NoteId");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("NoteLinks");
                 });
@@ -432,7 +590,12 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Marketplace");
                 });
@@ -474,7 +637,12 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Predictions");
                 });
@@ -508,9 +676,14 @@ namespace Aion.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("GeneratedAt");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("MemoryInsights");
                 });
@@ -537,6 +710,9 @@ namespace Aion.Infrastructure.Migrations
                     b.Property<Guid>("ToNodeId")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("RelationType");
@@ -545,6 +721,8 @@ namespace Aion.Infrastructure.Migrations
 
                     b.HasIndex("FromNodeId", "ToNodeId", "RelationType")
                         .IsUnique();
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("KnowledgeEdges");
                 });
@@ -571,10 +749,15 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("TableId", "RecordId")
                         .IsUnique();
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("KnowledgeNodes");
                 });
@@ -633,11 +816,16 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("IndexedAt");
 
-                    b.HasIndex("TargetType", "TargetId")
+                    b.HasIndex("WorkspaceId");
+
+                    b.HasIndex("WorkspaceId", "TargetType", "TargetId")
                         .IsUnique();
 
                     b.ToTable("SemanticSearchEntries");
@@ -672,9 +860,14 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ModuleId");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("AutomationRules");
                 });
@@ -702,9 +895,14 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ModuleId");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("EntityTypes");
                 });
@@ -757,9 +955,14 @@ namespace Aion.Infrastructure.Migrations
                     b.Property<Guid?>("RelationTargetEntityTypeId")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EntityTypeId");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Fields");
                 });
@@ -782,7 +985,12 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("HistoryEvents");
                 });
@@ -814,9 +1022,14 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("SourceId");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Links");
                 });
@@ -846,9 +1059,14 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(1L);
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ModifiedAt");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Modules");
                 });
@@ -886,9 +1104,14 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Notes");
                 });
@@ -915,9 +1138,14 @@ namespace Aion.Infrastructure.Migrations
                     b.Property<Guid>("ToEntityTypeId")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("FromEntityTypeId");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Relations");
                 });
@@ -945,9 +1173,14 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ModuleId");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Reports");
                 });
@@ -989,10 +1222,15 @@ namespace Aion.Infrastructure.Migrations
                     b.Property<bool>("SupportsSoftDelete")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("Name")
+                    b.HasIndex("WorkspaceId", "Name")
                         .IsUnique();
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Tables");
                 });
@@ -1018,7 +1256,12 @@ namespace Aion.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("VisionAnalyses");
                 });
@@ -1117,12 +1360,17 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("TableId");
 
                     b.HasIndex("TableId", "Name")
                         .IsUnique();
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("TableFields");
                 });
@@ -1173,12 +1421,17 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("TableId");
 
                     b.HasIndex("TableId", "Name")
                         .IsUnique();
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("TableViews");
                 });
@@ -1197,11 +1450,16 @@ namespace Aion.Infrastructure.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("UserId");
 
                     b.HasIndex("UserId", "Action");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Permissions");
                 });
@@ -1220,10 +1478,15 @@ namespace Aion.Infrastructure.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "Kind")
+                    b.HasIndex("WorkspaceId", "UserId", "Kind")
                         .IsUnique();
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Roles");
                 });
@@ -1252,7 +1515,12 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Templates");
                 });
@@ -1277,7 +1545,12 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Personas");
                 });
@@ -1309,7 +1582,12 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
 
                     b.ToTable("Events");
                 });
@@ -1349,6 +1627,24 @@ namespace Aion.Infrastructure.Migrations
                 {
                     b.Property<long>("Size")
                         .HasColumnType("INTEGER");
+                });
+
+            modelBuilder.Entity("Aion.Domain.Profile", b =>
+                {
+                    b.HasOne("Aion.Domain.Workspace", null)
+                        .WithMany("Profiles")
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Aion.Domain.Workspace", b =>
+                {
+                    b.HasOne("Aion.Domain.Tenant", null)
+                        .WithMany("Workspaces")
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Aion.Domain.AutomationAction", b =>
@@ -1535,6 +1831,8 @@ namespace Aion.Infrastructure.Migrations
                             b1.HasKey("PermissionId");
 
                             b1.HasIndex("TableId", "RecordId");
+
+                    b.HasIndex("WorkspaceId");
 
                             b1.ToTable("Permissions");
 
