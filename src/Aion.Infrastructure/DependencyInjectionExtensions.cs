@@ -187,6 +187,16 @@ public static class DependencyInjectionExtensions
 
         try
         {
+            var integrityReport = await DatabaseIntegrityVerifier.VerifyAsync(connection, cancellationToken).ConfigureAwait(false);
+            if (!integrityReport.IsValid)
+            {
+                logger.LogError(
+                    "Database integrity check failed for data source {DatabasePath}: {Issues}",
+                    dataSource,
+                    string.Join(" | ", integrityReport.Issues));
+                throw new InvalidOperationException("Database integrity check failed. Run the recovery export tool before retrying startup.");
+            }
+
             await ApplyMigrationsAsync(context, logger, cancellationToken).ConfigureAwait(false);
             await ValidateSchemaAsync(context, logger, cancellationToken).ConfigureAwait(false);
         }
