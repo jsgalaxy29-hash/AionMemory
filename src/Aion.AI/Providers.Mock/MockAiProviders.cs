@@ -67,14 +67,22 @@ public sealed class MockMemoryAnalyzer : IMemoryAnalyzer
             .Select(r => r.Id)
             .ToArray();
 
+        var explanation = new MemoryAnalysisExplanation(
+            request.Records.Take(2).Select(record => new MemoryAnalysisSource(
+                record.Id,
+                record.Title,
+                record.SourceType,
+                record.Content.Length > 80 ? $"{record.Content[..80]}…" : record.Content)).ToArray(),
+            new[] { new MemoryAnalysisRule("mock-similarity", "Les enregistrements partagent des mots-clés récurrents.") });
+
         var suggestions = links.Length == 2
-            ? new[] { new MemoryLinkSuggestion(links[0], links[1], "Thèmes similaires", request.Records.First().SourceType, request.Records.Last().SourceType) }
+            ? new[] { new MemoryLinkSuggestion(links[0], links[1], "Thèmes similaires", request.Records.First().SourceType, request.Records.Last().SourceType, explanation) }
             : Array.Empty<MemoryLinkSuggestion>();
 
         var summary = request.Records.Count == 0
             ? "Aucune donnée à analyser (mock)."
             : $"Mock summary for {request.Records.Count} records";
 
-        return Task.FromResult(new MemoryAnalysisResult(summary, topics, suggestions, "mock"));
+        return Task.FromResult(new MemoryAnalysisResult(summary, topics, suggestions, "mock", explanation));
     }
 }

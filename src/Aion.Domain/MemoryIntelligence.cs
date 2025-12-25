@@ -17,7 +17,23 @@ public sealed record MemoryRecord(
 
 public sealed record MemoryTopic(string Name, IReadOnlyCollection<string> Keywords);
 
-public sealed record MemoryLinkSuggestion(Guid FromId, Guid ToId, string Reason, string? FromType = null, string? ToType = null);
+public sealed record MemoryAnalysisSource(Guid RecordId, string Title, string SourceType, string Snippet);
+
+public sealed record MemoryAnalysisRule(string Code, string Description);
+
+public sealed record MemoryAnalysisExplanation(
+    IReadOnlyCollection<MemoryAnalysisSource> Sources,
+    IReadOnlyCollection<MemoryAnalysisRule> Rules
+);
+
+public sealed record MemoryLinkSuggestion(
+    Guid FromId,
+    Guid ToId,
+    string Reason,
+    string? FromType = null,
+    string? ToType = null,
+    MemoryAnalysisExplanation? Explanation = null
+);
 
 public readonly record struct MemoryAnalysisRequest
 {
@@ -37,7 +53,8 @@ public readonly record struct MemoryAnalysisResult(
     string Summary,
     IReadOnlyCollection<MemoryTopic> Topics,
     IReadOnlyCollection<MemoryLinkSuggestion> SuggestedLinks,
-    string RawResponse
+    string RawResponse,
+    MemoryAnalysisExplanation? Explanation = null
 );
 
 public class MemoryInsight
@@ -45,6 +62,7 @@ public class MemoryInsight
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly IReadOnlyCollection<MemoryTopic> EmptyTopics = Array.Empty<MemoryTopic>();
     private static readonly IReadOnlyCollection<MemoryLinkSuggestion> EmptyLinks = Array.Empty<MemoryLinkSuggestion>();
+    private static readonly MemoryAnalysisExplanation EmptyExplanation = new(Array.Empty<MemoryAnalysisSource>(), Array.Empty<MemoryAnalysisRule>());
 
     public Guid Id { get; set; } = Guid.NewGuid();
 
@@ -62,6 +80,9 @@ public class MemoryInsight
     [Required]
     public string SuggestedLinksJson { get; set; } = "[]";
 
+    [Required]
+    public string ExplanationJson { get; set; } = "{\"sources\":[],\"rules\":[]}";
+
     public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
 
     [NotMapped]
@@ -78,6 +99,13 @@ public class MemoryInsight
         set => SuggestedLinksJson = Serialize(value);
     }
 
+    [NotMapped]
+    public MemoryAnalysisExplanation Explanation
+    {
+        get => DeserializeExplanation(ExplanationJson, EmptyExplanation);
+        set => ExplanationJson = SerializeExplanation(value);
+    }
+
     public static MemoryInsight FromAnalysis(MemoryAnalysisResult analysis, string? scope = null, int recordCount = 0)
         => new()
         {
@@ -86,6 +114,7 @@ public class MemoryInsight
             Summary = analysis.Summary,
             TopicsJson = Serialize(analysis.Topics),
             SuggestedLinksJson = Serialize(analysis.SuggestedLinks),
+            ExplanationJson = SerializeExplanation(analysis.Explanation ?? EmptyExplanation),
             GeneratedAt = DateTimeOffset.UtcNow
         };
 
@@ -103,6 +132,27 @@ public class MemoryInsight
         {
             var parsed = JsonSerializer.Deserialize<List<T>>(json, SerializerOptions);
             return parsed is null ? fallback : new ReadOnlyCollection<T>(parsed);
+        }
+        catch (JsonException)
+        {
+            return fallback;
+        }
+    }
+
+    private static string SerializeExplanation(MemoryAnalysisExplanation explanation)
+        => JsonSerializer.Serialize(explanation, SerializerOptions);
+
+    private static MemoryAnalysisExplanation DeserializeExplanation(string json, MemoryAnalysisExplanation fallback)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return fallback;
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<MemoryAnalysisExplanation>(json, SerializerOptions);
+            return parsed ?? fallback;
         }
         catch (JsonException)
         {
