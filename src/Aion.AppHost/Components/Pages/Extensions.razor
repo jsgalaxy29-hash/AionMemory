@@ -1,0 +1,88 @@
+@page "/extensions"
+@using Aion.Domain
+@inject IExtensionCatalog ExtensionCatalog
+@inject IExtensionState ExtensionState
+
+<div class="grid columns-1" style="gap:16px;">
+    <div class="card">
+        <h1>Extensions</h1>
+        <p class="text-muted">Activez uniquement les extensions de confiance. Les assemblages doivent être déclarés dans la configuration locale.</p>
+    </div>
+
+    @if (!_loaded)
+    {
+        <div class="card">
+            <p class="text-muted">Chargement des extensions…</p>
+        </div>
+    }
+    else if (Extensions.Count == 0)
+    {
+        <div class="card">
+            <p class="text-muted">Aucune extension connue pour l'instant.</p>
+        </div>
+    }
+    else
+    {
+        <div class="grid columns-2">
+            @foreach (var extension in Extensions)
+            {
+                <div class="card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+                        <div>
+                            <h3>@extension.Descriptor.Id</h3>
+                            <p class="text-muted">Version @extension.Descriptor.Version</p>
+                        </div>
+                        <button class="button @(extension.IsEnabled ? "secondary" : string.Empty)" @onclick="() => ToggleExtension(extension)">
+                            @(extension.IsEnabled ? "Désactiver" : "Activer")
+                        </button>
+                    </div>
+                    <div style="margin-top:12px;">
+                        <div class="text-muted">Capacités</div>
+                        @if (extension.Descriptor.Capabilities.Count == 0)
+                        {
+                            <p class="text-muted">Aucune capacité déclarée.</p>
+                        }
+                        else
+                        {
+                            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                @foreach (var capability in extension.Descriptor.Capabilities)
+                                {
+                                    <span class="badge">@capability</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<ExtensionEntry> Extensions = new();
+    private bool _loaded;
+
+    protected override void OnInitialized()
+    {
+        ReloadExtensions();
+    }
+
+    private void ReloadExtensions()
+    {
+        Extensions.Clear();
+        var descriptors = ExtensionCatalog.GetAvailableExtensions();
+        Extensions.AddRange(descriptors.Select(descriptor => new ExtensionEntry(
+            descriptor,
+            ExtensionState.IsEnabled(descriptor.Id))));
+        _loaded = true;
+    }
+
+    private void ToggleExtension(ExtensionEntry extension)
+    {
+        var newState = !extension.IsEnabled;
+        ExtensionState.SetEnabled(extension.Descriptor.Id, newState);
+        ReloadExtensions();
+    }
+
+    private sealed record ExtensionEntry(ExtensionDescriptor Descriptor, bool IsEnabled);
+}

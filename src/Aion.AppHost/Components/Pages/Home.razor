@@ -68,6 +68,7 @@
                 <button class="button secondary" @onclick="NavigateToAgenda">🗓️ Agenda</button>
                 <button class="button secondary" @onclick="NavigateToDashboard">📊 Dashboard</button>
                 <button class="button secondary" @onclick="NavigateToPotager">🌱 Potager</button>
+                <button class="button secondary" @onclick="NavigateToExtensions">🧩 Extensions</button>
                 <button class="button secondary" @onclick="NavigateToMarketplace">🛒 Marketplace</button>
                 <button class="button secondary" @onclick="NavigateToMarketplace">👁️ Vision</button>
             </div>
@@ -180,6 +181,7 @@
     private void NavigateToAgenda() => Navigation.NavigateTo("/agenda/global");
     private void NavigateToDashboard() => Navigation.NavigateTo("/dashboard/global");
     private void NavigateToPotager() => Navigation.NavigateTo("/potager");
+    private void NavigateToExtensions() => Navigation.NavigateTo("/extensions");
     private void NavigateToMarketplace() => Navigation.NavigateTo("/marketplace");
 
     private void ToggleDictation()

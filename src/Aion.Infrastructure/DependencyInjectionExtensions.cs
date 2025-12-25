@@ -2,6 +2,7 @@ using System.Data;
 using System.IO;
 using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
+using Aion.Infrastructure.Extensions;
 using Aion.Infrastructure.ModuleBuilder;
 using Aion.Infrastructure.Observability;
 using Aion.Infrastructure.Services;
@@ -10,6 +11,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -77,6 +79,16 @@ public static class DependencyInjectionExtensions
         marketplaceOptions.Validate(o => Directory.Exists(o.MarketplaceFolder), "The configured marketplace folder must exist.");
         marketplaceOptions.ValidateOnStart();
 
+        var extensionOptions = services.AddOptions<ExtensionOptions>()
+            .Bind(configuration.GetSection("Aion:Extensions"));
+        extensionOptions.PostConfigure(options =>
+        {
+            options.ExtensionsRootPath = EnsureDirectoryPath(ChooseValue(options.ExtensionsRootPath, configuration["Aion:Extensions:RootPath"], AppContext.BaseDirectory));
+        });
+        extensionOptions.Validate(o => !string.IsNullOrWhiteSpace(o.ExtensionsRootPath), "The extensions root path cannot be empty.");
+        extensionOptions.Validate(o => Directory.Exists(o.ExtensionsRootPath), "The configured extensions root path must exist.");
+        extensionOptions.ValidateOnStart();
+
         var backupOptions = services.AddOptions<BackupOptions>();
         backupOptions.PostConfigure(options =>
         {
@@ -143,6 +155,8 @@ public static class DependencyInjectionExtensions
         services.AddHostedService<BackupCleanupService>();
         services.AddHostedService<BackupSchedulerService>();
         services.AddScoped<DemoModuleSeeder>();
+        services.TryAddSingleton<IExtensionState, DefaultExtensionState>();
+        services.AddSingleton<IExtensionCatalog, ExtensionCatalog>();
 
         return services;
     }
