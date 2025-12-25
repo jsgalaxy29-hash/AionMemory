@@ -199,6 +199,52 @@ h1:focus {
     align-items: end;
 }
 
+.setup-shell {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+}
+
+.setup-shell__body {
+    width: min(720px, 100%);
+}
+
+.setup-card h1 {
+    margin-top: 0;
+}
+
+.setup-section {
+    margin: 20px 0;
+    display: grid;
+    gap: 8px;
+}
+
+.setup-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.setup-key-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.setup-footer {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.setup-complete {
+    display: grid;
+    gap: 12px;
+    margin-top: 16px;
+}
+
 .module-host__actions {
     display: flex;
     gap: 8px;

@@ -7,6 +7,7 @@
 @inject UiState State
 @inject AiProviderSelector AiSelector
 @inject WorkspaceSelectionState WorkspaceState
+@inject FirstRunState FirstRunState
 
 <div class="app-shell">
     <aside class="app-shell__nav">
@@ -108,6 +109,12 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (!FirstRunState.IsCompleted)
+        {
+            Navigation.NavigateTo("/setup");
+            return;
+        }
+
         State.OnChange += StateHasChanged;
         WorkspaceState.OnChange += HandleWorkspaceStateChanged;
         _aiStatus = AiSelector.GetStatus();
