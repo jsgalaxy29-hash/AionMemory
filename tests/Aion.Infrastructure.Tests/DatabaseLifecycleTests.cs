@@ -4,7 +4,6 @@ using System.Data.Common;
 using System.IO;
 using Aion.Domain;
 using Aion.Infrastructure;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -138,11 +137,32 @@ public class DatabaseLifecycleTests
         var failingProvider = BuildProvider(root, databasePath, wrongKey);
         try
         {
-            await Assert.ThrowsAsync<SqliteException>(() => failingProvider.EnsureAionDatabaseAsync());
+            await Assert.ThrowsAsync<InvalidOperationException>(() => failingProvider.EnsureAionDatabaseAsync());
         }
         finally
         {
             await failingProvider.DisposeAsync();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task EnsureAionDatabaseAsync_fails_when_database_is_corrupted()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+
+        var databasePath = Path.Combine(root, "aion_corrupt.db");
+        await File.WriteAllBytesAsync(databasePath, new byte[] { 0x0, 0x1, 0x2, 0x3, 0x4, 0x5 });
+
+        var provider = BuildProvider(root, databasePath);
+        try
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => provider.EnsureAionDatabaseAsync());
+        }
+        finally
+        {
+            await provider.DisposeAsync();
             Directory.Delete(root, recursive: true);
         }
     }
