@@ -402,6 +402,7 @@ public class AionDbContext : DbContext
             builder.Property(i => i.Summary).IsRequired().HasMaxLength(2048);
             builder.Property(i => i.TopicsJson).IsRequired();
             builder.Property(i => i.SuggestedLinksJson).IsRequired();
+            builder.Property(i => i.ExplanationJson).IsRequired();
             builder.Property(i => i.RecordCount).IsRequired();
             builder.Property(i => i.GeneratedAt).IsRequired();
             builder.HasIndex(i => i.GeneratedAt);

@@ -59,6 +59,9 @@
                 <button class="button secondary" @onclick="() => UseSuggestion(suggestion)">@suggestion</button>
             }
         </div>
+        <div style="margin-top:6px;">
+            <button class="button ghost" @onclick="NavigateToTrustSuggestions">Pourquoi ces suggestions ?</button>
+        </div>
     </div>
     <div class="grid columns-1" style="gap:12px;">
         <div class="card">
@@ -183,6 +186,7 @@
     private void NavigateToPotager() => Navigation.NavigateTo("/potager");
     private void NavigateToExtensions() => Navigation.NavigateTo("/extensions");
     private void NavigateToMarketplace() => Navigation.NavigateTo("/marketplace");
+    private void NavigateToTrustSuggestions() => Navigation.NavigateTo("/trust-ux#suggestions");
 
     private void ToggleDictation()
     {

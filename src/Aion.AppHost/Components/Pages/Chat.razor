@@ -8,6 +8,7 @@
 @inject IReportInterpreter ReportInterpreter
 @inject ISearchService SearchService
 @inject AiProviderSelector AiSelector
+@inject NavigationManager Navigation
 
 <div class="grid columns-2">
     <div class="card">
@@ -50,6 +51,9 @@
             {
                 <button class="button secondary" @onclick="() => UseSuggestion(suggestion)" disabled="@IsProcessing">@suggestion</button>
             }
+        </div>
+        <div style="margin-top:6px;">
+            <button class="button ghost" @onclick="NavigateToTrustSuggestions" disabled="@IsProcessing">Pourquoi ces suggestions ?</button>
         </div>
     </div>
 
@@ -263,6 +267,11 @@
     private void UseSuggestion(string suggestion)
     {
         CurrentInput = suggestion;
+    }
+
+    private void NavigateToTrustSuggestions()
+    {
+        Navigation.NavigateTo("/trust-ux#suggestions");
     }
 
     private async Task HandleEnter(KeyboardEventArgs args)
