@@ -77,6 +77,8 @@ public static class DependencyInjectionExtensions
         backupOptions.Validate(o => o.BackupIntervalMinutes > 0, "The backup interval must be greater than zero minutes.");
         backupOptions.ValidateOnStart();
 
+        services.AddScoped<IWorkspaceContext, DefaultWorkspaceContext>();
+
         services.AddDbContext<AionDbContext>((serviceProvider, dbOptions) =>
         {
             var databaseOptions = serviceProvider.GetRequiredService<IOptions<AionDatabaseOptions>>();
@@ -86,6 +88,7 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IStorageService, StorageService>();
         services.AddScoped<IFileStorageService, FileStorageService>();
         services.AddScoped<IMetadataService, MetadataService>();
+        services.AddScoped<ITenancyService, TenancyService>();
         services.AddSingleton<IOperationScopeFactory, OperationScopeFactory>();
         services.AddScoped<IAionDataEngine, AionDataEngine>();
         services.AddScoped<IDataEngine, AuthorizedDataEngine>();

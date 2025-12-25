@@ -52,6 +52,8 @@ public sealed class AppInitializationService : IAppInitializationService
 
         _logger.LogInformation("Ensuring database is initialized.");
         await serviceProvider.EnsureAionDatabaseAsync(cancellationToken).ConfigureAwait(false);
+        var tenancyService = serviceProvider.GetRequiredService<ITenancyService>();
+        await tenancyService.EnsureDefaultsAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("App initialization completed.");
     }
 

@@ -19,6 +19,6 @@ public sealed class AionDesignTimeDbContextFactory : IDesignTimeDbContextFactory
         var options = Options.Create(devDefaults);
 
         SqliteConnectionFactory.ConfigureBuilder(builder, options);
-        return new AionDbContext(builder.Options);
+        return new AionDbContext(builder.Options, new DefaultWorkspaceContext());
     }
 }

@@ -6,6 +6,7 @@
 @inject NavigationManager Navigation
 @inject UiState State
 @inject AiProviderSelector AiSelector
+@inject WorkspaceSelectionState WorkspaceState
 
 <div class="app-shell">
     <aside class="app-shell__nav">
@@ -60,6 +61,29 @@
                 </div>
             </div>
             <div class="app-shell__topbar-actions">
+                @if (!WorkspaceState.IsInitialized)
+                {
+                    <div class="text-muted">Chargement des profils…</div>
+                }
+                else
+                {
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <label class="text-muted">Workspace</label>
+                        <select class="input" @onchange="OnWorkspaceChanged">
+                            @foreach (var workspace in WorkspaceState.Workspaces)
+                            {
+                                <option value="@workspace.Id" selected="@(WorkspaceState.CurrentWorkspace?.Id == workspace.Id)">@workspace.Name</option>
+                            }
+                        </select>
+                        <label class="text-muted">Profil</label>
+                        <select class="input" @onchange="OnProfileChanged">
+                            @foreach (var profile in WorkspaceState.Profiles)
+                            {
+                                <option value="@profile.Id" selected="@(WorkspaceState.CurrentProfile?.Id == profile.Id)">@profile.DisplayName</option>
+                            }
+                        </select>
+                    </div>
+                }
                 @if (!_aiStatus.IsConfigured)
                 {
                     <div class="badge" style="background-color:#c0392b; color:#fff;" title="@_aiStatus.Reason">IA inactive</div>
@@ -83,8 +107,9 @@
     protected override async Task OnInitializedAsync()
     {
         State.OnChange += StateHasChanged;
+        WorkspaceState.OnChange += HandleWorkspaceStateChanged;
         _aiStatus = AiSelector.GetStatus();
-        await LoadModules();
+        await WorkspaceState.InitializeAsync();
     }
 
     private async Task LoadModules()
@@ -127,5 +152,29 @@
         _loadCts?.Cancel();
         _loadCts?.Dispose();
         State.OnChange -= StateHasChanged;
+        WorkspaceState.OnChange -= HandleWorkspaceStateChanged;
+    }
+
+    private async void HandleWorkspaceStateChanged()
+    {
+        State.SetModule(null);
+        State.SetEntity(null);
+        await LoadModules();
+    }
+
+    private async Task OnWorkspaceChanged(ChangeEventArgs args)
+    {
+        if (Guid.TryParse(args.Value?.ToString(), out var workspaceId))
+        {
+            await WorkspaceState.SelectWorkspaceAsync(workspaceId);
+        }
+    }
+
+    private async Task OnProfileChanged(ChangeEventArgs args)
+    {
+        if (Guid.TryParse(args.Value?.ToString(), out var profileId))
+        {
+            await WorkspaceState.SelectProfileAsync(profileId);
+        }
     }
 }
