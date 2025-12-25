@@ -23,6 +23,7 @@ public static class DependencyInjectionExtensions
         var defaultStorageRoot = Path.Combine(dataDirectory, "storage");
         var defaultMarketplaceFolder = Path.Combine(dataDirectory, "marketplace");
         var defaultBackupFolder = Path.Combine(defaultStorageRoot, "backup");
+        var allowDevKey = IsDevelopmentEnvironment(configuration);
 
         var databaseOptions = services.AddOptions<AionDatabaseOptions>();
         databaseOptions.PostConfigure(options =>
@@ -32,25 +33,36 @@ public static class DependencyInjectionExtensions
 
             // Ensure dev/test environments always have a working SQLCipher configuration
             // even when configuration files are minimal.
-            SqliteCipherDevelopmentDefaults.ApplyDefaults(options, directory: dataDirectory);
+            if (allowDevKey)
+            {
+                SqliteCipherDevelopmentDefaults.ApplyDefaults(options, directory: dataDirectory);
+            }
         });
         databaseOptions.Validate(o => !string.IsNullOrWhiteSpace(o.ConnectionString), "The database connection string cannot be empty.");
         databaseOptions.Validate(o => !string.IsNullOrWhiteSpace(o.EncryptionKey), "The database encryption key cannot be empty.");
         databaseOptions.Validate(o => IsDataSourceConfigured(o.ConnectionString), "The SQLite data source path must be configured in the connection string.");
         databaseOptions.Validate(o => DatabaseDirectoryExists(o.ConnectionString), "The SQLite data source directory must exist.");
         databaseOptions.Validate(o => o.EncryptionKey?.Length >= 32, "The database encryption key must contain at least 32 characters.");
+        databaseOptions.Validate(
+            o => allowDevKey || !string.Equals(o.EncryptionKey, SqliteCipherDevelopmentDefaults.DevelopmentKey, StringComparison.Ordinal),
+            "The development SQLCipher key must not be used outside development/test environments.");
         databaseOptions.ValidateOnStart();
 
         var storageOptions = services.AddOptions<StorageOptions>();
         storageOptions.PostConfigure(options =>
         {
             options.RootPath = EnsureDirectoryPath(ChooseValue(options.RootPath, configuration["Aion:Storage:RootPath"], defaultStorageRoot));
-            options.EncryptionKey = ChooseValue(options.EncryptionKey, configuration["Aion:Storage:EncryptionKey"], configuration["Aion:Database:EncryptionKey"], configuration["AION_DB_KEY"], SqliteCipherDevelopmentDefaults.DevelopmentKey);
+            options.EncryptionKey = allowDevKey
+                ? ChooseValue(options.EncryptionKey, configuration["Aion:Storage:EncryptionKey"], configuration["Aion:Database:EncryptionKey"], configuration["AION_DB_KEY"], SqliteCipherDevelopmentDefaults.DevelopmentKey)
+                : ChooseValue(options.EncryptionKey, configuration["Aion:Storage:EncryptionKey"], configuration["Aion:Database:EncryptionKey"], configuration["AION_DB_KEY"]);
         });
         storageOptions.Validate(o => !string.IsNullOrWhiteSpace(o.RootPath), "A storage root path is required.");
         storageOptions.Validate(o => Directory.Exists(o.RootPath), "The configured storage root path must exist.");
         storageOptions.Validate(o => !o.EncryptPayloads || !string.IsNullOrWhiteSpace(o.EncryptionKey), "The file storage encryption key cannot be empty when encryption is enabled.");
         storageOptions.Validate(o => !o.EncryptPayloads || o.EncryptionKey?.Length >= 32, "The file storage encryption key must contain at least 32 characters when encryption is enabled.");
+        storageOptions.Validate(
+            o => allowDevKey || !string.Equals(o.EncryptionKey, SqliteCipherDevelopmentDefaults.DevelopmentKey, StringComparison.Ordinal),
+            "The development storage key must not be used outside development/test environments.");
         storageOptions.Validate(o => o.MaxFileSizeBytes > 0, "The maximum file size must be greater than zero.");
         storageOptions.Validate(o => o.MaxTotalBytes > 0, "The storage quota must be greater than zero.");
         storageOptions.ValidateOnStart();
@@ -283,6 +295,20 @@ public static class DependencyInjectionExtensions
         }
 
         return string.Empty;
+    }
+
+    private static bool IsDevelopmentEnvironment(IConfiguration configuration)
+    {
+        var environment = configuration["DOTNET_ENVIRONMENT"] ?? configuration["ASPNETCORE_ENVIRONMENT"];
+        if (string.IsNullOrWhiteSpace(environment))
+        {
+            return true;
+        }
+
+        return string.Equals(environment, "Development", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(environment, "Dev", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(environment, "Test", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(environment, "Testing", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetDatabaseLabel(AionDbContext context)
