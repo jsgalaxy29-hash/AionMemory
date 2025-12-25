@@ -1,3 +1,4 @@
+using Aion.Domain;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;

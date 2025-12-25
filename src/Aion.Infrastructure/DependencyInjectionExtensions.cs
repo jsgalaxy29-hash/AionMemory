@@ -127,7 +127,6 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddHostedService<BackupCleanupService>();
         services.AddHostedService<BackupSchedulerService>();
-        services.AddScoped<ModuleDesignerService>();
         services.AddScoped<DemoModuleSeeder>();
 
         return services;

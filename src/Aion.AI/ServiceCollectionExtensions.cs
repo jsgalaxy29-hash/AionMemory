@@ -79,6 +79,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IIntentDetector, IntentRecognizer>();
         services.AddScoped<IModuleDesigner, ModuleDesigner>();
         services.AddScoped<IModuleSpecDesigner, ModuleSpecDesigner>();
+        services.AddScoped<ModuleDesignerService>();
         services.AddScoped<ICrudInterpreter, CrudInterpreter>();
         services.AddScoped<IAgendaInterpreter, AgendaInterpreter>();
         services.AddScoped<INoteInterpreter, NoteInterpreter>();

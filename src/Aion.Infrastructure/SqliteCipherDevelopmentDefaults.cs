@@ -1,4 +1,5 @@
 using System.IO;
+using Aion.Domain;
 using Microsoft.Data.Sqlite;
 
 namespace Aion.Infrastructure;

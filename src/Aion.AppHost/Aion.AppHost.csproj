@@ -61,7 +61,7 @@
     <ProjectReference Include="..\Aion.AI\Aion.AI.csproj" />
     <ProjectReference Include="..\Aion.AI\Providers.OpenAI\Aion.AI.Providers.OpenAI.csproj" />
     <ProjectReference Include="..\Aion.AI\Providers.Mistral\Aion.AI.Providers.Mistral.csproj" />
-    <ProjectReference Include="..\Aion.Infrastructure\Aion.Infrastructure.csproj" />
+    <ProjectReference Include="..\Aion.Composition\Aion.Composition.csproj" />
   </ItemGroup>
 
   <ItemGroup>
