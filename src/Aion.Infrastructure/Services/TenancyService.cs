@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using Aion.Domain;
 using Microsoft.EntityFrameworkCore;
@@ -79,4 +80,40 @@ public sealed class TenancyService : ITenancyService
             .OrderBy(p => p.DisplayName)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+
+    public async Task UpdateDefaultProfileAsync(string displayName, string? initials, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return;
+        }
+
+        var profile = await _db.Profiles.FirstOrDefaultAsync(p => p.Id == TenancyDefaults.DefaultProfileId, cancellationToken)
+            .ConfigureAwait(false);
+        if (profile is null)
+        {
+            return;
+        }
+
+        var trimmedName = displayName.Trim();
+        var trimmedInitials = string.IsNullOrWhiteSpace(initials) ? profile.Initials : initials.Trim();
+
+        var hasChanges = false;
+        if (!string.Equals(profile.DisplayName, trimmedName, StringComparison.Ordinal))
+        {
+            profile.DisplayName = trimmedName;
+            hasChanges = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(trimmedInitials) && !string.Equals(profile.Initials, trimmedInitials, StringComparison.Ordinal))
+        {
+            profile.Initials = trimmedInitials;
+            hasChanges = true;
+        }
+
+        if (hasChanges)
+        {
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
 }

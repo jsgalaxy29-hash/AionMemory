@@ -6,6 +6,7 @@ public interface ITenancyService
     Task<IReadOnlyList<Tenant>> GetTenantsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Workspace>> GetWorkspacesAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Profile>> GetProfilesAsync(Guid workspaceId, CancellationToken cancellationToken = default);
+    Task UpdateDefaultProfileAsync(string displayName, string? initials, CancellationToken cancellationToken = default);
 }
 
 public interface IWorkspaceContext

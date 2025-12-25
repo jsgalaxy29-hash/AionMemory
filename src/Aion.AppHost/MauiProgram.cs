@@ -51,8 +51,12 @@ public static class MauiProgram
         ConfigureServices(builder.Services, builder.Configuration);
 
         var app = builder.Build();
-        var initializer = app.Services.GetRequiredService<IAppInitializationService>();
-        initializer.Warmup();
+        var firstRunState = app.Services.GetRequiredService<FirstRunState>();
+        if (firstRunState.IsCompleted)
+        {
+            var initializer = app.Services.GetRequiredService<IAppInitializationService>();
+            initializer.Warmup();
+        }
 
         return app;
     }
@@ -60,7 +64,8 @@ public static class MauiProgram
     private static void ConfigureOptions(MauiAppBuilder builder)
     {
         var baseDirectory = FileSystem.AppDataDirectory;
-        var databasePath = Path.Combine(baseDirectory, "aion.db");
+        var defaultDatabasePath = Path.Combine(baseDirectory, "aion.db");
+        var databasePath = FirstRunState.GetDatabasePathOrDefault(defaultDatabasePath);
         var storagePath = Path.Combine(baseDirectory, "storage");
         var marketplacePath = Path.Combine(baseDirectory, "marketplace");
         var backupPath = Path.Combine(storagePath, "backup");
@@ -115,6 +120,7 @@ public static class MauiProgram
         services.AddScoped<IWorkspaceContext>(sp => sp.GetRequiredService<IWorkspaceContextAccessor>());
         services.AddScoped<WorkspaceSelectionState>();
         services.AddSingleton<IExtensionState, PreferencesExtensionState>();
+        services.AddSingleton<FirstRunState>();
     }
 }
 
