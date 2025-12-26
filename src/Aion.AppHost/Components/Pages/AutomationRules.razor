@@ -1,0 +1,91 @@
+@page "/automations"
+@inject IAutomationService AutomationService
+@inject IMetadataService Metadata
+
+<div class="grid columns-1" style="gap:16px;">
+    <div class="card">
+        <h1>Automatisations</h1>
+        <p class="text-muted">Activez ou désactivez les règles déterministes qui s'exécutent sur les événements des modules.</p>
+    </div>
+
+    @if (IsLoading)
+    {
+        <div class="card">
+            <p class="text-muted">Chargement des règles…</p>
+        </div>
+    }
+    else if (Rules.Count == 0)
+    {
+        <div class="card">
+            <p class="text-muted">Aucune règle enregistrée.</p>
+        </div>
+    }
+    else
+    {
+        <div class="grid columns-2">
+            @foreach (var entry in Rules)
+            {
+                <div class="card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+                        <div>
+                            <h3>@entry.Rule.Name</h3>
+                            <p class="text-muted">Module : @entry.ModuleName</p>
+                            <p class="text-muted">Déclencheur : @entry.Rule.Trigger (@entry.Rule.TriggerFilter)</p>
+                        </div>
+                        <button class="button @(entry.Rule.IsEnabled ? "secondary" : string.Empty)" @onclick="() => ToggleRuleAsync(entry)">
+                            @(entry.Rule.IsEnabled ? "Désactiver" : "Activer")
+                        </button>
+                    </div>
+                    <div style="margin-top:12px;">
+                        <div class="text-muted">Actions : @entry.Rule.Actions.Count</div>
+                        <div class="text-muted">Conditions : @entry.Rule.Conditions.Count</div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<AutomationRuleEntry> Rules = new();
+    private bool IsLoading { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        IsLoading = true;
+        try
+        {
+            var rules = await AutomationService.GetRulesAsync();
+            var modules = await Metadata.GetModulesAsync();
+            var moduleLookup = modules.ToDictionary(m => m.Id, m => m.Name);
+
+            Rules.Clear();
+            foreach (var rule in rules.OrderBy(r => r.Name))
+            {
+                var moduleName = moduleLookup.TryGetValue(rule.ModuleId, out var name) ? name : "Module inconnu";
+                Rules.Add(new AutomationRuleEntry(rule, moduleName));
+            }
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task ToggleRuleAsync(AutomationRuleEntry entry)
+    {
+        var updated = await AutomationService.SetRuleEnabledAsync(entry.Rule.Id, !entry.Rule.IsEnabled);
+        var index = Rules.FindIndex(r => r.Rule.Id == updated.Id);
+        if (index >= 0)
+        {
+            Rules[index] = new AutomationRuleEntry(updated, Rules[index].ModuleName);
+        }
+    }
+
+    private sealed record AutomationRuleEntry(S_AutomationRule Rule, string ModuleName);
+}

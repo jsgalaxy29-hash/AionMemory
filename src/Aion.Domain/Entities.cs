@@ -55,6 +55,7 @@ public enum AutomationActionType
     SendNotification,
     CreateRecord,
     UpdateRecord,
+    UpdateField,
     RunScript,
     TriggerWebhook,
     GenerateNote,
