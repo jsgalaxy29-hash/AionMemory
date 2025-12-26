@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
@@ -22,6 +23,9 @@ public static class MauiProgram
 {
     public static MauiApp CreateMauiApp()
     {
+        Activity.DefaultIdFormat = ActivityIdFormat.W3C;
+        Activity.ForceDefaultIdFormat = true;
+
         var builder = MauiApp.CreateBuilder();
         builder
             .UseMauiApp<App>()

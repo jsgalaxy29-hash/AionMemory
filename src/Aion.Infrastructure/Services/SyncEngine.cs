@@ -3,6 +3,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Aion.Domain;
+using Aion.Infrastructure.Observability;
 using Microsoft.Extensions.Logging;
 
 namespace Aion.Infrastructure.Services;
@@ -36,7 +37,7 @@ public sealed class SyncEngine : ISyncEngine
         foreach (var path in allPaths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            plan.Add(BuildState(path, localMap.GetValueOrDefault(path), remoteMap.GetValueOrDefault(path)));
+            plan.Add(BuildState(path, localMap.GetValueOrDefault(path), remoteMap.GetValueOrDefault(path), "plan"));
         }
 
         return plan;
@@ -62,6 +63,7 @@ public sealed class SyncEngine : ISyncEngine
 
             if (await remote.HasAppliedAsync(operation.OperationId, cancellationToken).ConfigureAwait(false))
             {
+                InfrastructureMetrics.RecordSyncReplay();
                 results.Add(new SyncState(path, operation.Item, remoteItem, SyncAction.None));
                 continue;
             }
@@ -81,7 +83,7 @@ public sealed class SyncEngine : ISyncEngine
                 continue;
             }
 
-            var state = BuildState(path, operation.Item, remoteItem);
+            var state = BuildState(path, operation.Item, remoteItem, "apply");
             if (state.Conflict is not null && state.Conflict.PreferredSide == SyncPrioritySide.Remote)
             {
                 results.Add(new SyncState(path, operation.Item, remoteItem, SyncAction.Conflict, state.Conflict));
@@ -101,7 +103,7 @@ public sealed class SyncEngine : ISyncEngine
         return results;
     }
 
-    private SyncState BuildState(string path, SyncItem? local, SyncItem? remote)
+    private SyncState BuildState(string path, SyncItem? local, SyncItem? remote, string stage)
     {
         if (local is null && remote is null)
         {
@@ -127,6 +129,7 @@ public sealed class SyncEngine : ISyncEngine
         var action = preferredSide == SyncPrioritySide.Local ? SyncAction.Upload : SyncAction.Download;
         var conflict = new SyncConflict(path, local, remote, preferredSide, SyncConflictRule.LastWriteWins, reason);
         _logger.LogInformation("Conflict detected on {Path}. Preferred side: {Side}. Rule: {Rule}.", path, preferredSide, SyncConflictRule.LastWriteWins);
+        InfrastructureMetrics.RecordSyncConflict(stage);
         return new SyncState(path, local, remote, action, conflict);
     }
 
@@ -147,6 +150,7 @@ public sealed class SyncEngine : ISyncEngine
         {
             var conflict = new SyncConflict(local.Path, local, remote, preferredSide, SyncConflictRule.LastWriteWins, reason);
             _logger.LogInformation("Conflict detected on {Path} during delete. Preferred side: {Side}. Rule: {Rule}.", local.Path, preferredSide, SyncConflictRule.LastWriteWins);
+            InfrastructureMetrics.RecordSyncConflict("delete");
             return new SyncState(local.Path, local, remote, SyncAction.Conflict, conflict);
         }
 

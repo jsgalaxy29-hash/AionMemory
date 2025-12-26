@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Aion.Domain;
+using Aion.AI.Observability;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -31,11 +32,15 @@ public sealed class HttpTextGenerationProvider : IChatModel
     }
     public async Task<LlmResponse> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
     {
+        const string operation = "chat";
+        const string providerName = "Http";
+        var stopwatch = Stopwatch.StartNew();
         var opts = _options.CurrentValue;
         var client = CreateClient(HttpClientNames.Llm, opts.LlmEndpoint ?? opts.BaseEndpoint);
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("LLM endpoint not configured; returning stub response");
+            AiMetrics.RecordError(operation, providerName, opts.LlmModel);
             return new LlmResponse($"[stub-llm] {prompt}", string.Empty, opts.LlmModel);
         }
         var payload = new
@@ -45,23 +50,44 @@ public sealed class HttpTextGenerationProvider : IChatModel
             max_tokens = opts.MaxTokens,
             temperature = opts.Temperature
         };
-        var response = await HttpRetryHelper.SendWithRetryAsync(client, () => new HttpRequestMessage(HttpMethod.Post, "chat/completions")
+        try
         {
-            Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
-        }, _logger, cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning("LLM call failed with status {Status}; returning stub", response.StatusCode);
-            return new LlmResponse($"[stub-llm-fallback] {prompt}", string.Empty, opts.LlmModel);
+            var response = await HttpRetryHelper.SendWithRetryAsync(
+                client,
+                () => new HttpRequestMessage(HttpMethod.Post, "chat/completions")
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
+                },
+                _logger,
+                operation,
+                providerName,
+                cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("LLM call failed with status {Status}; returning stub", response.StatusCode);
+                AiMetrics.RecordError(operation, providerName, opts.LlmModel);
+                return new LlmResponse($"[stub-llm-fallback] {prompt}", string.Empty, opts.LlmModel);
+            }
+            var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            AiMetrics.RecordUsageFromJson(json, operation, providerName, opts.LlmModel);
+            using var doc = JsonDocument.Parse(json);
+            var content = doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString();
+            return new LlmResponse(content ?? string.Empty, json, opts.LlmModel);
         }
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        using var doc = JsonDocument.Parse(json);
-        var content = doc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString();
-        return new LlmResponse(content ?? string.Empty, json, opts.LlmModel);
+        catch (Exception)
+        {
+            AiMetrics.RecordError(operation, providerName, opts.LlmModel);
+            throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            AiMetrics.RecordLatency(operation, providerName, opts.LlmModel, stopwatch.Elapsed);
+        }
     }
     private HttpClient CreateClient(string clientName, string? endpoint)
     {
@@ -89,7 +115,13 @@ public sealed class HttpTextGenerationProvider : IChatModel
 }
 internal static class HttpRetryHelper
 {
-    internal static async Task<HttpResponseMessage> SendWithRetryAsync(HttpClient client, Func<HttpRequestMessage> requestFactory, ILogger logger, CancellationToken cancellationToken)
+    internal static async Task<HttpResponseMessage> SendWithRetryAsync(
+        HttpClient client,
+        Func<HttpRequestMessage> requestFactory,
+        ILogger logger,
+        string operationName,
+        string providerName,
+        CancellationToken cancellationToken)
     {
         const int maxAttempts = 3;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
@@ -101,6 +133,7 @@ internal static class HttpRetryHelper
                 return response;
             }
             response.Dispose();
+            AiMetrics.RecordRetry(operationName, providerName);
             var delay = GetDelay(response.Headers.RetryAfter?.Delta, attempt);
             logger.LogWarning("Request throttled (status {Status}); retrying in {Delay}s", response.StatusCode, delay.TotalSeconds);
             await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
@@ -151,6 +184,9 @@ public sealed class HttpEmbeddingProvider : IEmbeddingsModel
 
     public async Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default)
     {
+        const string operation = "embeddings";
+        const string providerName = "Http";
+        var stopwatch = Stopwatch.StartNew();
         var opts = _options.CurrentValue;
         var client = _httpClientFactory.CreateClient(HttpClientNames.Embeddings);
         HttpTextGenerationProvider.EnsureClientConfigured(client, opts.EmbeddingsEndpoint ?? opts.BaseEndpoint, opts);
@@ -158,27 +194,49 @@ public sealed class HttpEmbeddingProvider : IEmbeddingsModel
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("Embedding endpoint not configured; returning stub vector");
+            AiMetrics.RecordError(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
             var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
             return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
         }
 
-        var payload = new { model = opts.EmbeddingModel ?? opts.LlmModel ?? "generic-embedding", input = text };
-        var response = await HttpRetryHelper.SendWithRetryAsync(client, () => new HttpRequestMessage(HttpMethod.Post, "embeddings")
+        try
         {
-            Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
-        }, _logger, cancellationToken).ConfigureAwait(false);
+            var payload = new { model = opts.EmbeddingModel ?? opts.LlmModel ?? "generic-embedding", input = text };
+            var response = await HttpRetryHelper.SendWithRetryAsync(
+                client,
+                () => new HttpRequestMessage(HttpMethod.Post, "embeddings")
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
+                },
+                _logger,
+                operation,
+                providerName,
+                cancellationToken).ConfigureAwait(false);
 
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning("Embedding call failed with status {Status}; returning stub", response.StatusCode);
-            var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
-            return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Embedding call failed with status {Status}; returning stub", response.StatusCode);
+                AiMetrics.RecordError(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
+                var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+                return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            AiMetrics.RecordUsageFromJson(json, operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
+            using var doc = JsonDocument.Parse(json);
+            var values = doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(e => e.GetSingle()).ToArray();
+            return new EmbeddingResult(values, opts.EmbeddingModel ?? opts.LlmModel, json);
         }
-
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        using var doc = JsonDocument.Parse(json);
-        var values = doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(e => e.GetSingle()).ToArray();
-        return new EmbeddingResult(values, opts.EmbeddingModel ?? opts.LlmModel, json);
+        catch (Exception)
+        {
+            AiMetrics.RecordError(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
+            throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            AiMetrics.RecordLatency(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel, stopwatch.Elapsed);
+        }
     }
 }
 public sealed class HttpAudioTranscriptionProvider : ITranscriptionModel
@@ -194,30 +252,55 @@ public sealed class HttpAudioTranscriptionProvider : ITranscriptionModel
     }
     public async Task<TranscriptionResult> TranscribeAsync(Stream audioStream, string fileName, CancellationToken cancellationToken = default)
     {
+        const string operation = "transcription";
+        const string providerName = "Http";
+        var stopwatch = Stopwatch.StartNew();
         var opts = _options.CurrentValue;
         var client = _httpClientFactory.CreateClient(HttpClientNames.Transcription);
         HttpTextGenerationProvider.EnsureClientConfigured(client, opts.TranscriptionEndpoint ?? opts.BaseEndpoint, opts);
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("Transcription endpoint not configured; returning stub transcription");
+            AiMetrics.RecordError(operation, providerName, opts.TranscriptionModel);
             return new TranscriptionResult($"[stub-transcription] {fileName}", TimeSpan.Zero, opts.TranscriptionModel);
         }
         using var content = new MultipartFormDataContent();
         content.Add(new StreamContent(audioStream), "file", fileName);
         content.Add(new StringContent(opts.TranscriptionModel ?? opts.LlmModel ?? "whisper"), "model");
-        var response = await HttpRetryHelper.SendWithRetryAsync(client, () => new HttpRequestMessage(HttpMethod.Post, "audio/transcriptions")
+        try
         {
-            Content = content
-        }, _logger, cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning("Transcription call failed with status {Status}; returning stub", response.StatusCode);
-            return new TranscriptionResult($"[stub-transcription] {fileName}", TimeSpan.Zero, opts.TranscriptionModel);
+            var response = await HttpRetryHelper.SendWithRetryAsync(
+                client,
+                () => new HttpRequestMessage(HttpMethod.Post, "audio/transcriptions")
+                {
+                    Content = content
+                },
+                _logger,
+                operation,
+                providerName,
+                cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Transcription call failed with status {Status}; returning stub", response.StatusCode);
+                AiMetrics.RecordError(operation, providerName, opts.TranscriptionModel);
+                return new TranscriptionResult($"[stub-transcription] {fileName}", TimeSpan.Zero, opts.TranscriptionModel);
+            }
+            var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            AiMetrics.RecordUsageFromJson(json, operation, providerName, opts.TranscriptionModel);
+            using var doc = JsonDocument.Parse(json);
+            var text = doc.RootElement.GetProperty("text").GetString() ?? string.Empty;
+            return new TranscriptionResult(text, TimeSpan.Zero, opts.TranscriptionModel);
         }
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        using var doc = JsonDocument.Parse(json);
-        var text = doc.RootElement.GetProperty("text").GetString() ?? string.Empty;
-        return new TranscriptionResult(text, TimeSpan.Zero, opts.TranscriptionModel);
+        catch (Exception)
+        {
+            AiMetrics.RecordError(operation, providerName, opts.TranscriptionModel);
+            throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            AiMetrics.RecordLatency(operation, providerName, opts.TranscriptionModel, stopwatch.Elapsed);
+        }
     }
 }
 public sealed class HttpVisionProvider : IVisionModel
@@ -234,31 +317,56 @@ public sealed class HttpVisionProvider : IVisionModel
     }
     public async Task<S_VisionAnalysis> AnalyzeAsync(VisionAnalysisRequest request, CancellationToken cancellationToken = default)
     {
+        const string operation = "vision";
+        const string providerName = "Http";
+        var stopwatch = Stopwatch.StartNew();
         var opts = _options.CurrentValue;
         var client = _httpClientFactory.CreateClient(HttpClientNames.Vision);
         HttpTextGenerationProvider.EnsureClientConfigured(client, opts.VisionEndpoint ?? opts.BaseEndpoint, opts);
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("Vision endpoint not configured; returning stub analysis");
+            AiMetrics.RecordError(operation, providerName, request.Model ?? opts.VisionModel);
             return BuildStub(request.FileId, request.AnalysisType, "Unconfigured vision endpoint");
         }
         var payload = new { fileId = request.FileId, analysisType = request.AnalysisType.ToString(), model = request.Model ?? opts.VisionModel ?? "vision-generic" };
-        using var response = await HttpRetryHelper.SendWithRetryAsync(client, () => new HttpRequestMessage(HttpMethod.Post, "vision/analyze")
+        try
         {
-            Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
-        }, _logger, cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning("Vision call failed with status {Status}; returning stub", response.StatusCode);
-            return BuildStub(request.FileId, request.AnalysisType, "Vision call failed");
+            using var response = await HttpRetryHelper.SendWithRetryAsync(
+                client,
+                () => new HttpRequestMessage(HttpMethod.Post, "vision/analyze")
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
+                },
+                _logger,
+                operation,
+                providerName,
+                cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Vision call failed with status {Status}; returning stub", response.StatusCode);
+                AiMetrics.RecordError(operation, providerName, request.Model ?? opts.VisionModel);
+                return BuildStub(request.FileId, request.AnalysisType, "Vision call failed");
+            }
+            var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            AiMetrics.RecordUsageFromJson(json, operation, providerName, request.Model ?? opts.VisionModel);
+            return new S_VisionAnalysis
+            {
+                FileId = request.FileId,
+                AnalysisType = request.AnalysisType,
+                ResultJson = json
+            };
         }
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        return new S_VisionAnalysis
+        catch (Exception)
         {
-            FileId = request.FileId,
-            AnalysisType = request.AnalysisType,
-            ResultJson = json
-        };
+            AiMetrics.RecordError(operation, providerName, request.Model ?? opts.VisionModel);
+            throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            AiMetrics.RecordLatency(operation, providerName, request.Model ?? opts.VisionModel, stopwatch.Elapsed);
+        }
     }
     private static S_VisionAnalysis BuildStub(Guid fileId, VisionAnalysisType analysisType, string message)
         => new()

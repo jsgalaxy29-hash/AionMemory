@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Linq;
 using Aion.Domain;
+using Aion.AI.Observability;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -25,12 +27,16 @@ public sealed class MistralTextGenerationProvider : IChatModel
 
     public async Task<LlmResponse> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
     {
+        const string operation = "chat";
+        const string providerName = "Mistral";
+        var stopwatch = Stopwatch.StartNew();
         var opts = _options.CurrentValue;
         var client = BuildClient(HttpClientNames.Llm, opts.LlmEndpoint ?? opts.BaseEndpoint);
 
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("Mistral endpoint not configured; returning stub response");
+            AiMetrics.RecordError(operation, providerName, opts.LlmModel);
             var content = $"[mistral-stub] {prompt}";
             return new LlmResponse(content, content, opts.LlmModel);
         }
@@ -43,27 +49,48 @@ public sealed class MistralTextGenerationProvider : IChatModel
             temperature = opts.Temperature
         };
 
-        var response = await HttpRetryHelper.SendWithRetryAsync(client, () => new HttpRequestMessage(HttpMethod.Post, "chat/completions")
+        try
         {
-            Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
-        }, _logger, cancellationToken).ConfigureAwait(false);
+            var response = await HttpRetryHelper.SendWithRetryAsync(
+                client,
+                () => new HttpRequestMessage(HttpMethod.Post, "chat/completions")
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
+                },
+                _logger,
+                operation,
+                providerName,
+                cancellationToken).ConfigureAwait(false);
 
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning("Mistral call failed with status {Status}; returning stub", response.StatusCode);
-            var fallback = $"[mistral-fallback] {prompt}";
-            return new LlmResponse(fallback, fallback, opts.LlmModel);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Mistral call failed with status {Status}; returning stub", response.StatusCode);
+                AiMetrics.RecordError(operation, providerName, opts.LlmModel);
+                var fallback = $"[mistral-fallback] {prompt}";
+                return new LlmResponse(fallback, fallback, opts.LlmModel);
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            AiMetrics.RecordUsageFromJson(json, operation, providerName, opts.LlmModel);
+            using var doc = JsonDocument.Parse(json);
+            var contentResponse = doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString();
+
+            return new LlmResponse(contentResponse ?? string.Empty, json, opts.LlmModel);
         }
-
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        using var doc = JsonDocument.Parse(json);
-        var contentResponse = doc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString();
-
-        return new LlmResponse(contentResponse ?? string.Empty, json, opts.LlmModel);
+        catch (Exception)
+        {
+            AiMetrics.RecordError(operation, providerName, opts.LlmModel);
+            throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            AiMetrics.RecordLatency(operation, providerName, opts.LlmModel, stopwatch.Elapsed);
+        }
     }
 
     internal HttpClient BuildClient(string clientName, string? endpoint)
@@ -110,33 +137,58 @@ public sealed class MistralEmbeddingProvider : IEmbeddingsModel
 
     public async Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default)
     {
+        const string operation = "embeddings";
+        const string providerName = "Mistral";
+        var stopwatch = Stopwatch.StartNew();
         var opts = _options.CurrentValue;
         var client = _clientBuilder.BuildClient(HttpClientNames.Embeddings, opts.EmbeddingsEndpoint ?? opts.BaseEndpoint);
 
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("Mistral embeddings endpoint not configured; returning stub vector");
+            AiMetrics.RecordError(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
             var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
             return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
         }
 
-        var payload = new { model = opts.EmbeddingModel ?? "mistral-embed", input = text };
-        var response = await HttpRetryHelper.SendWithRetryAsync(client, () => new HttpRequestMessage(HttpMethod.Post, "embeddings")
+        try
         {
-            Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
-        }, _logger, cancellationToken).ConfigureAwait(false);
+            var payload = new { model = opts.EmbeddingModel ?? "mistral-embed", input = text };
+            var response = await HttpRetryHelper.SendWithRetryAsync(
+                client,
+                () => new HttpRequestMessage(HttpMethod.Post, "embeddings")
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions), Encoding.UTF8, "application/json")
+                },
+                _logger,
+                operation,
+                providerName,
+                cancellationToken).ConfigureAwait(false);
 
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning("Mistral embeddings failed with status {Status}; returning stub", response.StatusCode);
-            var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
-            return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Mistral embeddings failed with status {Status}; returning stub", response.StatusCode);
+                AiMetrics.RecordError(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
+                var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+                return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            AiMetrics.RecordUsageFromJson(json, operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
+            using var doc = JsonDocument.Parse(json);
+            var values = doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(e => e.GetSingle()).ToArray();
+            return new EmbeddingResult(values, opts.EmbeddingModel ?? opts.LlmModel, json);
         }
-
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        using var doc = JsonDocument.Parse(json);
-        var values = doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(e => e.GetSingle()).ToArray();
-        return new EmbeddingResult(values, opts.EmbeddingModel ?? opts.LlmModel, json);
+        catch (Exception)
+        {
+            AiMetrics.RecordError(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
+            throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            AiMetrics.RecordLatency(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel, stopwatch.Elapsed);
+        }
     }
 }
 
@@ -155,12 +207,16 @@ public sealed class MistralAudioTranscriptionProvider : ITranscriptionModel
 
     public async Task<TranscriptionResult> TranscribeAsync(Stream audioStream, string fileName, CancellationToken cancellationToken = default)
     {
+        const string operation = "transcription";
+        const string providerName = "Mistral";
+        var stopwatch = Stopwatch.StartNew();
         var opts = _options.CurrentValue;
         var client = _clientBuilder.BuildClient(HttpClientNames.Transcription, opts.TranscriptionEndpoint ?? opts.BaseEndpoint);
 
         if (client.BaseAddress is null)
         {
             _logger.LogWarning("Mistral transcription endpoint not configured; returning stub");
+            AiMetrics.RecordError(operation, providerName, opts.TranscriptionModel ?? opts.LlmModel);
             return new TranscriptionResult($"[mistral-stub-transcription] {fileName}", TimeSpan.Zero, opts.TranscriptionModel ?? opts.LlmModel);
         }
 
@@ -168,20 +224,41 @@ public sealed class MistralAudioTranscriptionProvider : ITranscriptionModel
         content.Add(new StreamContent(audioStream), "file", fileName);
         content.Add(new StringContent(opts.TranscriptionModel ?? opts.LlmModel ?? "whisper-large-v3"), "model");
 
-        var response = await HttpRetryHelper.SendWithRetryAsync(client, () => new HttpRequestMessage(HttpMethod.Post, "audio/transcriptions")
+        try
         {
-            Content = content
-        }, _logger, cancellationToken).ConfigureAwait(false);
+            var response = await HttpRetryHelper.SendWithRetryAsync(
+                client,
+                () => new HttpRequestMessage(HttpMethod.Post, "audio/transcriptions")
+                {
+                    Content = content
+                },
+                _logger,
+                operation,
+                providerName,
+                cancellationToken).ConfigureAwait(false);
 
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning("Mistral transcription failed with status {Status}; returning stub", response.StatusCode);
-            return new TranscriptionResult($"[mistral-fallback-transcription] {fileName}", TimeSpan.Zero, opts.TranscriptionModel ?? opts.LlmModel);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Mistral transcription failed with status {Status}; returning stub", response.StatusCode);
+                AiMetrics.RecordError(operation, providerName, opts.TranscriptionModel ?? opts.LlmModel);
+                return new TranscriptionResult($"[mistral-fallback-transcription] {fileName}", TimeSpan.Zero, opts.TranscriptionModel ?? opts.LlmModel);
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            AiMetrics.RecordUsageFromJson(json, operation, providerName, opts.TranscriptionModel ?? opts.LlmModel);
+            using var doc = JsonDocument.Parse(json);
+            var text = doc.RootElement.GetProperty("text").GetString() ?? string.Empty;
+            return new TranscriptionResult(text, TimeSpan.Zero, opts.TranscriptionModel ?? opts.LlmModel);
         }
-
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        using var doc = JsonDocument.Parse(json);
-        var text = doc.RootElement.GetProperty("text").GetString() ?? string.Empty;
-        return new TranscriptionResult(text, TimeSpan.Zero, opts.TranscriptionModel ?? opts.LlmModel);
+        catch (Exception)
+        {
+            AiMetrics.RecordError(operation, providerName, opts.TranscriptionModel ?? opts.LlmModel);
+            throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            AiMetrics.RecordLatency(operation, providerName, opts.TranscriptionModel ?? opts.LlmModel, stopwatch.Elapsed);
+        }
     }
 }

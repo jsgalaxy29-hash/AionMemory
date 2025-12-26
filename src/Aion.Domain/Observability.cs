@@ -5,6 +5,8 @@ namespace Aion.Domain;
 
 public readonly record struct OperationContext(string CorrelationId, string OperationId)
 {
+    public static OperationContext Current => FromActivity(Activity.Current);
+
     public static OperationContext CreateUntracked()
     {
         var traceId = ActivityTraceId.CreateRandom().ToString();

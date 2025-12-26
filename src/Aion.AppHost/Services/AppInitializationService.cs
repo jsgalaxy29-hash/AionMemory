@@ -51,7 +51,17 @@ public sealed class AppInitializationService : IAppInitializationService
         }
 
         _logger.LogInformation("Ensuring database is initialized.");
-        await serviceProvider.EnsureAionDatabaseAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await serviceProvider.EnsureAionDatabaseAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogCritical(ex, "Database initialization failed during app startup.");
+            throw new InvalidOperationException(
+                "La migration de la base de données a échoué. Consultez les journaux et relancez l'application.",
+                ex);
+        }
         var tenancyService = serviceProvider.GetRequiredService<ITenancyService>();
         await tenancyService.EnsureDefaultsAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("App initialization completed.");

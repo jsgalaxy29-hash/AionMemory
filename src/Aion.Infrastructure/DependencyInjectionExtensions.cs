@@ -222,7 +222,7 @@ public static class DependencyInjectionExtensions
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Database migrations failed during startup for data source {DatabasePath}.", GetDatabaseLabel(context));
+            logger.LogCritical(ex, "Database migrations failed during startup for data source {DatabasePath}.", GetDatabaseLabel(context));
             throw;
         }
     }
@@ -235,7 +235,7 @@ public static class DependencyInjectionExtensions
         }
 
         var appliedMigrations = await context.Database.GetAppliedMigrationsAsync(cancellationToken).ConfigureAwait(false);
-        logger.LogError("Database schema validation failed. Required table 'Modules' is missing after applying migrations: {AppliedMigrations}", appliedMigrations);
+        logger.LogCritical("Database schema validation failed. Required table 'Modules' is missing after applying migrations: {AppliedMigrations}", appliedMigrations);
         throw new InvalidOperationException("Database schema validation failed; required tables were not created after applying migrations.");
     }
 

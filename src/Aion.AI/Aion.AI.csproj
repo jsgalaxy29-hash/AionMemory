@@ -13,4 +13,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Aion.Domain\Aion.Domain.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Aion.AI.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>
