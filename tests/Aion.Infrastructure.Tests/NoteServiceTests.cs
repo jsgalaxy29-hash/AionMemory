@@ -43,12 +43,14 @@ public sealed class NoteServiceTests
             var fileStorage = new FileStorageService(storageOptions, context, search, storage, NullLogger<FileStorageService>.Instance);
             var transcriptionProvider = new StubTranscriptionProvider("Texte dicté");
             var tagger = new StubTaggingService(["rdv", "tache"]);
+            var currentUser = new FixedCurrentUserService(Guid.NewGuid());
             var noteService = new NoteService(
                 context,
                 fileStorage,
                 transcriptionProvider,
                 tagger,
                 search,
+                currentUser,
                 NullLogger<NoteService>.Instance);
 
             var linkTargetId = Guid.NewGuid();
@@ -123,6 +125,18 @@ public sealed class NoteServiceTests
         public Task IndexFileAsync(F_File file, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task RemoveAsync(string targetType, Guid targetId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FixedCurrentUserService : ICurrentUserService
+    {
+        private readonly Guid _userId;
+
+        public FixedCurrentUserService(Guid userId)
+        {
+            _userId = userId;
+        }
+
+        public Guid GetCurrentUserId() => _userId;
     }
 
     private sealed class TestWorkspaceContext : IWorkspaceContext

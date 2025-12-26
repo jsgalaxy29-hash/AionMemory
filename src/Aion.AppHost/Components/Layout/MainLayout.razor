@@ -21,6 +21,7 @@
             <button class="button secondary full-width" @onclick="NavigateDashboard">Dashboard</button>
             <button class="button secondary full-width" @onclick="NavigateTimeline">Timeline</button>
             <button class="button secondary full-width" @onclick="NavigateAutomations">Automatisations</button>
+            <button class="button secondary full-width" @onclick="NavigateLinks">Graphe</button>
             <button class="button secondary full-width" @onclick="NavigateBackups">Backups</button>
         </div>
         <div class="app-shell__nav-section">
@@ -155,6 +156,7 @@
     private void NavigateExtensions() => Navigation.NavigateTo("/extensions");
     private void NavigateMarketplace() => Navigation.NavigateTo("/marketplace");
     private void NavigateTrust() => Navigation.NavigateTo("/trust-ux");
+    private void NavigateLinks() => Navigation.NavigateTo("/links");
     private void NavigateBackups() => Navigation.NavigateTo("/backups");
 
     private void NavigateToModule(S_Module module)

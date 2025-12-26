@@ -415,6 +415,11 @@ public class S_Link
     public Guid TargetId { get; set; }
     [Required, StringLength(64)]
     public string Relation { get; set; } = string.Empty;
+    [Required, StringLength(64)]
+    public string Type { get; set; } = string.Empty;
+    public Guid CreatedBy { get; set; }
+    [StringLength(512)]
+    public string? Reason { get; set; }
 }
 
 public class DashboardWidget

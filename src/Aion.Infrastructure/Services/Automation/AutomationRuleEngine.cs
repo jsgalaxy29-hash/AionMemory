@@ -248,7 +248,10 @@ public sealed class AutomationRuleEngine : IAutomationRuleEngine
                 SourceId = Guid.NewGuid(),
                 TargetType = "Record",
                 TargetId = recordId,
-                Relation = tableId.ToString()
+                Relation = tableId.ToString(),
+                Type = "automation",
+                CreatedBy = AuthorizationDefaults.DefaultUserId,
+                Reason = "automation rule"
             });
         }
 

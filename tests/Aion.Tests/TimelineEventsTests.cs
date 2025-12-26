@@ -51,11 +51,16 @@ public class TimelineEventsTests : IClassFixture<SqliteInMemoryFixture>
             new StubAudioTranscriptionProvider(),
             new StubTaggingService(),
             new StubSearchService(),
+            new StubCurrentUserService(Guid.NewGuid()),
             NullLogger<NoteService>.Instance);
         await noteService.CreateTextNoteAsync("Note timeline", "Contenu");
 
         await using var agendaContext = _fixture.CreateContext();
-        var agendaService = new AionAgendaService(agendaContext, new StubNotificationService(), NullLogger<AionAgendaService>.Instance);
+        var agendaService = new AionAgendaService(
+            agendaContext,
+            new StubNotificationService(),
+            new StubCurrentUserService(Guid.NewGuid()),
+            NullLogger<AionAgendaService>.Instance);
         await agendaService.AddEventAsync(new S_Event
         {
             Title = "Rendez-vous",
