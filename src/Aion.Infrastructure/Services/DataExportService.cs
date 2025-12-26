@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO.Compression;
 using System.Text.Json;
 using Aion.Domain;
@@ -24,16 +25,19 @@ public sealed class DataExportService : IDataExportService
     private readonly IStorageService _storage;
     private readonly StorageOptions _storageOptions;
     private readonly ILogger<DataExportService> _logger;
+    private readonly ISecurityAuditService _securityAudit;
 
     public DataExportService(
         AionDbContext db,
         IStorageService storage,
         IOptions<StorageOptions> storageOptions,
-        ILogger<DataExportService> logger)
+        ILogger<DataExportService> logger,
+        ISecurityAuditService securityAudit)
     {
         _db = db;
         _storage = storage;
         _logger = logger;
+        _securityAudit = securityAudit;
         _storageOptions = storageOptions.Value;
 
         if (string.IsNullOrWhiteSpace(_storageOptions.RootPath))
@@ -111,6 +115,18 @@ public sealed class DataExportService : IDataExportService
             packagePath = workingFolder;
             _logger.LogInformation("Data export folder created at {PackagePath}", packagePath);
         }
+
+        await _securityAudit.LogAsync(new SecurityAuditEvent(
+            SecurityAuditCategory.DataExport,
+            "data.export",
+            metadata: new Dictionary<string, object?>
+            {
+                ["asArchive"] = asArchive,
+                ["moduleCount"] = manifest.ModuleCount,
+                ["tableCount"] = manifest.TableCount,
+                ["recordCount"] = manifest.RecordCount,
+                ["attachmentCount"] = manifest.AttachmentCount
+            }), cancellationToken).ConfigureAwait(false);
 
         return new DataExportResult(manifest, packagePath);
     }

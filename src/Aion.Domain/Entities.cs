@@ -361,7 +361,8 @@ public enum ChangeType
 {
     Create,
     Update,
-    Delete
+    Delete,
+    SoftDelete
 }
 
 public sealed record ChangeSet(Guid TableId, Guid RecordId, ChangeType ChangeType, long Version, DateTimeOffset ChangedAt, string DataJson, string? PreviousDataJson);

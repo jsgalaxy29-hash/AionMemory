@@ -53,7 +53,12 @@ public class BackupServiceTests
             await command.ExecuteNonQueryAsync();
         }
 
-        var backupService = new BackupService(dbOptions, backupOptions, storageOptions, NullLogger<BackupService>.Instance);
+        var backupService = new BackupService(
+            dbOptions,
+            backupOptions,
+            storageOptions,
+            NullLogger<BackupService>.Instance,
+            new NullSecurityAuditService());
         var manifest = await backupService.CreateBackupAsync(cancellationToken: default);
 
         await using (var connection = new SqliteConnection(dbOptions.Value.ConnectionString))
@@ -65,7 +70,12 @@ public class BackupServiceTests
             await File.WriteAllTextAsync(storageFile, "after");
         }
 
-        var restoreService = new RestoreService(backupOptions, dbOptions, storageOptions, NullLogger<RestoreService>.Instance);
+        var restoreService = new RestoreService(
+            backupOptions,
+            dbOptions,
+            storageOptions,
+            NullLogger<RestoreService>.Instance,
+            new NullSecurityAuditService());
         await restoreService.RestoreLatestAsync(cancellationToken: default);
 
         await using var verifyConnection = new SqliteConnection(dbOptions.Value.ConnectionString);

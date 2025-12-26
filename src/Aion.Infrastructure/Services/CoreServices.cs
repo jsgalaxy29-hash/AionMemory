@@ -391,19 +391,21 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         var now = DateTimeOffset.UtcNow;
         var nextVersion = record.Version + 1;
 
+        var changeType = ChangeType.Delete;
         if (table.SupportsSoftDelete)
         {
             record.DeletedAt = now;
             record.ModifiedAt = now;
             record.Version = nextVersion;
             _db.Records.Update(record);
+            changeType = ChangeType.SoftDelete;
         }
         else
         {
             _db.Records.Remove(record);
         }
 
-        await AddAuditEntryAsync(tableId, id, ChangeType.Delete, snapshotJson, snapshotJson, nextVersion, now, cancellationToken).ConfigureAwait(false);
+        await AddAuditEntryAsync(tableId, id, changeType, snapshotJson, snapshotJson, nextVersion, now, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} deleted for table {TableId} in {ElapsedMs}ms", id, tableId, operation.Elapsed.TotalMilliseconds);
         await _search.RemoveAsync("Record", id, cancellationToken).ConfigureAwait(false);
@@ -2369,13 +2371,18 @@ public sealed class CloudBackupService : ICloudBackupService
     private readonly string _backupFolder;
     private readonly BackupOptions _options;
     private readonly ILogger<CloudBackupService> _logger;
+    private readonly ISecurityAuditService _securityAudit;
 
-    public CloudBackupService(IOptions<BackupOptions> options, ILogger<CloudBackupService> logger)
+    public CloudBackupService(
+        IOptions<BackupOptions> options,
+        ILogger<CloudBackupService> logger,
+        ISecurityAuditService securityAudit)
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options.Value;
         _backupFolder = _options.BackupFolder ?? throw new InvalidOperationException("Backup folder must be configured");
         _logger = logger;
+        _securityAudit = securityAudit;
         Directory.CreateDirectory(_backupFolder);
     }
 
@@ -2413,6 +2420,14 @@ public sealed class CloudBackupService : ICloudBackupService
         await JsonSerializer.SerializeAsync(manifestStream, manifest, ManifestSerializerOptions, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("Backup created at {Destination} (hash {Hash})", destination, manifest.Sha256);
+        await _securityAudit.LogAsync(new SecurityAuditEvent(
+            SecurityAuditCategory.Backup,
+            "cloud.backup.created",
+            metadata: new Dictionary<string, object?>
+            {
+                ["fileName"] = Path.GetFileName(manifest.FileName),
+                ["size"] = manifest.Size
+            }), cancellationToken).ConfigureAwait(false);
     }
 
     public async Task RestoreAsync(string destinationPath, CancellationToken cancellationToken = default)
@@ -2451,6 +2466,14 @@ public sealed class CloudBackupService : ICloudBackupService
 
         File.Move(tempPath, destinationPath, overwrite: true);
         _logger.LogInformation("Backup restored transactionally from {BackupFile}", backupFile);
+        await _securityAudit.LogAsync(new SecurityAuditEvent(
+            SecurityAuditCategory.Restore,
+            "cloud.backup.restored",
+            metadata: new Dictionary<string, object?>
+            {
+                ["fileName"] = Path.GetFileName(manifest.FileName),
+                ["size"] = manifest.Size
+            }), cancellationToken).ConfigureAwait(false);
     }
 
     private BackupManifest? LoadLatestManifest()
@@ -2549,12 +2572,14 @@ public sealed class TemplateService : IAionTemplateMarketplaceService, ITemplate
 {
     private readonly AionDbContext _db;
     private readonly string _marketplaceFolder;
+    private readonly ISecurityAuditService _securityAudit;
 
-    public TemplateService(AionDbContext db, IOptions<MarketplaceOptions> options)
+    public TemplateService(AionDbContext db, IOptions<MarketplaceOptions> options, ISecurityAuditService securityAudit)
     {
         _db = db;
         ArgumentNullException.ThrowIfNull(options);
         _marketplaceFolder = options.Value.MarketplaceFolder ?? throw new InvalidOperationException("Marketplace folder is required");
+        _securityAudit = securityAudit;
         Directory.CreateDirectory(_marketplaceFolder);
     }
 
@@ -2584,6 +2609,17 @@ public sealed class TemplateService : IAionTemplateMarketplaceService, ITemplate
         await _db.Templates.AddAsync(package, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await CreateOrUpdateMarketplaceEntry(package, cancellationToken).ConfigureAwait(false);
+        await _securityAudit.LogAsync(new SecurityAuditEvent(
+            SecurityAuditCategory.ModuleExport,
+            "module.exported",
+            "module",
+            module.Id,
+            new Dictionary<string, object?>
+            {
+                ["moduleName"] = module.Name,
+                ["templateId"] = package.Id,
+                ["version"] = package.Version
+            }), cancellationToken).ConfigureAwait(false);
         return package;
     }
 
@@ -2594,6 +2630,17 @@ public sealed class TemplateService : IAionTemplateMarketplaceService, ITemplate
         EnsureModuleMetadata(module);
         await _db.Modules.AddAsync(module, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await _securityAudit.LogAsync(new SecurityAuditEvent(
+            SecurityAuditCategory.ModuleImport,
+            "module.imported",
+            "module",
+            module.Id,
+            new Dictionary<string, object?>
+            {
+                ["moduleName"] = module.Name,
+                ["templateId"] = package.Id,
+                ["version"] = package.Version
+            }), cancellationToken).ConfigureAwait(false);
         return module;
     }
 
