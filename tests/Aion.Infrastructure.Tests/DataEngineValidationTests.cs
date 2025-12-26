@@ -240,6 +240,14 @@ public class DataEngineValidationTests
             ["Team"] = team.Id
         });
 
+        await engine.InsertAsync(assignmentTable.Id, new Dictionary<string, object?>
+        {
+            ["Title"] = "Assignment 2",
+            ["Owner"] = owner.Id,
+            ["Reviewer"] = reviewer.Id,
+            ["Team"] = team.Id
+        });
+
         Assert.Equal(2, interceptor.LookupSelectCount);
     }
 

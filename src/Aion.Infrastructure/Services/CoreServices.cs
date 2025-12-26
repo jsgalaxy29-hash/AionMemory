@@ -88,6 +88,8 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
     private readonly IOperationScopeFactory _operationScopeFactory;
     private readonly IAutomationRuleEngine _automationRuleEngine;
     private readonly ICurrentUserService _currentUserService;
+    private readonly Dictionary<string, STable?> _lookupTableCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<Guid, HashSet<Guid>> _lookupExistingIdsCache = new();
 
     public AionDataEngine(
         AionDbContext db,
@@ -1918,17 +1920,18 @@ LIMIT $take OFFSET $skip;
 
     private async Task ValidateLookupTargetsAsync(IReadOnlyCollection<LookupValidationEntry> lookups, CancellationToken cancellationToken)
     {
-        var tableCache = new Dictionary<string, STable?>(StringComparer.OrdinalIgnoreCase);
         var tablesByLookup = new Dictionary<string, STable>(StringComparer.OrdinalIgnoreCase);
         var existingIdsByLookup = new Dictionary<string, HashSet<Guid>>(StringComparer.OrdinalIgnoreCase);
+        var queryCount = 0;
+        var cacheHitCount = 0;
 
         foreach (var group in lookups.GroupBy(entry => entry.LookupTarget, StringComparer.OrdinalIgnoreCase))
         {
-            if (!tableCache.TryGetValue(group.Key, out var targetTable))
+            if (!_lookupTableCache.TryGetValue(group.Key, out var targetTable))
             {
                 var field = group.First().Field;
                 targetTable = await FindLookupTableAsync(field, cancellationToken).ConfigureAwait(false);
-                tableCache[group.Key] = targetTable;
+                _lookupTableCache[group.Key] = targetTable;
             }
 
             if (targetTable is null)
@@ -1938,14 +1941,38 @@ LIMIT $take OFFSET $skip;
             }
 
             var ids = group.Select(entry => entry.LookupId).Distinct().ToArray();
-            var existingIds = await FilterByTable(_db.Records.AsQueryable(), targetTable)
-                .Where(record => ids.Contains(record.Id))
-                .Select(record => record.Id)
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
+            if (!_lookupExistingIdsCache.TryGetValue(targetTable.Id, out var existingIds))
+            {
+                existingIds = new HashSet<Guid>();
+                _lookupExistingIdsCache[targetTable.Id] = existingIds;
+            }
+
+            foreach (var id in ids)
+            {
+                if (existingIds.Contains(id))
+                {
+                    cacheHitCount += 1;
+                }
+            }
+
+            var missingIds = ids.Where(id => !existingIds.Contains(id)).ToArray();
+            if (missingIds.Length > 0)
+            {
+                queryCount += 1;
+                var foundIds = await FilterByTable(_db.Records.AsQueryable(), targetTable)
+                    .Where(record => missingIds.Contains(record.Id))
+                    .Select(record => record.Id)
+                    .ToListAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+                foreach (var id in foundIds)
+                {
+                    existingIds.Add(id);
+                }
+            }
 
             tablesByLookup[group.Key] = targetTable;
-            existingIdsByLookup[group.Key] = existingIds.ToHashSet();
+            existingIdsByLookup[group.Key] = existingIds;
         }
 
         foreach (var entry in lookups)
@@ -1961,6 +1988,18 @@ LIMIT $take OFFSET $skip;
                 throw new InvalidOperationException($"Lookup value {entry.LookupId} not found in table {targetTable.Name}");
             }
         }
+
+        if (queryCount > 0 || cacheHitCount > 0)
+        {
+            _logger.LogDebug(
+                "Lookup validation executed {QueryCount} query(ies) across {TableCount} table(s) with {CacheHitCount} cached lookup(s).",
+                queryCount,
+                tablesByLookup.Count,
+                cacheHitCount);
+        }
+
+        InfrastructureMetrics.RecordLookupValidationQueries(queryCount);
+        InfrastructureMetrics.RecordLookupValidationCacheHits(cacheHitCount);
     }
 
     private async Task<STable?> FindLookupTableAsync(SFieldDefinition field, CancellationToken cancellationToken)
