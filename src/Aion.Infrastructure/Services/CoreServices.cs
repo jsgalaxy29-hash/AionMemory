@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Aion.AI;
 using Aion.Domain;
+using Aion.Infrastructure.Observability;
 using Aion.Infrastructure.Services.Automation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -135,6 +136,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
         private readonly IOperationScope _operationScope;
         private readonly IDisposable _logScope;
+        private bool _failed;
 
         public OperationMetricsScope(IOperationScope operationScope, IDisposable logScope, string operationName)
         {
@@ -147,9 +149,24 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         public OperationContext Context => _operationScope.Context;
         public TimeSpan Elapsed => _stopwatch.Elapsed;
 
+        public void MarkFailed(Exception exception)
+        {
+            if (exception is OperationCanceledException)
+            {
+                return;
+            }
+
+            _failed = true;
+        }
+
         public void Dispose()
         {
             _stopwatch.Stop();
+            InfrastructureMetrics.RecordDataEngineDuration(OperationName, _stopwatch.Elapsed);
+            if (_failed)
+            {
+                InfrastructureMetrics.RecordDataEngineError(OperationName);
+            }
             _logScope.Dispose();
             _operationScope.Dispose();
         }
@@ -178,37 +195,53 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
     {
         using var operation = BeginOperation("DataEngine.CreateTable", table.Id);
 
-        var added = EnsureBasicViews(table);
-        NormalizeTableDefinition(table);
-        ValidateTableDefinition(table);
-
-        await _db.Tables.AddAsync(table, cancellationToken).ConfigureAwait(false);
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Table {Table} created with {FieldCount} fields in {ElapsedMs}ms", table.Name, table.Fields.Count, operation.Elapsed.TotalMilliseconds);
-        if (added > 0)
+        try
         {
-            _logger.LogInformation("{ViewCount} default view(s) created for table {Table} in {ElapsedMs}ms", added, table.Name, operation.Elapsed.TotalMilliseconds);
+            var added = EnsureBasicViews(table);
+            NormalizeTableDefinition(table);
+            ValidateTableDefinition(table);
+
+            await _db.Tables.AddAsync(table, cancellationToken).ConfigureAwait(false);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Table {Table} created with {FieldCount} fields in {ElapsedMs}ms", table.Name, table.Fields.Count, operation.Elapsed.TotalMilliseconds);
+            if (added > 0)
+            {
+                _logger.LogInformation("{ViewCount} default view(s) created for table {Table} in {ElapsedMs}ms", added, table.Name, operation.Elapsed.TotalMilliseconds);
+            }
+            return table;
         }
-        return table;
+        catch (Exception ex)
+        {
+            operation.MarkFailed(ex);
+            throw;
+        }
     }
 
     public async Task<IEnumerable<SViewDefinition>> GenerateSimpleViewsAsync(Guid tableId, CancellationToken cancellationToken = default)
     {
         using var operation = BeginOperation("DataEngine.GenerateViews", tableId);
 
-        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Table {tableId} not found");
-
-        var added = EnsureBasicViews(table);
-        if (added > 0)
+        try
         {
-            NormalizeTableDefinition(table);
-            _db.Tables.Update(table);
-            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("Generated {Count} simple view(s) for table {Table} in {ElapsedMs}ms", added, table.Name, operation.Elapsed.TotalMilliseconds);
-        }
+            var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Table {tableId} not found");
 
-        return table.Views;
+            var added = EnsureBasicViews(table);
+            if (added > 0)
+            {
+                NormalizeTableDefinition(table);
+                _db.Tables.Update(table);
+                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                _logger.LogInformation("Generated {Count} simple view(s) for table {Table} in {ElapsedMs}ms", added, table.Name, operation.Elapsed.TotalMilliseconds);
+            }
+
+            return table.Views;
+        }
+        catch (Exception ex)
+        {
+            operation.MarkFailed(ex);
+            throw;
+        }
     }
 
     public async Task<STable?> GetTableAsync(Guid tableId, CancellationToken cancellationToken = default)
@@ -253,36 +286,44 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
     {
         using var operation = BeginOperation("DataEngine.Insert", tableId);
 
-        var (table, validated) = await ValidateRecordAsync(tableId, data, null, cancellationToken).ConfigureAwait(false);
-        var now = DateTimeOffset.UtcNow;
-
-        var record = new F_Record
+        try
         {
-            TableId = tableId,
-            DataJson = validated.DataJson,
-            CreatedAt = now,
-            ModifiedAt = now,
-            Version = 1
-        };
+            var (table, validated) = await ValidateRecordAsync(tableId, data, null, cancellationToken).ConfigureAwait(false);
+            var now = DateTimeOffset.UtcNow;
 
-        await _db.Records.AddAsync(record, cancellationToken).ConfigureAwait(false);
-        await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
-        await UpsertRecordEmbeddingAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
-        await AddAuditEntryAsync(tableId, record.Id, ChangeType.Create, record.DataJson, null, record.Version, now, cancellationToken).ConfigureAwait(false);
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Record {RecordId} inserted for table {TableId} in {ElapsedMs}ms", record.Id, tableId, operation.Elapsed.TotalMilliseconds);
-        await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
+            var record = new F_Record
+            {
+                TableId = tableId,
+                DataJson = validated.DataJson,
+                CreatedAt = now,
+                ModifiedAt = now,
+                Version = 1
+            };
 
-        var automationPayload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            await _db.Records.AddAsync(record, cancellationToken).ConfigureAwait(false);
+            await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
+            await UpsertRecordEmbeddingAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
+            await AddAuditEntryAsync(tableId, record.Id, ChangeType.Create, record.DataJson, null, record.Version, now, cancellationToken).ConfigureAwait(false);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Record {RecordId} inserted for table {TableId} in {ElapsedMs}ms", record.Id, tableId, operation.Elapsed.TotalMilliseconds);
+            await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
+
+            var automationPayload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["tableId"] = tableId,
+                ["recordId"] = record.Id,
+                ["data"] = validated.Values
+            };
+
+            var automationEvent = new AutomationEvent("record.created", AutomationTriggerType.OnCreate, automationPayload, null, table.Id);
+            await TriggerAutomationAsync(automationEvent, cancellationToken).ConfigureAwait(false);
+            return record;
+        }
+        catch (Exception ex)
         {
-            ["tableId"] = tableId,
-            ["recordId"] = record.Id,
-            ["data"] = validated.Values
-        };
-
-        var automationEvent = new AutomationEvent("record.created", AutomationTriggerType.OnCreate, automationPayload, null, table.Id);
-        await TriggerAutomationAsync(automationEvent, cancellationToken).ConfigureAwait(false);
-        return record;
+            operation.MarkFailed(ex);
+            throw;
+        }
     }
 
     public Task<F_Record> UpdateAsync(Guid tableId, Guid id, string dataJson, CancellationToken cancellationToken = default)
@@ -292,37 +333,45 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
     {
         using var operation = BeginOperation("DataEngine.Update", tableId, id);
 
-        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Table {tableId} not found");
-
-        var record = await FilterByTable(_db.Records, table).FirstOrDefaultAsync(r => r.Id == id, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Record {id} not found for table {tableId}");
-
-        var previousDataJson = record.DataJson;
-        var validated = await ValidateRecordAsync(table, data, id, cancellationToken).ConfigureAwait(false);
-
-        var now = DateTimeOffset.UtcNow;
-        record.DataJson = validated.DataJson;
-        record.ModifiedAt = now;
-        record.UpdatedAt = now;
-        record.Version += 1;
-        _db.Records.Update(record);
-        await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
-        await UpsertRecordEmbeddingAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
-        await AddAuditEntryAsync(tableId, id, ChangeType.Update, record.DataJson, previousDataJson, record.Version, now, cancellationToken).ConfigureAwait(false);
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Record {RecordId} updated for table {TableId} in {ElapsedMs}ms", id, tableId, operation.Elapsed.TotalMilliseconds);
-        await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
-
-        var automationPayload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        try
         {
-            ["tableId"] = tableId,
-            ["recordId"] = record.Id,
-            ["data"] = validated.Values
-        };
-        var automationEvent = new AutomationEvent("record.updated", AutomationTriggerType.OnUpdate, automationPayload, null, table.Id);
-        await TriggerAutomationAsync(automationEvent, cancellationToken).ConfigureAwait(false);
-        return record;
+            var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Table {tableId} not found");
+
+            var record = await FilterByTable(_db.Records, table).FirstOrDefaultAsync(r => r.Id == id, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Record {id} not found for table {tableId}");
+
+            var previousDataJson = record.DataJson;
+            var validated = await ValidateRecordAsync(table, data, id, cancellationToken).ConfigureAwait(false);
+
+            var now = DateTimeOffset.UtcNow;
+            record.DataJson = validated.DataJson;
+            record.ModifiedAt = now;
+            record.UpdatedAt = now;
+            record.Version += 1;
+            _db.Records.Update(record);
+            await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
+            await UpsertRecordEmbeddingAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
+            await AddAuditEntryAsync(tableId, id, ChangeType.Update, record.DataJson, previousDataJson, record.Version, now, cancellationToken).ConfigureAwait(false);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Record {RecordId} updated for table {TableId} in {ElapsedMs}ms", id, tableId, operation.Elapsed.TotalMilliseconds);
+            await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
+
+            var automationPayload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["tableId"] = tableId,
+                ["recordId"] = record.Id,
+                ["data"] = validated.Values
+            };
+            var automationEvent = new AutomationEvent("record.updated", AutomationTriggerType.OnUpdate, automationPayload, null, table.Id);
+            await TriggerAutomationAsync(automationEvent, cancellationToken).ConfigureAwait(false);
+            return record;
+        }
+        catch (Exception ex)
+        {
+            operation.MarkFailed(ex);
+            throw;
+        }
     }
 
     public async Task DeleteAsync(Guid tableId, Guid id, CancellationToken cancellationToken = default)
@@ -411,25 +460,33 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
     {
         using var operation = BeginOperation("DataEngine.Query", tableId);
 
-        spec ??= new QuerySpec();
-        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Table {tableId} not found");
-
-        var query = BuildQueryable(table, spec);
-
-        if (spec.Skip.HasValue)
+        try
         {
-            query = query.Skip(spec.Skip.Value);
-        }
+            spec ??= new QuerySpec();
+            var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Table {tableId} not found");
 
-        if (spec.Take.HasValue)
+            var query = BuildQueryable(table, spec);
+
+            if (spec.Skip.HasValue)
+            {
+                query = query.Skip(spec.Skip.Value);
+            }
+
+            if (spec.Take.HasValue)
+            {
+                query = query.Take(spec.Take.Value);
+            }
+
+            var results = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Query returned {Count} record(s) for table {TableId} in {ElapsedMs}ms", results.Count, tableId, operation.Elapsed.TotalMilliseconds);
+            return results;
+        }
+        catch (Exception ex)
         {
-            query = query.Take(spec.Take.Value);
+            operation.MarkFailed(ex);
+            throw;
         }
-
-        var results = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Query returned {Count} record(s) for table {TableId} in {ElapsedMs}ms", results.Count, tableId, operation.Elapsed.TotalMilliseconds);
-        return results;
     }
 
     public async Task<IEnumerable<ResolvedRecord>> QueryResolvedAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default)
@@ -461,17 +518,25 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
         using var operation = BeginOperation("DataEngine.Search", tableId);
 
-        var validated = NormalizeSearchOptions(options);
-        _ = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Table {tableId} not found");
+        try
+        {
+            var validated = NormalizeSearchOptions(options);
+            _ = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Table {tableId} not found");
 
-        var hits = await ExecuteFullTextSearchAsync(tableId, query, validated, cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation(
-            "Search returned {Count} result(s) for table {TableId} in {ElapsedMs}ms",
-            hits.Count,
-            tableId,
-            operation.Elapsed.TotalMilliseconds);
-        return hits.Select(h => new RecordSearchHit(h.RecordId, h.Score, h.Snippet));
+            var hits = await ExecuteFullTextSearchAsync(tableId, query, validated, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation(
+                "Search returned {Count} result(s) for table {TableId} in {ElapsedMs}ms",
+                hits.Count,
+                tableId,
+                operation.Elapsed.TotalMilliseconds);
+            return hits.Select(h => new RecordSearchHit(h.RecordId, h.Score, h.Snippet));
+        }
+        catch (Exception ex)
+        {
+            operation.MarkFailed(ex);
+            throw;
+        }
     }
 
     public async Task<IEnumerable<RecordSearchHit>> SearchSmartAsync(Guid tableId, string query, SearchOptions? options = null, CancellationToken cancellationToken = default)
@@ -483,26 +548,34 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
         using var operation = BeginOperation("DataEngine.SearchSmart", tableId);
 
-        var validated = NormalizeSearchOptions(options);
-        var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Table {tableId} not found");
-
-        var expandedOptions = validated with
+        try
         {
-            Skip = 0,
-            Take = Math.Min(SearchOptions.MaxPageSize, Math.Max(validated.Take * 3, validated.Take))
-        };
+            var validated = NormalizeSearchOptions(options);
+            var table = await GetTableAsync(tableId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Table {tableId} not found");
 
-        var fullTextHits = await ExecuteFullTextSearchAsync(tableId, query, expandedOptions, cancellationToken).ConfigureAwait(false);
-        var semanticScores = await ComputeSemanticScoresAsync(table.Id, query, cancellationToken).ConfigureAwait(false);
-        var combined = await CombineSearchSignalsAsync(table.Id, fullTextHits, semanticScores, validated, cancellationToken).ConfigureAwait(false);
+            var expandedOptions = validated with
+            {
+                Skip = 0,
+                Take = Math.Min(SearchOptions.MaxPageSize, Math.Max(validated.Take * 3, validated.Take))
+            };
 
-        _logger.LogInformation(
-            "Smart search returned {Count} result(s) for table {TableId} in {ElapsedMs}ms",
-            combined.Count,
-            tableId,
-            operation.Elapsed.TotalMilliseconds);
-        return combined;
+            var fullTextHits = await ExecuteFullTextSearchAsync(tableId, query, expandedOptions, cancellationToken).ConfigureAwait(false);
+            var semanticScores = await ComputeSemanticScoresAsync(table.Id, query, cancellationToken).ConfigureAwait(false);
+            var combined = await CombineSearchSignalsAsync(table.Id, fullTextHits, semanticScores, validated, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Smart search returned {Count} result(s) for table {TableId} in {ElapsedMs}ms",
+                combined.Count,
+                tableId,
+                operation.Elapsed.TotalMilliseconds);
+            return combined;
+        }
+        catch (Exception ex)
+        {
+            operation.MarkFailed(ex);
+            throw;
+        }
     }
 
     public async Task<KnowledgeEdge> LinkRecordsAsync(
