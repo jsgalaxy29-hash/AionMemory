@@ -1,0 +1,152 @@
+@using System.IO
+@using System.Linq
+@using Aion.Domain
+@using Microsoft.AspNetCore.Components.Forms
+@inject IFileStorageService FileStorage
+@inject IAionVisionService Vision
+
+<div>
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <h4 style="margin:0;">Pièces jointes</h4>
+        <InputFile OnChange="HandleUpload" multiple />
+    </div>
+    @if (!string.IsNullOrWhiteSpace(StatusMessage))
+    {
+        <p class="text-muted" style="margin:4px 0 0 0;">@StatusMessage</p>
+    }
+
+    @if (Previews.Count == 0)
+    {
+        <p class="text-muted" style="margin-top:8px;">Aucun fichier associé pour le moment.</p>
+    }
+    else
+    {
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:12px; margin-top:12px;">
+            @foreach (var preview in Previews)
+            {
+                <div class="card" style="padding:8px;">
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        @if (!string.IsNullOrWhiteSpace(preview.PreviewDataUrl))
+                        {
+                            <img src="@preview.PreviewDataUrl" alt="@preview.File.FileName" style="width:100%; height:120px; object-fit:cover; border-radius:6px;" />
+                        }
+                        else
+                        {
+                            <div style="width:100%; height:120px; display:flex; align-items:center; justify-content:center; background:#f6f6f6; border-radius:6px;">
+                                <span class="text-muted">@preview.ExtensionLabel</span>
+                            </div>
+                        }
+                        <div style="font-size:12px;">
+                            <div style="font-weight:600;">@preview.File.FileName</div>
+                            <div class="text-muted">@preview.File.MimeType · @preview.SizeLabel</div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private const long MaxUploadBytes = 50L * 1024 * 1024;
+
+    [Parameter] public string? TargetType { get; set; }
+    [Parameter] public Guid? TargetId { get; set; }
+
+    private readonly List<FilePreview> Previews = new();
+    private string? StatusMessage { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadFilesAsync();
+    }
+
+    private async Task LoadFilesAsync()
+    {
+        Previews.Clear();
+
+        if (string.IsNullOrWhiteSpace(TargetType) || !TargetId.HasValue)
+        {
+            StatusMessage = "Contexte de l'enregistrement manquant.";
+            return;
+        }
+
+        var files = await FileStorage.GetForAsync(TargetType, TargetId.Value).ConfigureAwait(false);
+        foreach (var file in files.OrderByDescending(f => f.UploadedAt))
+        {
+            var preview = new FilePreview(file)
+            {
+                PreviewDataUrl = await BuildPreviewAsync(file).ConfigureAwait(false)
+            };
+            Previews.Add(preview);
+        }
+
+        StatusMessage = null;
+    }
+
+    private async Task<string?> BuildPreviewAsync(F_File file)
+    {
+        if (!file.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        await using var stream = await FileStorage.OpenAsync(file.Id).ConfigureAwait(false);
+        await using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer).ConfigureAwait(false);
+        var base64 = Convert.ToBase64String(buffer.ToArray());
+        return $"data:{file.MimeType};base64,{base64}";
+    }
+
+    private async Task HandleUpload(InputFileChangeEventArgs args)
+    {
+        if (string.IsNullOrWhiteSpace(TargetType) || !TargetId.HasValue)
+        {
+            StatusMessage = "Impossible de déposer un fichier sans cible.";
+            return;
+        }
+
+        StatusMessage = "Téléversement en cours…";
+        try
+        {
+            foreach (var file in args.GetMultipleFiles())
+            {
+                await using var stream = file.OpenReadStream(MaxUploadBytes);
+                var stored = await FileStorage.SaveAsync(file.Name, stream, file.ContentType ?? "application/octet-stream")
+                    .ConfigureAwait(false);
+
+                await FileStorage.LinkAsync(stored.Id, TargetType, TargetId.Value).ConfigureAwait(false);
+                await Vision.AnalyzeAsync(new VisionAnalysisRequest(stored.Id, VisionAnalysisType.Ocr)).ConfigureAwait(false);
+            }
+
+            StatusMessage = "Fichiers importés et analysés.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Erreur lors du téléversement : {ex.Message}";
+        }
+
+        await LoadFilesAsync();
+    }
+
+    private sealed class FilePreview
+    {
+        public FilePreview(F_File file)
+        {
+            File = file;
+        }
+
+        public F_File File { get; }
+        public string? PreviewDataUrl { get; set; }
+
+        public string ExtensionLabel
+            => Path.GetExtension(File.FileName).ToUpperInvariant().Trim('.').Length > 0
+                ? Path.GetExtension(File.FileName).ToUpperInvariant().Trim('.')
+                : "FILE";
+
+        public string SizeLabel
+            => File.Size >= 1024 * 1024
+                ? $"{File.Size / (1024 * 1024.0):0.0} Mo"
+                : $"{File.Size / 1024.0:0.0} Ko";
+    }
+}

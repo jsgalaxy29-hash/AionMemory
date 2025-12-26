@@ -271,6 +271,8 @@ public class J_Event_Link
         public string StoragePath { get; set; } = string.Empty;
         [StringLength(512)]
         public string? ThumbnailPath { get; set; }
+        [StringLength(16000)]
+        public string? OcrText { get; set; }
         [Required, StringLength(128)]
         public string Sha256 { get; set; } = string.Empty;
         public DateTimeOffset UploadedAt { get; set; } = DateTimeOffset.UtcNow;

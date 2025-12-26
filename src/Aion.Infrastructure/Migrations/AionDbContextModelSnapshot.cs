@@ -285,6 +285,10 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("OcrText")
+                        .HasMaxLength(16000)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("UploadedAt")
                         .HasColumnType("TEXT");
 
