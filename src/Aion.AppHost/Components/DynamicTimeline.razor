@@ -45,6 +45,16 @@
                         <div>@entry.Content</div>
                     }
 
+                    @if (entry.Tags.Count > 0)
+                    {
+                        <div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:4px;">
+                            @foreach (var tag in entry.Tags)
+                            {
+                                <span class="badge">@tag</span>
+                            }
+                        </div>
+                    }
+
                     <small class="text-muted">
                         @entry.Timestamp.ToLocalTime().ToString("g")
                     </small>
@@ -113,7 +123,7 @@
                 var noteCount = Math.Max(PageSize * 3, 60);
                 var notes = await noteSvc.GetChronologicalAsync(noteCount, _loadCts.Token).ConfigureAwait(false);
                 entries.AddRange(notes.Where(MatchesContext)
-                    .Select(n => new TimelineEntry(n.Id, n.Title, n.Content, n.CreatedAt, "Note")));
+                    .Select(n => new TimelineEntry(n.Id, n.Title, n.Content, n.CreatedAt, "Note", n.Tags)));
             }
 
             if (agendaSvc is not null)
@@ -123,7 +133,7 @@
                 var to = now.AddDays(TimelineWindowDays);
                 var events = await agendaSvc.GetEventsAsync(from, to, _loadCts.Token).ConfigureAwait(false);
                 entries.AddRange(events.Where(MatchesContext)
-                    .Select(e => new TimelineEntry(e.Id, e.Title, e.Description, e.Start, "Évènement")));
+                    .Select(e => new TimelineEntry(e.Id, e.Title, e.Description, e.Start, "Évènement", Array.Empty<string>())));
             }
 
             Entries = entries
@@ -205,7 +215,7 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private sealed record TimelineEntry(Guid Id, string Title, string? Content, DateTimeOffset Timestamp, string Kind);
+    private sealed record TimelineEntry(Guid Id, string Title, string? Content, DateTimeOffset Timestamp, string Kind, IReadOnlyCollection<string> Tags);
 
     public void Dispose()
     {

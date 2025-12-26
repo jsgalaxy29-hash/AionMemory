@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
+using System.Text.Json;
 using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Aion.Infrastructure;
 
@@ -173,11 +176,27 @@ public class AionDbContext : DbContext
             builder.HasIndex(e => e.StartedAt);
         });
 
+        var tagsConverter = new ValueConverter<List<string>, string>(
+            tags => JsonSerializer.Serialize(tags ?? new List<string>(), (JsonSerializerOptions?)null),
+            json => string.IsNullOrWhiteSpace(json)
+                ? new List<string>()
+                : JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>());
+
+        var tagsComparer = new ValueComparer<List<string>>(
+            (left, right) => (left ?? new List<string>()).SequenceEqual(right ?? new List<string>()),
+            value => (value ?? new List<string>())
+                .Aggregate(0, (hash, tag) => HashCode.Combine(hash, tag.GetHashCode(StringComparison.OrdinalIgnoreCase))),
+            value => (value ?? new List<string>()).ToList());
+
         modelBuilder.Entity<S_Note>(builder =>
         {
             builder.Property(n => n.Title).IsRequired().HasMaxLength(256);
             builder.Property(n => n.Source).HasConversion<string>().HasMaxLength(32);
             builder.Property(n => n.JournalContext).HasMaxLength(512);
+            builder.Property(n => n.Tags)
+                .HasConversion(tagsConverter)
+                .HasMaxLength(2048)
+                .Metadata.SetValueComparer(tagsComparer);
             builder.HasMany(n => n.Links).WithOne().HasForeignKey(l => l.NoteId);
             builder.HasIndex(n => n.CreatedAt);
         });

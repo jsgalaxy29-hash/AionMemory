@@ -131,6 +131,10 @@ public sealed class AionVisionService : IAionVisionService
     private async Task<string> BuildNoteSearchContentAsync(S_Note note, CancellationToken cancellationToken)
     {
         var tokens = new List<string> { note.Title, note.Content };
+        if (note.Tags.Count > 0)
+        {
+            tokens.AddRange(note.Tags);
+        }
 
         var linkedText = await _db.FileLinks.AsNoTracking()
             .Where(link => link.TargetId == note.Id)

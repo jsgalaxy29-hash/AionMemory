@@ -69,6 +69,11 @@ public interface INoteService
     Task<IEnumerable<S_Note>> GetChronologicalAsync(int take = 50, CancellationToken cancellationToken = default);
 }
 
+public interface INoteTaggingService
+{
+    Task<IReadOnlyCollection<string>> SuggestTagsAsync(string title, string content, CancellationToken cancellationToken = default);
+}
+
 public interface IAgendaService
 {
     Task<S_Event> AddEventAsync(S_Event evt, CancellationToken cancellationToken = default);

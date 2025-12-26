@@ -96,6 +96,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IMemoryAnalyzer, MemoryAnalyzer>();
         services.AddScoped<IMemoryContextBuilder, MemoryContextBuilder>();
         services.AddScoped<IChatAnswerer, ChatAnswerer>();
+        services.AddScoped<INoteTaggingService, RuleBasedNoteTaggingService>();
 
         return services;
     }

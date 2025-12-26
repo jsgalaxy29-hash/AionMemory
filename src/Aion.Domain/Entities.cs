@@ -223,6 +223,7 @@ public class S_Note
     public bool IsTranscribed { get; set; }
     [StringLength(512)]
     public string? JournalContext { get; set; }
+    public ICollection<string> Tags { get; set; } = new List<string>();
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public ICollection<J_Note_Link> Links { get; set; } = new List<J_Note_Link>();
 }
