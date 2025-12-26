@@ -1,6 +1,10 @@
 using System.Globalization;
 using Aion.Infrastructure;
+using Aion.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 if (args.Length == 0 || args.Contains("--help", StringComparer.OrdinalIgnoreCase))
 {
@@ -8,6 +12,7 @@ if (args.Length == 0 || args.Contains("--help", StringComparer.OrdinalIgnoreCase
     Console.WriteLine("Usage:");
     Console.WriteLine("  dotnet run --project src/Aion.RecoveryTool -- check --connection <connectionString> --key <encryptionKey>");
     Console.WriteLine("  dotnet run --project src/Aion.RecoveryTool -- export --connection <connectionString> --key <encryptionKey> --output <path>");
+    Console.WriteLine("  dotnet run --project src/Aion.RecoveryTool -- rebuild-search --connection <connectionString> --key <encryptionKey>");
     return 1;
 }
 
@@ -34,6 +39,7 @@ try
     {
         "check" => await RunCheckAsync(connectionString, encryptionKey),
         "export" => await RunExportAsync(connectionString, encryptionKey, outputPath),
+        "rebuild-search" => await RunRebuildSearchAsync(connectionString, encryptionKey),
         _ => UnknownCommand(command)
     };
 }
@@ -99,6 +105,27 @@ static async Task<int> RunExportAsync(string connectionString, string encryption
     source.BackupDatabase(destination);
 
     Console.WriteLine($"Export completed: {destinationPath}");
+    return 0;
+}
+
+static async Task<int> RunRebuildSearchAsync(string connectionString, string encryptionKey)
+{
+    var options = Options.Create(new AionDatabaseOptions
+    {
+        ConnectionString = connectionString,
+        EncryptionKey = encryptionKey
+    });
+
+    var builder = new DbContextOptionsBuilder<AionDbContext>();
+    SqliteConnectionFactory.ConfigureBuilder(builder, options);
+
+    await using var context = new AionDbContext(builder.Options);
+    await context.Database.MigrateAsync();
+
+    var indexService = new RecordSearchIndexService(context, NullLogger<RecordSearchIndexService>.Instance);
+    await indexService.RebuildAsync();
+
+    Console.WriteLine("Record search index rebuild completed.");
     return 0;
 }
 

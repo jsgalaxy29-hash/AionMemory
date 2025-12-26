@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using Aion.AI;
 using Aion.Domain;
+using Aion.Infrastructure.Services;
 using Aion.Tests.Fixtures;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Aion.Tests;
 
@@ -146,6 +149,76 @@ public sealed class DataEngineSearchTests : IClassFixture<SqliteInMemoryFixture>
         Assert.Equal(primary.Id, smartHits[0].RecordId);
         Assert.Equal(classicHits[0].RecordId, smartHits[0].RecordId);
         Assert.All(smartHits, hit => Assert.False(string.IsNullOrWhiteSpace(hit.Snippet)));
+    }
+
+    [Fact]
+    public async Task SearchAsync_includes_lookup_labels_and_computed_fields()
+    {
+        var contacts = new STable
+        {
+            Name = "contacts",
+            DisplayName = "Contacts",
+            RowLabelTemplate = "{{First}} {{Last}}",
+            Fields =
+            [
+                new() { Name = "First", Label = "Prénom", DataType = FieldDataType.Text },
+                new() { Name = "Last", Label = "Nom", DataType = FieldDataType.Text }
+            ]
+        };
+
+        var tasks = new STable
+        {
+            Name = "tasks",
+            DisplayName = "Tasks",
+            Fields =
+            [
+                new() { Name = "Title", Label = "Titre", DataType = FieldDataType.Text },
+                new()
+                {
+                    Name = "Assignee",
+                    Label = "Assigné",
+                    DataType = FieldDataType.Lookup,
+                    LookupTarget = "contacts"
+                },
+                new() { Name = "ReferenceCode", Label = "Code", DataType = FieldDataType.Number },
+                new()
+                {
+                    Name = "ReferenceLabel",
+                    Label = "Référence",
+                    DataType = FieldDataType.Text,
+                    IsComputed = true,
+                    ComputedExpression = "concat('Ticket ', ReferenceCode)"
+                }
+            ]
+        };
+
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        await using var searchContext = _fixture.CreateContext();
+        var recordIndex = new RecordSearchIndexService(searchContext, NullLogger<RecordSearchIndexService>.Instance);
+        var searchService = new SemanticSearchService(searchContext, NullLogger<SemanticSearchService>.Instance, serviceProvider, recordIndex);
+        var engine = _fixture.CreateDataEngine(search: searchService);
+
+        await engine.CreateTableAsync(contacts);
+        await engine.CreateTableAsync(tasks);
+
+        var contact = await engine.InsertAsync(contacts.Id, new Dictionary<string, object?>
+        {
+            ["First"] = "Ada",
+            ["Last"] = "Lovelace"
+        });
+
+        var task = await engine.InsertAsync(tasks.Id, new Dictionary<string, object?>
+        {
+            ["Title"] = "Engine diagnostics",
+            ["Assignee"] = contact.Id,
+            ["ReferenceCode"] = 42
+        });
+
+        var lookupHits = (await engine.SearchAsync(tasks.Id, "Ada", new SearchOptions { Take = 5 })).ToList();
+        Assert.Contains(lookupHits, hit => hit.RecordId == task.Id);
+
+        var computedHits = (await engine.SearchAsync(tasks.Id, "Ticket", new SearchOptions { Take = 5 })).ToList();
+        Assert.Contains(computedHits, hit => hit.RecordId == task.Id);
     }
 
     private sealed class KeywordEmbeddingProvider : IEmbeddingProvider
