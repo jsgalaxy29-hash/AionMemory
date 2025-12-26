@@ -1671,6 +1671,13 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AssetsManifest")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Author")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -1678,6 +1685,10 @@ namespace Aion.Infrastructure.Migrations
 
                     b.Property<string>("Payload")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Signature")
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Version")

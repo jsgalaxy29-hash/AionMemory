@@ -420,8 +420,13 @@ public class TemplatePackage
     public string Name { get; set; } = string.Empty;
     [StringLength(512)]
     public string? Description { get; set; }
+    [StringLength(128)]
+    public string? Author { get; set; }
+    [StringLength(128)]
+    public string? Signature { get; set; }
     [Required]
     public string Payload { get; set; } = string.Empty;
+    public string? AssetsManifest { get; set; }
     [Required, StringLength(32)]
     public string Version { get; set; } = "1.0.0";
 }
