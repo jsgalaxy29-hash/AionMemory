@@ -120,12 +120,7 @@ public sealed class HttpMockVisionModel : IVisionModel
     public Task<S_VisionAnalysis> AnalyzeAsync(VisionAnalysisRequest request, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
-        var payload = JsonSerializer.Serialize(new
-        {
-            request.FileId,
-            request.AnalysisType,
-            summary = "Mock analysis (offline)"
-        });
+        var payload = JsonSerializer.Serialize(BuildPayload(request));
         var response = new S_VisionAnalysis
         {
             FileId = request.FileId,
@@ -134,6 +129,38 @@ public sealed class HttpMockVisionModel : IVisionModel
         };
         stopwatch.Stop();
         return LogAsync("vision", "Mock", request.Model ?? "mock-vision", response, stopwatch, cancellationToken);
+    }
+
+    private static object BuildPayload(VisionAnalysisRequest request)
+    {
+        return request.AnalysisType switch
+        {
+            VisionAnalysisType.Classification => new
+            {
+                request.FileId,
+                request.AnalysisType,
+                summary = "Mock classification (offline)",
+                labels = new[]
+                {
+                    new { label = "invoice", score = 0.92 },
+                    new { label = "document", score = 0.78 }
+                }
+            },
+            VisionAnalysisType.Tagging => new
+            {
+                request.FileId,
+                request.AnalysisType,
+                summary = "Mock tagging (offline)",
+                tags = new[] { "invoice", "finance", "archive" }
+            },
+            _ => new
+            {
+                request.FileId,
+                request.AnalysisType,
+                summary = "Mock analysis (offline)",
+                ocrText = "Mock OCR text"
+            }
+        };
     }
 
     private async Task<S_VisionAnalysis> LogAsync(string operation, string provider, string model, S_VisionAnalysis response, Stopwatch stopwatch, CancellationToken cancellationToken)

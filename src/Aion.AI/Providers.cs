@@ -376,8 +376,40 @@ public sealed class HttpVisionProvider : IVisionModel
         {
             FileId = fileId,
             AnalysisType = analysisType,
-            ResultJson = JsonSerializer.Serialize(new { summary = message, tags = new[] { "stub" } }, SerializerOptions)
+            ResultJson = JsonSerializer.Serialize(BuildStubPayload(fileId, analysisType, message), SerializerOptions)
         };
+
+    private static object BuildStubPayload(Guid fileId, VisionAnalysisType analysisType, string message)
+    {
+        return analysisType switch
+        {
+            VisionAnalysisType.Classification => new
+            {
+                fileId,
+                analysisType,
+                summary = message,
+                labels = new[]
+                {
+                    new { label = "document", score = 0.2 },
+                    new { label = "invoice", score = 0.1 }
+                }
+            },
+            VisionAnalysisType.Tagging => new
+            {
+                fileId,
+                analysisType,
+                summary = message,
+                tags = new[] { "stub" }
+            },
+            _ => new
+            {
+                fileId,
+                analysisType,
+                summary = message,
+                ocrText = message
+            }
+        };
+    }
 }
 public sealed class IntentRecognizer : IIntentDetector
 {
