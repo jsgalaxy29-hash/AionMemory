@@ -36,6 +36,37 @@ internal static class StructuredJsonSchemas
 """,
         ValidateModuleDesign);
 
+    public static readonly StructuredJsonSchema ModuleSpecDesign = new(
+        "module-spec-design",
+        """
+{
+  "status": "clarify|complete",
+  "questions": [
+    { "id": "", "question": "", "required": true, "hint": "" }
+  ],
+  "spec": {
+    "version": "1.0",
+    "slug": "",
+    "displayName": "",
+    "description": "",
+    "tables": [
+      {
+        "slug": "",
+        "displayName": "",
+        "fields": [
+          { "slug": "", "label": "", "dataType": "Text|Number|Decimal|Boolean|Date|DateTime|Enum|Lookup|File|Note|Json|Tags" }
+        ],
+        "views": []
+      }
+    ]
+  },
+  "sources": [
+    { "title": "", "url": "", "type": "" }
+  ]
+}
+""",
+        ValidateModuleSpecDesign);
+
     public static readonly StructuredJsonSchema LegacyModuleDesign = new(
         "legacy-module-design",
         """
@@ -244,6 +275,171 @@ internal static class StructuredJsonSchemas
                 error = "relation isBidirectional invalide";
                 return false;
             }
+        }
+
+        return true;
+    }
+
+    private static bool ValidateModuleSpecDesign(JsonElement root, out string? error)
+    {
+        error = null;
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            error = "Racine invalide";
+            return false;
+        }
+
+        if (!HasOnlyProperties(root, "status", "questions", "spec", "sources"))
+        {
+            error = "Propriétés inattendues";
+            return false;
+        }
+
+        if (!TryGetNonEmptyString(root, "status", out var status))
+        {
+            error = "status manquant";
+            return false;
+        }
+
+        var isClarify = string.Equals(status, "clarify", StringComparison.OrdinalIgnoreCase);
+        var isComplete = string.Equals(status, "complete", StringComparison.OrdinalIgnoreCase);
+        if (!isClarify && !isComplete)
+        {
+            error = "status invalide";
+            return false;
+        }
+
+        if (root.TryGetProperty("questions", out var questionsElement))
+        {
+            if (questionsElement.ValueKind != JsonValueKind.Array)
+            {
+                error = "questions invalide";
+                return false;
+            }
+
+            if (isClarify && questionsElement.GetArrayLength() == 0)
+            {
+                error = "questions vide";
+                return false;
+            }
+
+            foreach (var question in questionsElement.EnumerateArray())
+            {
+                if (question.ValueKind != JsonValueKind.Object)
+                {
+                    error = "question invalide";
+                    return false;
+                }
+
+                if (!HasOnlyProperties(question, "id", "question", "required", "hint"))
+                {
+                    error = "question propriétés inattendues";
+                    return false;
+                }
+
+                if (!TryGetNonEmptyString(question, "id", out _) || !TryGetNonEmptyString(question, "question", out _))
+                {
+                    error = "question id/question manquant";
+                    return false;
+                }
+
+                if (question.TryGetProperty("required", out var required)
+                    && required.ValueKind is not JsonValueKind.True
+                    && required.ValueKind is not JsonValueKind.False
+                    && required.ValueKind is not JsonValueKind.Null)
+                {
+                    error = "question required invalide";
+                    return false;
+                }
+
+                if (question.TryGetProperty("hint", out var hint)
+                    && hint.ValueKind is not JsonValueKind.String
+                    && hint.ValueKind is not JsonValueKind.Null)
+                {
+                    error = "question hint invalide";
+                    return false;
+                }
+            }
+        }
+        else if (isClarify)
+        {
+            error = "questions manquantes";
+            return false;
+        }
+
+        if (root.TryGetProperty("sources", out var sourcesElement))
+        {
+            if (sourcesElement.ValueKind != JsonValueKind.Array)
+            {
+                error = "sources invalide";
+                return false;
+            }
+
+            foreach (var source in sourcesElement.EnumerateArray())
+            {
+                if (source.ValueKind != JsonValueKind.Object)
+                {
+                    error = "source invalide";
+                    return false;
+                }
+
+                if (!HasOnlyProperties(source, "title", "url", "type"))
+                {
+                    error = "source propriétés inattendues";
+                    return false;
+                }
+
+                if (!TryGetNonEmptyString(source, "title", out _))
+                {
+                    error = "source title manquant";
+                    return false;
+                }
+
+                if (source.TryGetProperty("url", out var url)
+                    && url.ValueKind is not JsonValueKind.String
+                    && url.ValueKind is not JsonValueKind.Null)
+                {
+                    error = "source url invalide";
+                    return false;
+                }
+
+                if (source.TryGetProperty("type", out var type)
+                    && type.ValueKind is not JsonValueKind.String
+                    && type.ValueKind is not JsonValueKind.Null)
+                {
+                    error = "source type invalide";
+                    return false;
+                }
+            }
+        }
+
+        if (!root.TryGetProperty("spec", out var specElement) || specElement.ValueKind != JsonValueKind.Object)
+        {
+            if (isComplete)
+            {
+                error = "spec manquant";
+                return false;
+            }
+
+            return true;
+        }
+
+        if (!TryGetNonEmptyString(specElement, "slug", out _))
+        {
+            error = "spec.slug manquant";
+            return false;
+        }
+
+        if (!specElement.TryGetProperty("tables", out var tablesElement) || tablesElement.ValueKind != JsonValueKind.Array)
+        {
+            error = "spec.tables invalide";
+            return false;
+        }
+
+        if (tablesElement.GetArrayLength() == 0)
+        {
+            error = "spec.tables vide";
+            return false;
         }
 
         return true;

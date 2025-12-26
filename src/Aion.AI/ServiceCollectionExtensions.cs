@@ -90,6 +90,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IIntentRouter, IntentRouter>();
         services.AddScoped<IModuleDesigner, ModuleDesigner>();
         services.AddScoped<IModuleSpecDesigner, ModuleSpecDesigner>();
+        services.AddScoped<IModuleDesignService, ModuleDesignService>();
         services.AddScoped<ModuleDesignerService>();
         services.AddScoped<ICrudInterpreter, CrudInterpreter>();
         services.AddScoped<IAgendaInterpreter, AgendaInterpreter>();
