@@ -56,8 +56,18 @@ public sealed class ImportExportTests : IAsyncLifetime
             var dataEngine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, search, operationScopeFactory, new NullAutomationRuleEngine(), new CurrentUserService());
             var fileStorage = new FileStorageService(storageOptions, context, search, storage, NullLogger<FileStorageService>.Instance);
             var moduleValidator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
-            var moduleApplier = new ModuleApplier(context, moduleValidator, NullLogger<ModuleApplier>.Instance, operationScopeFactory);
-            var exportService = new DataExportService(context, storage, storageOptions, NullLogger<DataExportService>.Instance);
+            var moduleApplier = new ModuleApplier(
+                context,
+                moduleValidator,
+                NullLogger<ModuleApplier>.Instance,
+                operationScopeFactory,
+                new NullSecurityAuditService());
+            var exportService = new DataExportService(
+                context,
+                storage,
+                storageOptions,
+                NullLogger<DataExportService>.Instance,
+                new NullSecurityAuditService());
 
             var table = new STable
             {
@@ -100,8 +110,21 @@ public sealed class ImportExportTests : IAsyncLifetime
             var dataEngine = new AionDataEngine(importContext, NullLogger<AionDataEngine>.Instance, search, operationScopeFactory, new NullAutomationRuleEngine(), new CurrentUserService());
             var fileStorage = new FileStorageService(storageOptions, importContext, search, storage, NullLogger<FileStorageService>.Instance);
             var moduleValidator = new ModuleValidator(importContext, NullLogger<ModuleValidator>.Instance);
-            var moduleApplier = new ModuleApplier(importContext, moduleValidator, NullLogger<ModuleApplier>.Instance, operationScopeFactory);
-            var importService = new DataImportService(importContext, moduleApplier, dataEngine, fileStorage, storage, storageOptions, NullLogger<DataImportService>.Instance);
+            var moduleApplier = new ModuleApplier(
+                importContext,
+                moduleValidator,
+                NullLogger<ModuleApplier>.Instance,
+                operationScopeFactory,
+                new NullSecurityAuditService());
+            var importService = new DataImportService(
+                importContext,
+                moduleApplier,
+                dataEngine,
+                fileStorage,
+                storage,
+                storageOptions,
+                NullLogger<DataImportService>.Instance,
+                new NullSecurityAuditService());
 
             var result = await importService.ImportAsync(_exportArchive);
 

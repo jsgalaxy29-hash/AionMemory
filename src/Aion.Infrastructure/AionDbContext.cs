@@ -42,6 +42,7 @@ public class AionDbContext : DbContext
     public DbSet<F_Record> Records => Set<F_Record>();
     public DbSet<F_RecordIndex> RecordIndexes => Set<F_RecordIndex>();
     public DbSet<F_RecordAudit> RecordAudits => Set<F_RecordAudit>();
+    public DbSet<S_SecurityAuditLog> SecurityAuditLogs => Set<S_SecurityAuditLog>();
     public DbSet<F_RecordEmbedding> Embeddings => Set<F_RecordEmbedding>();
     public DbSet<NoteSearchEntry> NoteSearch => Set<NoteSearchEntry>();
     public DbSet<RecordSearchEntry> RecordSearch => Set<RecordSearchEntry>();
@@ -246,6 +247,22 @@ public class AionDbContext : DbContext
             builder.Property(r => r.ChangedAt).IsRequired().HasDefaultValueSql("CURRENT_TIMESTAMP");
             builder.HasIndex(r => new { r.TableId, r.RecordId, r.Version }).IsUnique();
             builder.HasIndex(r => new { r.TableId, r.RecordId, r.ChangedAt });
+        });
+
+        modelBuilder.Entity<S_SecurityAuditLog>(builder =>
+        {
+            builder.ToTable("SecurityAuditLogs");
+            builder.Property(r => r.Action).IsRequired().HasMaxLength(128);
+            builder.Property(r => r.Category).HasConversion<string>().HasMaxLength(32);
+            builder.Property(r => r.TargetType).HasMaxLength(128);
+            builder.Property(r => r.MetadataJson).HasMaxLength(4000);
+            builder.Property(r => r.CorrelationId).HasMaxLength(64);
+            builder.Property(r => r.OperationId).HasMaxLength(64);
+            builder.Property(r => r.OccurredAt).IsRequired().HasDefaultValueSql("CURRENT_TIMESTAMP");
+            builder.Property(r => r.UserId).IsRequired();
+            builder.Property(r => r.WorkspaceId).IsRequired();
+            builder.HasIndex(r => new { r.WorkspaceId, r.OccurredAt });
+            builder.HasIndex(r => new { r.Category, r.OccurredAt });
         });
 
         modelBuilder.Entity<F_RecordEmbedding>(builder =>

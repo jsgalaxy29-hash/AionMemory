@@ -27,7 +27,12 @@ public class ModuleBuilderTests
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
-        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
+        var applier = new ModuleApplier(
+            context,
+            validator,
+            NullLogger<ModuleApplier>.Instance,
+            new OperationScopeFactory(),
+            new NullSecurityAuditService());
 
         var spec = BuildSimpleSpec();
         await validator.ValidateAndThrowAsync(spec);
@@ -57,7 +62,12 @@ public class ModuleBuilderTests
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
-        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
+        var applier = new ModuleApplier(
+            context,
+            validator,
+            NullLogger<ModuleApplier>.Instance,
+            new OperationScopeFactory(),
+            new NullSecurityAuditService());
 
         var initialSpec = BuildSimpleSpec();
         await applier.ApplyAsync(initialSpec);
@@ -138,7 +148,12 @@ public class ModuleBuilderTests
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
-        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
+        var applier = new ModuleApplier(
+            context,
+            validator,
+            NullLogger<ModuleApplier>.Instance,
+            new OperationScopeFactory(),
+            new NullSecurityAuditService());
 
         var spec = BuildSimpleSpec();
         spec.Tables[0].Views = new List<ViewSpec>
@@ -173,7 +188,12 @@ public class ModuleBuilderTests
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
-        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
+        var applier = new ModuleApplier(
+            context,
+            validator,
+            NullLogger<ModuleApplier>.Instance,
+            new OperationScopeFactory(),
+            new NullSecurityAuditService());
 
         var initialSpec = BuildSimpleSpec();
         await applier.ApplyAsync(initialSpec);
@@ -208,7 +228,12 @@ public class ModuleBuilderTests
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
-        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
+        var applier = new ModuleApplier(
+            context,
+            validator,
+            NullLogger<ModuleApplier>.Instance,
+            new OperationScopeFactory(),
+            new NullSecurityAuditService());
 
         var initialSpec = BuildSimpleSpec();
         await applier.ApplyAsync(initialSpec);

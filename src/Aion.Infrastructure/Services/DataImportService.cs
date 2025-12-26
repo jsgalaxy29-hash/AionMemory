@@ -4,7 +4,6 @@ using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using System.Runtime.CompilerServices;
 
 namespace Aion.Infrastructure.Services;
 
@@ -22,6 +21,7 @@ public sealed class DataImportService : IDataImportService
     private readonly IStorageService _storage;
     private readonly StorageOptions _storageOptions;
     private readonly ILogger<DataImportService> _logger;
+    private readonly ISecurityAuditService _securityAudit;
 
     public DataImportService(
         AionDbContext db,
@@ -30,7 +30,8 @@ public sealed class DataImportService : IDataImportService
         IFileStorageService fileStorage,
         IStorageService storage,
         IOptions<StorageOptions> storageOptions,
-        ILogger<DataImportService> logger)
+        ILogger<DataImportService> logger,
+        ISecurityAuditService securityAudit)
     {
         _db = db;
         _moduleApplier = moduleApplier;
@@ -39,6 +40,7 @@ public sealed class DataImportService : IDataImportService
         _storage = storage;
         _storageOptions = storageOptions.Value;
         _logger = logger;
+        _securityAudit = securityAudit;
     }
 
     public async Task<DataImportResult> ImportAsync(string sourcePath, CancellationToken cancellationToken = default)
@@ -81,6 +83,20 @@ public sealed class DataImportService : IDataImportService
             updated,
             attachmentsImported,
             attachmentsLinked);
+
+        await _securityAudit.LogAsync(new SecurityAuditEvent(
+            SecurityAuditCategory.DataImport,
+            "data.import",
+            metadata: new Dictionary<string, object?>
+            {
+                ["tableCount"] = manifest.TableCount,
+                ["recordCount"] = manifest.RecordCount,
+                ["attachmentCount"] = manifest.AttachmentCount,
+                ["recordsInserted"] = inserted,
+                ["recordsUpdated"] = updated,
+                ["attachmentsImported"] = attachmentsImported,
+                ["attachmentsLinked"] = attachmentsLinked
+            }), cancellationToken).ConfigureAwait(false);
 
         return new DataImportResult
         {

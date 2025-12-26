@@ -25,7 +25,12 @@ public class EndToEndSmokeTests : IClassFixture<SqliteInMemoryFixture>
     {
         await using var context = _fixture.CreateContext();
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
-        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
+        var applier = new ModuleApplier(
+            context,
+            validator,
+            NullLogger<ModuleApplier>.Instance,
+            new OperationScopeFactory(),
+            new NullSecurityAuditService());
 
         var spec = BuildSmokeSpec();
         var appliedTables = await applier.ApplyAsync(spec);

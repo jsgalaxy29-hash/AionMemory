@@ -262,6 +262,42 @@ public class DataEngineCrudTests : IClassFixture<SqliteInMemoryFixture>
             audit => Assert.Equal(ChangeType.Delete, audit.ChangeType));
     }
 
+    [Fact]
+    public async Task DataEngine_soft_delete_writes_audit_entry()
+    {
+        var table = new STable
+        {
+            Name = "audit_soft_delete",
+            DisplayName = "Audit Soft Delete",
+            SupportsSoftDelete = true,
+            Fields =
+            [
+                new() { Name = "Title", Label = "Titre", DataType = FieldDataType.Text, IsRequired = true }
+            ]
+        };
+
+        var engine = _fixture.CreateDataEngine();
+        await engine.CreateTableAsync(table);
+
+        var record = await engine.InsertAsync(table.Id, new Dictionary<string, object?> { ["Title"] = "Initial" });
+        await engine.DeleteAsync(table.Id, record.Id);
+
+        await using var context = _fixture.CreateContext();
+        var audits = await context.RecordAudits
+            .Where(a => a.TableId == table.Id && a.RecordId == record.Id)
+            .OrderBy(a => a.Version)
+            .ToListAsync();
+
+        Assert.Equal(2, audits.Count);
+        Assert.Collection(audits,
+            audit => Assert.Equal(ChangeType.Create, audit.ChangeType),
+            audit => Assert.Equal(ChangeType.SoftDelete, audit.ChangeType));
+
+        var stored = await context.Records.FirstOrDefaultAsync(r => r.Id == record.Id);
+        Assert.NotNull(stored);
+        Assert.NotNull(stored!.DeletedAt);
+    }
+
     private static string? ReadField(F_Record record, string fieldName)
     {
         using var doc = JsonDocument.Parse(record.DataJson);

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -19,6 +20,7 @@ public sealed class BackupService : IBackupService
     private readonly BackupOptions _backupOptions;
     private readonly StorageOptions _storageOptions;
     private readonly ILogger<BackupService> _logger;
+    private readonly ISecurityAuditService _securityAudit;
     private readonly byte[] _encryptionKey;
     private readonly string _storageRoot;
 
@@ -26,12 +28,14 @@ public sealed class BackupService : IBackupService
         IOptions<AionDatabaseOptions> databaseOptions,
         IOptions<BackupOptions> backupOptions,
         IOptions<StorageOptions> storageOptions,
-        ILogger<BackupService> logger)
+        ILogger<BackupService> logger,
+        ISecurityAuditService securityAudit)
     {
         _databaseOptions = databaseOptions.Value;
         _backupOptions = backupOptions.Value;
         _storageOptions = storageOptions.Value;
         _logger = logger;
+        _securityAudit = securityAudit;
         _encryptionKey = DeriveKey(_databaseOptions.EncryptionKey);
         _storageRoot = _storageOptions.RootPath ?? throw new InvalidOperationException("Storage root path must be configured");
 
@@ -123,6 +127,17 @@ public sealed class BackupService : IBackupService
         }
 
         _logger.LogInformation("Backup created at {Destination} (encrypted={Encrypted})", destination, encrypt);
+        await _securityAudit.LogAsync(new SecurityAuditEvent(
+            SecurityAuditCategory.Backup,
+            "backup.created",
+            metadata: new Dictionary<string, object?>
+            {
+                ["fileName"] = Path.GetFileName(manifest.FileName),
+                ["snapshot"] = snapshotName,
+                ["encrypted"] = manifest.IsEncrypted,
+                ["size"] = manifest.Size,
+                ["storageSize"] = manifest.StorageSize
+            }), cancellationToken).ConfigureAwait(false);
         return manifest;
     }
 
@@ -230,18 +245,21 @@ public sealed class RestoreService : IRestoreService
     private readonly AionDatabaseOptions _databaseOptions;
     private readonly StorageOptions _storageOptions;
     private readonly ILogger<RestoreService> _logger;
+    private readonly ISecurityAuditService _securityAudit;
     private readonly byte[] _encryptionKey;
 
     public RestoreService(
         IOptions<BackupOptions> backupOptions,
         IOptions<AionDatabaseOptions> databaseOptions,
         IOptions<StorageOptions> storageOptions,
-        ILogger<RestoreService> logger)
+        ILogger<RestoreService> logger,
+        ISecurityAuditService securityAudit)
     {
         _backupOptions = backupOptions.Value;
         _databaseOptions = databaseOptions.Value;
         _storageOptions = storageOptions.Value;
         _logger = logger;
+        _securityAudit = securityAudit;
         _encryptionKey = BackupService.DeriveKey(_databaseOptions.EncryptionKey);
     }
 
@@ -309,6 +327,15 @@ public sealed class RestoreService : IRestoreService
         }
 
         _logger.LogInformation("Backup restored from {BackupFile} to {Destination}", databaseBackupFile, destination);
+        await _securityAudit.LogAsync(new SecurityAuditEvent(
+            SecurityAuditCategory.Restore,
+            "backup.restored",
+            metadata: new Dictionary<string, object?>
+            {
+                ["fileName"] = Path.GetFileName(manifest.FileName),
+                ["encrypted"] = manifest.IsEncrypted,
+                ["storageRestored"] = !string.IsNullOrWhiteSpace(manifest.StorageArchivePath)
+            }), cancellationToken).ConfigureAwait(false);
     }
 
     private BackupManifest? LoadLatestManifest()

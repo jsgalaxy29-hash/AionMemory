@@ -20,13 +20,20 @@ public sealed class ModuleApplier : IModuleApplier
     private readonly IModuleValidator _validator;
     private readonly ILogger<ModuleApplier> _logger;
     private readonly IOperationScopeFactory _operationScopeFactory;
+    private readonly ISecurityAuditService _securityAudit;
 
-    public ModuleApplier(AionDbContext db, IModuleValidator validator, ILogger<ModuleApplier> logger, IOperationScopeFactory operationScopeFactory)
+    public ModuleApplier(
+        AionDbContext db,
+        IModuleValidator validator,
+        ILogger<ModuleApplier> logger,
+        IOperationScopeFactory operationScopeFactory,
+        ISecurityAuditService securityAudit)
     {
         _db = db;
         _validator = validator;
         _logger = logger;
         _operationScopeFactory = operationScopeFactory;
+        _securityAudit = securityAudit;
     }
 
     public async Task<IReadOnlyList<STable>> ApplyAsync(ModuleSpec spec, CancellationToken cancellationToken = default)
@@ -35,6 +42,7 @@ public sealed class ModuleApplier : IModuleApplier
         await _validator.ValidateAndThrowAsync(spec, cancellationToken).ConfigureAwait(false);
 
         var applied = new List<STable>();
+        var auditEvents = new List<SecurityAuditEvent>();
         foreach (var tableSpec in spec.Tables)
         {
             var table = await _db.Tables
@@ -43,6 +51,7 @@ public sealed class ModuleApplier : IModuleApplier
                 .FirstOrDefaultAsync(t => t.Name == tableSpec.Slug, cancellationToken)
                 .ConfigureAwait(false);
 
+            var isNewTable = table is null;
             if (table is null)
             {
                 table = new STable
@@ -54,6 +63,7 @@ public sealed class ModuleApplier : IModuleApplier
             }
 
             UpdateTable(table, tableSpec);
+            var existingViews = table.Views.ToDictionary(v => v.Name, StringComparer.OrdinalIgnoreCase);
             var fieldSync = UpsertFields(table, tableSpec.Fields);
             await ApplyFieldRenamesAsync(table, fieldSync.Renames, cancellationToken).ConfigureAwait(false);
             await DeactivateRemovedFieldsAsync(table, fieldSync.RemovedFields, cancellationToken).ConfigureAwait(false);
@@ -61,6 +71,129 @@ public sealed class ModuleApplier : IModuleApplier
             EnsureDefaults(table, tableSpec);
 
             applied.Add(table);
+
+            if (isNewTable)
+            {
+                auditEvents.Add(new SecurityAuditEvent(
+                    SecurityAuditCategory.SchemaChange,
+                    "schema.table.created",
+                    "table",
+                    table.Id,
+                    new Dictionary<string, object?>
+                    {
+                        ["tableName"] = table.Name,
+                        ["fieldCount"] = table.Fields.Count,
+                        ["viewCount"] = table.Views.Count
+                    }));
+            }
+
+            foreach (var field in fieldSync.AddedFields)
+            {
+                auditEvents.Add(new SecurityAuditEvent(
+                    SecurityAuditCategory.SchemaChange,
+                    "schema.field.created",
+                    "field",
+                    field.Id,
+                    new Dictionary<string, object?>
+                    {
+                        ["tableId"] = table.Id,
+                        ["tableName"] = table.Name,
+                        ["fieldName"] = field.Name,
+                        ["dataType"] = field.DataType.ToString()
+                    }));
+            }
+
+            foreach (var rename in fieldSync.Renames)
+            {
+                auditEvents.Add(new SecurityAuditEvent(
+                    SecurityAuditCategory.SchemaChange,
+                    "schema.field.renamed",
+                    "field",
+                    rename.FieldId,
+                    new Dictionary<string, object?>
+                    {
+                        ["tableId"] = table.Id,
+                        ["tableName"] = table.Name,
+                        ["oldName"] = rename.OldName,
+                        ["newName"] = rename.NewName
+                    }));
+            }
+
+            foreach (var removed in fieldSync.RemovedFields)
+            {
+                auditEvents.Add(new SecurityAuditEvent(
+                    SecurityAuditCategory.SchemaChange,
+                    "schema.field.deactivated",
+                    "field",
+                    removed.Id,
+                    new Dictionary<string, object?>
+                    {
+                        ["tableId"] = table.Id,
+                        ["tableName"] = table.Name,
+                        ["fieldName"] = removed.Name
+                    }));
+            }
+
+            foreach (var viewSpec in tableSpec.Views)
+            {
+                var view = table.Views.FirstOrDefault(v => string.Equals(v.Name, viewSpec.Slug, StringComparison.OrdinalIgnoreCase));
+                if (view is null)
+                {
+                    continue;
+                }
+
+                var action = existingViews.ContainsKey(viewSpec.Slug)
+                    ? "schema.view.updated"
+                    : "schema.view.created";
+
+                auditEvents.Add(new SecurityAuditEvent(
+                    SecurityAuditCategory.SchemaChange,
+                    action,
+                    "view",
+                    view.Id,
+                    new Dictionary<string, object?>
+                    {
+                        ["tableId"] = table.Id,
+                        ["tableName"] = table.Name,
+                        ["viewName"] = view.Name,
+                        ["isDefault"] = view.IsDefault
+                    }));
+            }
+
+            if (tableSpec.Views.Count == 0 && existingViews.Count == 0 && table.Views.Count > 0)
+            {
+                var view = table.Views.First();
+                auditEvents.Add(new SecurityAuditEvent(
+                    SecurityAuditCategory.SchemaChange,
+                    "schema.view.created",
+                    "view",
+                    view.Id,
+                    new Dictionary<string, object?>
+                    {
+                        ["tableId"] = table.Id,
+                        ["tableName"] = table.Name,
+                        ["viewName"] = view.Name,
+                        ["isDefault"] = view.IsDefault
+                    }));
+            }
+        }
+
+        if (auditEvents.Count > 0)
+        {
+            auditEvents.Add(new SecurityAuditEvent(
+                SecurityAuditCategory.SchemaChange,
+                "schema.module.applied",
+                metadata: new Dictionary<string, object?>
+                {
+                    ["moduleSlug"] = spec.Slug,
+                    ["tableCount"] = applied.Count,
+                    ["changeCount"] = auditEvents.Count
+                }));
+        }
+
+        foreach (var auditEvent in auditEvents)
+        {
+            _securityAudit.Track(auditEvent);
         }
 
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -131,7 +264,10 @@ public sealed class ModuleApplier : IModuleApplier
 
     private sealed record FieldRename(string OldName, string NewName, Guid FieldId);
 
-    private sealed record FieldSyncResult(IReadOnlyList<FieldRename> Renames, IReadOnlyList<SFieldDefinition> RemovedFields);
+    private sealed record FieldSyncResult(
+        IReadOnlyList<FieldRename> Renames,
+        IReadOnlyList<SFieldDefinition> RemovedFields,
+        IReadOnlyList<SFieldDefinition> AddedFields);
 
     private static FieldSyncResult UpsertFields(STable table, IEnumerable<FieldSpec> fields)
     {
@@ -139,6 +275,7 @@ public sealed class ModuleApplier : IModuleApplier
         var existingByName = table.Fields.ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
         var matched = new HashSet<Guid>();
         var renames = new List<FieldRename>();
+        var added = new List<SFieldDefinition>();
 
         foreach (var spec in fields)
         {
@@ -160,6 +297,7 @@ public sealed class ModuleApplier : IModuleApplier
                     Name = spec.Slug
                 };
                 table.Fields.Add(field);
+                added.Add(field);
             }
 
             if (!string.Equals(field.Name, spec.Slug, StringComparison.OrdinalIgnoreCase))
@@ -200,7 +338,7 @@ public sealed class ModuleApplier : IModuleApplier
         }
 
         var removedFields = table.Fields.Where(f => !matched.Contains(f.Id)).ToList();
-        return new FieldSyncResult(renames, removedFields);
+        return new FieldSyncResult(renames, removedFields, added);
     }
 
     private async Task ApplyFieldRenamesAsync(STable table, IReadOnlyList<FieldRename> renames, CancellationToken cancellationToken)
