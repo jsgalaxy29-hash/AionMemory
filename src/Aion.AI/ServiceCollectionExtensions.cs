@@ -38,6 +38,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<HttpMockEmbeddingsModel>();
         services.AddScoped<HttpMockTranscriptionModel>();
         services.AddSingleton<HttpMockVisionModel>();
+        services.AddSingleton<OfflineChatModel>();
+        services.AddSingleton<OfflineEmbeddingsModel>();
+        services.AddScoped<OfflineTranscriptionModel>();
+        services.AddSingleton<OfflineVisionModel>();
 
         services.AddSingleton<EchoLlmProvider>();
         services.AddSingleton<DeterministicEmbeddingProvider>();
@@ -56,6 +60,11 @@ public static class ServiceCollectionExtensions
         services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Mock, sp => sp.GetRequiredService<HttpMockEmbeddingsModel>());
         services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Mock, sp => sp.GetRequiredService<HttpMockTranscriptionModel>());
         services.AddKeyedSingleton<IVisionModel>(AiProviderNames.Mock, sp => sp.GetRequiredService<HttpMockVisionModel>());
+
+        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Offline, sp => sp.GetRequiredService<OfflineChatModel>());
+        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Offline, sp => sp.GetRequiredService<OfflineEmbeddingsModel>());
+        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Offline, sp => sp.GetRequiredService<OfflineTranscriptionModel>());
+        services.AddKeyedSingleton<IVisionModel>(AiProviderNames.Offline, sp => sp.GetRequiredService<OfflineVisionModel>());
 
         services.AddKeyedSingleton<IChatModel>(AiProviderNames.Local, sp => sp.GetRequiredService<EchoLlmProvider>());
         services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Local, sp => sp.GetRequiredService<DeterministicEmbeddingProvider>());

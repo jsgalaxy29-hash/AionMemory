@@ -23,6 +23,10 @@
                 {
                     <p style="color:crimson; margin:0;">@ErrorMessage</p>
                 }
+                @if (IsOfflineProvider)
+                {
+                    <div class="badge" style="background-color:#f39c12; color:#fff; margin-top:4px;">Offline</div>
+                }
                 @if (!_aiStatus.IsConfigured)
                 {
                     <p class="text-muted" style="margin:0;">IA inactive : @_aiStatus.Reason</p>
@@ -114,6 +118,8 @@
     private List<SearchHit> ContextHits { get; set; } = new();
     private CancellationTokenSource? _cts;
     private AiConfigurationStatus _aiStatus = AiConfigurationStatus.Inactive();
+    private bool IsOfflineProvider => _aiStatus.IsConfigured
+        && string.Equals(_aiStatus.ActiveProvider, AiProviderNames.Offline, StringComparison.OrdinalIgnoreCase);
 
     private static readonly string[] Suggestions =
     [
