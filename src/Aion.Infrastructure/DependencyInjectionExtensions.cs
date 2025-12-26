@@ -142,6 +142,7 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IPersonaEngine>(sp => sp.GetRequiredService<IAionPersonaEngine>());
         services.AddScoped<IMemoryIntelligenceService, MemoryIntelligenceService>();
         services.AddScoped<ISearchService, SemanticSearchService>();
+        services.AddScoped<RecordSearchIndexService>();
         services.AddScoped<ISyncEngine, SyncEngine>();
         services.AddScoped<SyncOutboxService>();
         services.AddScoped<IDataExportService, DataExportService>();

@@ -24,7 +24,8 @@ public class SemanticSearchServiceTests
         await context.Database.ExecuteSqlRawAsync(@"DROP TABLE IF EXISTS NoteSearch; DROP TABLE IF EXISTS RecordSearch; DROP TABLE IF EXISTS FileSearch;");
 
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
-        var service = new SemanticSearchService(context, NullLogger<SemanticSearchService>.Instance, serviceProvider);
+        var indexService = new RecordSearchIndexService(context, NullLogger<RecordSearchIndexService>.Instance);
+        var service = new SemanticSearchService(context, NullLogger<SemanticSearchService>.Instance, serviceProvider, indexService);
 
         var results = await service.SearchAsync("hello");
 
@@ -44,7 +45,8 @@ public class SemanticSearchServiceTests
         await using var context = new AionDbContext(options);
 
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
-        var service = new SemanticSearchService(context, NullLogger<SemanticSearchService>.Instance, serviceProvider);
+        var indexService = new RecordSearchIndexService(context, NullLogger<RecordSearchIndexService>.Instance);
+        var service = new SemanticSearchService(context, NullLogger<SemanticSearchService>.Instance, serviceProvider, indexService);
 
         var results = await service.SearchAsync("hello");
 

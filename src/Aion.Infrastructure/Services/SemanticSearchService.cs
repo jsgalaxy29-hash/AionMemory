@@ -1,4 +1,5 @@
 using System.Data;
+using System.Data.Common;
 using System.Text.Json;
 using System.Threading;
 using Aion.AI;
@@ -18,13 +19,19 @@ public sealed class SemanticSearchService : ISearchService
     private readonly AionDbContext _db;
     private readonly IEmbeddingProvider? _embeddingProvider;
     private readonly ILogger<SemanticSearchService> _logger;
+    private readonly RecordSearchIndexService _recordSearchIndex;
     private bool _keywordIndexesReady;
 
-    public SemanticSearchService(AionDbContext db, ILogger<SemanticSearchService> logger, IServiceProvider serviceProvider)
+    public SemanticSearchService(
+        AionDbContext db,
+        ILogger<SemanticSearchService> logger,
+        IServiceProvider serviceProvider,
+        RecordSearchIndexService recordSearchIndex)
     {
         _db = db;
         _logger = logger;
         _embeddingProvider = serviceProvider.GetService<IEmbeddingProvider>();
+        _recordSearchIndex = recordSearchIndex;
     }
 
     public async Task<IEnumerable<SearchHit>> SearchAsync(string query, CancellationToken cancellationToken = default)
@@ -59,6 +66,7 @@ public sealed class SemanticSearchService : ISearchService
         var title = table?.DisplayName ?? table?.Name ?? $"Enregistrement {record.Id}";
         await UpsertSemanticEntryAsync("Record", record.Id, title, record.DataJson ?? string.Empty, cancellationToken)
             .ConfigureAwait(false);
+        await _recordSearchIndex.UpdateRecordAsync(record, cancellationToken).ConfigureAwait(false);
     }
 
     public Task IndexFileAsync(F_File file, CancellationToken cancellationToken = default)
@@ -88,37 +96,28 @@ public sealed class SemanticSearchService : ISearchService
         var hits = new List<SearchHit>();
 
         var notes = await SafeQueryAsync(
-            () => _db.NoteSearch
-                .Where(n => n.Content.Contains(query))
-                .Select(n => new { n.NoteId, n.Content })
-                .ToListAsync(cancellationToken),
+            () => FetchKeywordMatchesAsync("NoteSearch", query, cancellationToken),
             "NoteSearch",
             cancellationToken).ConfigureAwait(false);
 
-        hits.AddRange(notes.Select(n => new SearchHit("Note", n.NoteId, $"Note {n.NoteId:N}", BuildSnippet(n.Content), 0.6)));
+        hits.AddRange(notes.Select(n => new SearchHit("Note", n.TargetId, $"Note {n.TargetId:N}", n.Snippet, n.Score)));
 
         var records = await SafeQueryAsync(
-            () => _db.RecordSearch
-                .Where(r => r.Content.Contains(query))
-                .Select(r => new { r.RecordId, r.TableId, r.Content })
-                .ToListAsync(cancellationToken),
+            () => FetchKeywordMatchesAsync("RecordSearch", query, cancellationToken),
             "RecordSearch",
             cancellationToken).ConfigureAwait(false);
 
         foreach (var record in records)
         {
-            hits.Add(new SearchHit("Record", record.RecordId, $"Enregistrement {record.TableId:N}", BuildSnippet(record.Content), 0.5));
+            hits.Add(new SearchHit("Record", record.TargetId, $"Enregistrement {record.TableId:N}", record.Snippet, record.Score));
         }
 
         var files = await SafeQueryAsync(
-            () => _db.FileSearch
-                .Where(f => f.Content.Contains(query))
-                .Select(f => new { f.FileId, f.Content })
-                .ToListAsync(cancellationToken),
+            () => FetchKeywordMatchesAsync("FileSearch", query, cancellationToken),
             "FileSearch",
             cancellationToken).ConfigureAwait(false);
 
-        hits.AddRange(files.Select(f => new SearchHit("File", f.FileId, $"Fichier {f.FileId:N}", BuildSnippet(f.Content), 0.4)));
+        hits.AddRange(files.Select(f => new SearchHit("File", f.TargetId, $"Fichier {f.TargetId:N}", f.Snippet, f.Score)));
 
         return hits;
     }
@@ -250,9 +249,9 @@ public sealed class SemanticSearchService : ISearchService
             }
 
             await _db.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
-            await EnsureKeywordIndexExistsAsync("NoteSearch", NoteSearchSql, cancellationToken).ConfigureAwait(false);
-            await EnsureKeywordIndexExistsAsync("RecordSearch", RecordSearchSql, cancellationToken).ConfigureAwait(false);
-            await EnsureKeywordIndexExistsAsync("FileSearch", FileSearchSql, cancellationToken).ConfigureAwait(false);
+            await EnsureKeywordIndexExistsAsync("NoteSearch", SearchIndexSql.NoteSearch, cancellationToken).ConfigureAwait(false);
+            await EnsureKeywordIndexExistsAsync("RecordSearch", SearchIndexSql.RecordSearch, cancellationToken).ConfigureAwait(false);
+            await EnsureKeywordIndexExistsAsync("FileSearch", SearchIndexSql.FileSearch, cancellationToken).ConfigureAwait(false);
             _keywordIndexesReady = true;
         }
         finally
@@ -297,65 +296,82 @@ public sealed class SemanticSearchService : ISearchService
         return result is string;
     }
 
-    private const string NoteSearchSql = """
-DROP TRIGGER IF EXISTS NoteSearch_ai;
-DROP TRIGGER IF EXISTS NoteSearch_au;
-DROP TRIGGER IF EXISTS NoteSearch_ad;
-CREATE VIRTUAL TABLE IF NOT EXISTS NoteSearch USING fts5(NoteId UNINDEXED, Content);
-CREATE TRIGGER NoteSearch_ai AFTER INSERT ON Notes BEGIN
-    DELETE FROM NoteSearch WHERE NoteId = new.Id;
-    INSERT INTO NoteSearch(NoteId, Content) VALUES (new.Id, COALESCE(new.Title,'') || ' ' || COALESCE(new.Content,''));
-END;
-CREATE TRIGGER NoteSearch_au AFTER UPDATE ON Notes BEGIN
-    DELETE FROM NoteSearch WHERE NoteId = new.Id;
-    INSERT INTO NoteSearch(NoteId, Content) VALUES (new.Id, COALESCE(new.Title,'') || ' ' || COALESCE(new.Content,''));
-END;
-CREATE TRIGGER NoteSearch_ad AFTER DELETE ON Notes BEGIN
-    DELETE FROM NoteSearch WHERE NoteId = old.Id;
-END;
-INSERT INTO NoteSearch(NoteId, Content)
-SELECT Id, COALESCE(Title,'') || ' ' || COALESCE(Content,'') FROM Notes;
+    private async Task<List<KeywordHit>> FetchKeywordMatchesAsync(
+        string tableName,
+        string query,
+        CancellationToken cancellationToken)
+    {
+        var (idColumn, tableIdColumn, snippetColumn) = tableName switch
+        {
+            "NoteSearch" => ("NoteId", null, 1),
+            "RecordSearch" => ("RecordId", "EntityTypeId", 2),
+            "FileSearch" => ("FileId", null, 1),
+            _ => throw new InvalidOperationException($"Unsupported search index '{tableName}'.")
+        };
+
+        var connection = _db.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+SELECT {idColumn},
+       {(tableIdColumn is null ? string.Empty : $"{tableIdColumn},")}
+       COALESCE(1.0 / (bm25({tableName}) + 1), 0) AS Score,
+       snippet({tableName}, {snippetColumn}, $before, $after, ' … ', $tokens) AS Snippet
+FROM {tableName}
+WHERE {tableName} MATCH $query
+ORDER BY Score DESC;
 """;
 
-    private const string RecordSearchSql = """
-DROP TRIGGER IF EXISTS RecordSearch_ai;
-DROP TRIGGER IF EXISTS RecordSearch_au;
-DROP TRIGGER IF EXISTS RecordSearch_ad;
-CREATE VIRTUAL TABLE IF NOT EXISTS RecordSearch USING fts5(RecordId UNINDEXED, EntityTypeId UNINDEXED, Content);
-CREATE TRIGGER RecordSearch_ai AFTER INSERT ON Records BEGIN
-    DELETE FROM RecordSearch WHERE RecordId = new.Id;
-    INSERT INTO RecordSearch(RecordId, EntityTypeId, Content) VALUES (new.Id, new.EntityTypeId, COALESCE(new.DataJson,''));
-END;
-CREATE TRIGGER RecordSearch_au AFTER UPDATE ON Records BEGIN
-    DELETE FROM RecordSearch WHERE RecordId = new.Id;
-    INSERT INTO RecordSearch(RecordId, EntityTypeId, Content) VALUES (new.Id, new.EntityTypeId, COALESCE(new.DataJson,''));
-END;
-CREATE TRIGGER RecordSearch_ad AFTER DELETE ON Records BEGIN
-    DELETE FROM RecordSearch WHERE RecordId = old.Id;
-END;
-INSERT INTO RecordSearch(RecordId, EntityTypeId, Content)
-SELECT Id, EntityTypeId, COALESCE(DataJson,'') FROM Records;
-""";
+            AddParameter(command, "$query", query);
+            AddParameter(command, "$before", "<mark>");
+            AddParameter(command, "$after", "</mark>");
+            AddParameter(command, "$tokens", 12);
 
-    private const string FileSearchSql = """
-DROP TRIGGER IF EXISTS FileSearch_ai;
-DROP TRIGGER IF EXISTS FileSearch_au;
-DROP TRIGGER IF EXISTS FileSearch_ad;
-CREATE VIRTUAL TABLE IF NOT EXISTS FileSearch USING fts5(FileId UNINDEXED, Content);
-CREATE TRIGGER FileSearch_ai AFTER INSERT ON Files BEGIN
-    DELETE FROM FileSearch WHERE FileId = new.Id;
-    INSERT INTO FileSearch(FileId, Content) VALUES (new.Id, COALESCE(new.FileName,'') || ' ' || COALESCE(new.MimeType,'') || ' ' || COALESCE(new.StoragePath,''));
-END;
-CREATE TRIGGER FileSearch_au AFTER UPDATE ON Files BEGIN
-    DELETE FROM FileSearch WHERE FileId = new.Id;
-    INSERT INTO FileSearch(FileId, Content) VALUES (new.Id, COALESCE(new.FileName,'') || ' ' || COALESCE(new.MimeType,'') || ' ' || COALESCE(new.StoragePath,''));
-END;
-CREATE TRIGGER FileSearch_ad AFTER DELETE ON Files BEGIN
-    DELETE FROM FileSearch WHERE FileId = old.Id;
-END;
-INSERT INTO FileSearch(FileId, Content)
-SELECT Id, COALESCE(FileName,'') || ' ' || COALESCE(MimeType,'') || ' ' || COALESCE(StoragePath,'') FROM Files;
-""";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var results = new List<KeywordHit>();
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var id = reader.GetGuid(0);
+                var tableId = tableIdColumn is null || reader.IsDBNull(1) ? Guid.Empty : reader.GetGuid(1);
+                var scoreIndex = tableIdColumn is null ? 1 : 2;
+                var snippetIndex = tableIdColumn is null ? 2 : 3;
+                var score = reader.IsDBNull(scoreIndex) ? 0d : reader.GetDouble(scoreIndex);
+                var snippet = reader.IsDBNull(snippetIndex) ? string.Empty : reader.GetString(snippetIndex);
+
+                if (string.IsNullOrWhiteSpace(snippet))
+                {
+                    snippet = string.Empty;
+                }
+
+                results.Add(new KeywordHit(id, tableId, snippet, score));
+            }
+
+            return results;
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static void AddParameter(DbCommand command, string name, object? value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value ?? DBNull.Value;
+        command.Parameters.Add(parameter);
+    }
 
     private static float[]? ParseEmbedding(string? serialized)
     {
@@ -429,4 +445,6 @@ SELECT Id, COALESCE(FileName,'') || ' ' || COALESCE(MimeType,'') || ' ' || COALE
         var trimmed = content.Replace("\n", " ").Replace("\r", " ").Trim();
         return trimmed.Length <= limit ? trimmed : trimmed[..limit] + "…";
     }
+
+    private sealed record KeywordHit(Guid TargetId, Guid TableId, string Snippet, double Score);
 }
