@@ -328,6 +328,8 @@ public class F_RecordAudit
 
     public Guid RecordId { get; set; }
 
+    public Guid UserId { get; set; }
+
     public ChangeType ChangeType { get; set; }
 
     public long Version { get; set; }

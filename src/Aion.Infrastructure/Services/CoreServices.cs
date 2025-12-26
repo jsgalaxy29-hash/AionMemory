@@ -86,6 +86,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
     private readonly IEmbeddingProvider? _embeddingProvider;
     private readonly IOperationScopeFactory _operationScopeFactory;
     private readonly IAutomationRuleEngine _automationRuleEngine;
+    private readonly ICurrentUserService _currentUserService;
 
     public AionDataEngine(
         AionDbContext db,
@@ -93,6 +94,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         ISearchService search,
         IOperationScopeFactory operationScopeFactory,
         IAutomationRuleEngine automationRuleEngine,
+        ICurrentUserService currentUserService,
         IEmbeddingProvider? embeddingProvider = null)
     {
         _db = db;
@@ -100,6 +102,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         _search = search;
         _operationScopeFactory = operationScopeFactory;
         _automationRuleEngine = automationRuleEngine;
+        _currentUserService = currentUserService;
         _embeddingProvider = embeddingProvider;
     }
 
@@ -977,6 +980,7 @@ LIMIT $take OFFSET $skip;
         {
             TableId = tableId,
             RecordId = recordId,
+            UserId = _currentUserService.GetCurrentUserId(),
             ChangeType = changeType,
             Version = version,
             DataJson = dataJson,

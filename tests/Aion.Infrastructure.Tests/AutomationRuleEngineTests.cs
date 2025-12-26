@@ -91,7 +91,7 @@ public class AutomationRuleEngineTests
             () => dataEngine!,
             NullLogger<AutomationRuleEngine>.Instance);
 
-        dataEngine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, search, operationScopeFactory, automationEngine);
+        dataEngine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, search, operationScopeFactory, automationEngine, new CurrentUserService());
         await dataEngine.CreateTableAsync(table);
 
         var record = await dataEngine.InsertAsync(table.Id, "{ \"Title\": \"Nouvelle facture\" }");

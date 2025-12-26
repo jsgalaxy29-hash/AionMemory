@@ -63,7 +63,7 @@ public class AuthorizationServiceTests
     private static AuthorizedDataEngine CreateAuthorizedEngine(AionDbContext context, Guid userId)
     {
         var auth = new AuthorizationService(context, NullLogger<AuthorizationService>.Instance);
-        var inner = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine());
+        var inner = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine(), new CurrentUserService());
         var current = new StubCurrentUserService(userId);
         return new AuthorizedDataEngine(inner, auth, current, NullLogger<AuthorizedDataEngine>.Instance);
     }
@@ -80,7 +80,7 @@ public class AuthorizationServiceTests
             }
         };
 
-        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine());
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine(), new CurrentUserService());
         await engine.CreateTableAsync(table);
         return table;
     }

@@ -460,6 +460,9 @@ namespace Aion.Infrastructure.Migrations
                     b.Property<Guid>("RecordId")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("TableId")
                         .HasColumnType("TEXT")
                         .HasColumnName("EntityTypeId");
