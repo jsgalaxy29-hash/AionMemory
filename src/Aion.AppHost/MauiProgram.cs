@@ -125,6 +125,18 @@ public static class MauiProgram
         services.AddScoped<WorkspaceSelectionState>();
         services.AddSingleton<IExtensionState, PreferencesExtensionState>();
         services.AddSingleton<FirstRunState>();
+        services.AddSingleton<INotificationService, NotificationService>();
+#if ANDROID
+        services.AddSingleton<INotificationPlatformService, Aion.AppHost.Platforms.Android.AndroidNotificationPlatformService>();
+#elif IOS
+        services.AddSingleton<INotificationPlatformService, Aion.AppHost.Platforms.iOS.IosNotificationPlatformService>();
+#elif MACCATALYST
+        services.AddSingleton<INotificationPlatformService, Aion.AppHost.Platforms.MacCatalyst.MacCatalystNotificationPlatformService>();
+#elif WINDOWS
+        services.AddSingleton<INotificationPlatformService, Aion.AppHost.Platforms.Windows.WindowsNotificationPlatformService>();
+#else
+        services.AddSingleton<INotificationPlatformService, NullNotificationPlatformService>();
+#endif
     }
 }
 

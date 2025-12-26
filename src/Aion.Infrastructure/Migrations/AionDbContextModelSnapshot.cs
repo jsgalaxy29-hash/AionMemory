@@ -1761,6 +1761,18 @@ namespace Aion.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("ReminderAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("RecurrenceCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RecurrenceFrequency")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RecurrenceInterval")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("RecurrenceUntil")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("Start")
                         .HasColumnType("TEXT");
 

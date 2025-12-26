@@ -79,7 +79,7 @@
     {
         var now = DateTimeOffset.Now;
         _loadCts ??= new CancellationTokenSource();
-        UpcomingEvents = await AgendaService.GetEventsAsync(now, now.AddDays(7), _loadCts.Token);
+        UpcomingEvents = await AgendaService.GetOccurrencesAsync(now, now.AddDays(7), _loadCts.Token);
     }
 
     private async Task LoadNotes()

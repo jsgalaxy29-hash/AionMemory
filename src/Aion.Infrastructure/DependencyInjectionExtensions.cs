@@ -137,10 +137,11 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IAuthorizationService, AuthorizationService>();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.TryAddScoped<INoteTaggingService, NoopNoteTaggingService>();
+        services.TryAddScoped<INotificationService, NullNotificationService>();
         services.AddScoped<ISecurityAuditService, SecurityAuditService>();
         services.AddScoped<IAionNoteService, NoteService>();
         services.AddScoped<INoteService>(sp => sp.GetRequiredService<IAionNoteService>());
-        services.AddScoped<IAionAgendaService, AgendaService>();
+        services.AddScoped<IAionAgendaService, AionAgendaService>();
         services.AddScoped<IAgendaService>(sp => sp.GetRequiredService<IAionAgendaService>());
         services.AddScoped<IAutomationOrchestrator, AutomationOrchestrator>();
         services.AddScoped<IAionAutomationService, AutomationService>();

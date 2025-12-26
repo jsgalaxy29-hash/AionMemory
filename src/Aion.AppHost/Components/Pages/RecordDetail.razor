@@ -163,7 +163,7 @@
     {
         _loadCts ??= new CancellationTokenSource();
         var now = DateTimeOffset.Now;
-        var events = await AgendaService.GetEventsAsync(now.AddDays(-2), now.AddDays(10), _loadCts.Token);
+        var events = await AgendaService.GetOccurrencesAsync(now.AddDays(-2), now.AddDays(10), _loadCts.Token);
         Events = events.Where(MatchesContext).ToList();
     }
 

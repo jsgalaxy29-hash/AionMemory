@@ -1,72 +1,349 @@
+@page "/agenda"
 @page "/agenda/{entity}"
 @inject IAgendaService AgendaService
-@inject INoteService NoteService
 
-<h3>Agenda - @Entity</h3>
-<div class="card">
-    <div class="module-header">
-        <div>
-            <strong>Événements planifiés</strong>
-            <p class="text-muted">Vue synthétique des prochains événements.</p>
+<h3>Agenda @(!string.IsNullOrWhiteSpace(Entity) ? $"- {Entity}" : string.Empty)</h3>
+<div class="grid columns-2" style="gap:12px;">
+    <div class="card">
+        <div class="module-header">
+            <div>
+                <strong>Calendrier</strong>
+                <p class="text-muted">Vue jour, semaine ou mois.</p>
+            </div>
+            <button class="button" @onclick="BeginCreate">Nouvel événement</button>
         </div>
-        <button class="button" @onclick="AddEvent">Ajouter</button>
-    </div>
-    <table class="table">
-        <thead>
-            <tr><th>Titre</th><th>Date</th><th>Statut</th></tr>
-        </thead>
-        <tbody>
-            @foreach (var evt in Events)
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <label>
+                Vue
+                <select class="input" @bind="SelectedView" @bind:after="OnViewChanged">
+                    <option value="@AgendaView.Day">Jour</option>
+                    <option value="@AgendaView.Week">Semaine</option>
+                    <option value="@AgendaView.Month">Mois</option>
+                </select>
+            </label>
+            <button class="button secondary" @onclick="PreviousRange">◀</button>
+            <button class="button secondary" @onclick="NextRange">▶</button>
+            <button class="button secondary" @onclick="GoToToday">Aujourd'hui</button>
+            <span class="text-muted">@DisplayRangeLabel</span>
+        </div>
+        <div style="margin-top:12px;">
+            @foreach (var day in DisplayedDays)
             {
-                <tr>
-                    <td>@evt.Title</td>
-                    <td>@evt.Start.ToLocalTime().ToString("g")</td>
-                    <td>@(evt.IsCompleted ? "Terminé" : "Planifié")</td>
-                </tr>
+                var dayEvents = EventsForDay(day).ToList();
+                <div class="card" style="margin-bottom:8px;">
+                    <strong>@day.ToLocalTime().ToString("dddd dd MMM")</strong>
+                    @if (!dayEvents.Any())
+                    {
+                        <p class="text-muted">Aucun événement</p>
+                    }
+                    else
+                    {
+                        <ul>
+                            @foreach (var evt in dayEvents)
+                            {
+                                <li>
+                                    @evt.Start.ToLocalTime().ToString("t") - @evt.Title
+                                    @if (evt.IsCompleted)
+                                    {
+                                        <span class="text-muted">(Terminé)</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
             }
-        </tbody>
-    </table>
+        </div>
+    </div>
+    <div class="card">
+        <h4>@(Editor.EventId.HasValue ? "Modifier l'événement" : "Créer un événement")</h4>
+        <EditForm Model="Editor" OnValidSubmit="SaveEventAsync">
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <label>
+                    Titre
+                    <InputText class="input" @bind-Value="Editor.Title" />
+                </label>
+                <label>
+                    Description
+                    <InputText class="input" @bind-Value="Editor.Description" />
+                </label>
+                <label>
+                    Début
+                    <input class="input" type="datetime-local" @bind="Editor.StartLocal" @bind:format="yyyy-MM-ddTHH:mm" />
+                </label>
+                <label>
+                    Fin
+                    <input class="input" type="datetime-local" @bind="Editor.EndLocal" @bind:format="yyyy-MM-ddTHH:mm" />
+                </label>
+                <label>
+                    Rappel
+                    <input class="input" type="datetime-local" @bind="Editor.ReminderLocal" @bind:format="yyyy-MM-ddTHH:mm" />
+                </label>
+                <label>
+                    Récurrence
+                    <select class="input" @bind="Editor.RecurrenceFrequency">
+                        <option value="">Aucune</option>
+                        <option value="@EventRecurrenceFrequency.Daily">Quotidienne</option>
+                        <option value="@EventRecurrenceFrequency.Weekly">Hebdomadaire</option>
+                        <option value="@EventRecurrenceFrequency.Monthly">Mensuelle</option>
+                    </select>
+                </label>
+                <label>
+                    Intervalle (répétition)
+                    <InputNumber class="input" @bind-Value="Editor.RecurrenceInterval" />
+                </label>
+                <label>
+                    Occurrences max
+                    <InputNumber class="input" @bind-Value="Editor.RecurrenceCount" />
+                </label>
+                <label>
+                    Jusqu'au
+                    <input class="input" type="datetime-local" @bind="Editor.RecurrenceUntilLocal" @bind:format="yyyy-MM-ddTHH:mm" />
+                </label>
+                <label>
+                    Lien record (type)
+                    <InputText class="input" @bind-Value="Editor.LinkTargetType" placeholder="Nom d'entité" />
+                </label>
+                <label>
+                    Lien record (ID)
+                    <InputText class="input" @bind-Value="Editor.LinkTargetId" placeholder="GUID" />
+                </label>
+                <label>
+                    Terminé
+                    <InputCheckbox class="input" @bind-Value="Editor.IsCompleted" />
+                </label>
+                <div style="display:flex; gap:8px;">
+                    <button class="button" type="submit">Enregistrer</button>
+                    <button class="button secondary" type="button" @onclick="ResetEditor">Annuler</button>
+                    @if (Editor.EventId.HasValue)
+                    {
+                        <button class="button secondary" type="button" @onclick="DeleteEventAsync">Supprimer</button>
+                    }
+                </div>
+            </div>
+        </EditForm>
+
+        <hr />
+        <h4>Événements suivis</h4>
+        @if (!SourceEvents.Any())
+        {
+            <p class="text-muted">Aucun événement planifié.</p>
+        }
+        else
+        {
+            <table class="table">
+                <thead>
+                    <tr><th>Titre</th><th>Date</th><th>Récurrence</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var evt in SourceEvents)
+                    {
+                        <tr>
+                            <td>@evt.Title</td>
+                            <td>@evt.Start.ToLocalTime().ToString("g")</td>
+                            <td>@DescribeRecurrence(evt)</td>
+                            <td>
+                                <button class="button secondary" @onclick="() => BeginEdit(evt)">Éditer</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
 </div>
 
 @code {
     [Parameter] public string? Entity { get; set; }
-    private IList<S_Event> Events { get; set; } = new List<S_Event>();
+
+    private IList<S_Event> SourceEvents { get; set; } = new List<S_Event>();
+    private IList<S_Event> Occurrences { get; set; } = new List<S_Event>();
+    private AgendaEditorModel Editor { get; set; } = AgendaEditorModel.Create();
+    private AgendaView SelectedView { get; set; } = AgendaView.Month;
+    private DateTimeOffset FocusDate { get; set; } = DateTimeOffset.Now;
 
     protected override async Task OnInitializedAsync()
     {
-        var now = DateTimeOffset.Now;
-        Events = (await AgendaService.GetEventsAsync(now.AddDays(-1), now.AddDays(30))).Where(MatchesEntity).ToList();
+        Editor = AgendaEditorModel.Create(Entity);
+        await LoadEventsAsync();
     }
 
-    private async Task AddEvent()
+    private IEnumerable<DateTimeOffset> DisplayedDays
     {
-        var evt = await AgendaService.AddEventAsync(new S_Event
+        get
         {
-            Title = $"Rappel {Entity}",
-            Start = DateTimeOffset.Now.AddDays(1),
+            var (start, end) = GetRange();
+            var days = new List<DateTimeOffset>();
+            var cursor = start;
+            while (cursor <= end)
+            {
+                days.Add(cursor);
+                cursor = cursor.AddDays(1);
+            }
+
+            return days;
+        }
+    }
+
+    private string DisplayRangeLabel
+    {
+        get
+        {
+            var (start, end) = GetRange();
+            return $"{start:dd MMM yyyy} → {end:dd MMM yyyy}";
+        }
+    }
+
+    private async Task OnViewChanged()
+        => await LoadEventsAsync();
+
+    private async Task LoadEventsAsync()
+    {
+        var (from, to) = GetRange();
+        var events = await AgendaService.GetEventsAsync(from, to);
+        var occurrences = await AgendaService.GetOccurrencesAsync(from, to);
+        SourceEvents = events.Where(MatchesEntity).ToList();
+        Occurrences = occurrences.Where(MatchesEntity).ToList();
+    }
+
+    private IEnumerable<S_Event> EventsForDay(DateTimeOffset day)
+    {
+        var dayStart = new DateTimeOffset(day.Date, day.Offset);
+        var dayEnd = dayStart.AddDays(1);
+        return Occurrences
+            .Where(e => e.Start.ToLocalTime() >= dayStart && e.Start.ToLocalTime() < dayEnd)
+            .OrderBy(e => e.Start);
+    }
+
+    private (DateTimeOffset Start, DateTimeOffset End) GetRange()
+    {
+        var local = FocusDate.ToLocalTime();
+        var offset = local.Offset;
+        DateTime startDate = SelectedView switch
+        {
+            AgendaView.Day => local.Date,
+            AgendaView.Week => StartOfWeek(local.Date),
+            AgendaView.Month => new DateTime(local.Year, local.Month, 1),
+            _ => local.Date
+        };
+
+        var start = new DateTimeOffset(startDate, offset);
+        var end = SelectedView switch
+        {
+            AgendaView.Day => start.AddDays(1).AddTicks(-1),
+            AgendaView.Week => start.AddDays(7).AddTicks(-1),
+            AgendaView.Month => start.AddMonths(1).AddTicks(-1),
+            _ => start.AddDays(1).AddTicks(-1)
+        };
+
+        return (start, end);
+    }
+
+    private static DateTime StartOfWeek(DateTime date)
+    {
+        var diff = (7 + (date.DayOfWeek - DayOfWeek.Monday)) % 7;
+        return date.AddDays(-diff);
+    }
+
+    private async Task PreviousRange()
+    {
+        FocusDate = SelectedView switch
+        {
+            AgendaView.Day => FocusDate.AddDays(-1),
+            AgendaView.Week => FocusDate.AddDays(-7),
+            AgendaView.Month => FocusDate.AddMonths(-1),
+            _ => FocusDate
+        };
+        await LoadEventsAsync();
+    }
+
+    private async Task NextRange()
+    {
+        FocusDate = SelectedView switch
+        {
+            AgendaView.Day => FocusDate.AddDays(1),
+            AgendaView.Week => FocusDate.AddDays(7),
+            AgendaView.Month => FocusDate.AddMonths(1),
+            _ => FocusDate
+        };
+        await LoadEventsAsync();
+    }
+
+    private async Task GoToToday()
+    {
+        FocusDate = DateTimeOffset.Now;
+        await LoadEventsAsync();
+    }
+
+    private void BeginCreate()
+    {
+        Editor = AgendaEditorModel.Create(Entity);
+    }
+
+    private void BeginEdit(S_Event evt)
+    {
+        Editor = AgendaEditorModel.FromEvent(evt);
+    }
+
+    private void ResetEditor()
+    {
+        Editor = AgendaEditorModel.Create(Entity);
+    }
+
+    private async Task SaveEventAsync()
+    {
+        var evt = new S_Event
+        {
+            Id = Editor.EventId ?? Guid.NewGuid(),
+            Title = Editor.Title,
+            Description = Editor.Description,
+            Start = ToOffset(Editor.StartLocal),
+            End = Editor.EndLocal.HasValue ? ToOffset(Editor.EndLocal.Value) : null,
+            ReminderAt = Editor.ReminderLocal.HasValue ? ToOffset(Editor.ReminderLocal.Value) : null,
+            RecurrenceFrequency = Editor.RecurrenceFrequency,
+            RecurrenceInterval = Editor.RecurrenceInterval,
+            RecurrenceCount = Editor.RecurrenceCount,
+            RecurrenceUntil = Editor.RecurrenceUntilLocal.HasValue ? ToOffset(Editor.RecurrenceUntilLocal.Value) : null,
+            IsCompleted = Editor.IsCompleted,
             Links = BuildEventLinks().ToList()
-        });
-        if (MatchesEntity(evt))
+        };
+
+        if (Editor.EventId.HasValue)
         {
-            Events.Add(evt);
+            await AgendaService.UpdateEventAsync(evt);
+        }
+        else
+        {
+            await AgendaService.AddEventAsync(evt);
         }
 
-        if (NoteService is not null && !string.IsNullOrWhiteSpace(Entity))
+        ResetEditor();
+        await LoadEventsAsync();
+    }
+
+    private async Task DeleteEventAsync()
+    {
+        if (!Editor.EventId.HasValue)
         {
-            await NoteService.CreateTextNoteAsync(evt.Title, evt.Description ?? evt.Title, new[]
-            {
-                new J_Note_Link
-                {
-                    TargetType = Entity!,
-                    TargetId = Guid.Empty
-                }
-            });
+            return;
         }
+
+        await AgendaService.DeleteEventAsync(Editor.EventId.Value);
+        ResetEditor();
+        await LoadEventsAsync();
     }
 
     private IEnumerable<J_Event_Link> BuildEventLinks()
     {
-        if (!string.IsNullOrWhiteSpace(Entity))
+        if (!string.IsNullOrWhiteSpace(Editor.LinkTargetType) && Guid.TryParse(Editor.LinkTargetId, out var recordId))
+        {
+            yield return new J_Event_Link
+            {
+                TargetType = Editor.LinkTargetType!,
+                TargetId = recordId
+            };
+        }
+        else if (!string.IsNullOrWhiteSpace(Entity))
         {
             yield return new J_Event_Link
             {
@@ -84,5 +361,85 @@
         }
 
         return evt.Links.Any(l => string.Equals(l.TargetType, Entity, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static DateTimeOffset ToOffset(DateTime local)
+    {
+        var offset = TimeZoneInfo.Local.GetUtcOffset(local);
+        return new DateTimeOffset(local, offset);
+    }
+
+    private static string DescribeRecurrence(S_Event evt)
+    {
+        if (!evt.RecurrenceFrequency.HasValue)
+        {
+            return "Aucune";
+        }
+
+        var frequency = evt.RecurrenceFrequency.Value switch
+        {
+            EventRecurrenceFrequency.Daily => "Quotidienne",
+            EventRecurrenceFrequency.Weekly => "Hebdomadaire",
+            EventRecurrenceFrequency.Monthly => "Mensuelle",
+            _ => "Personnalisée"
+        };
+
+        var interval = evt.RecurrenceInterval.HasValue ? $" (x{evt.RecurrenceInterval})" : string.Empty;
+        return $"{frequency}{interval}";
+    }
+
+    private enum AgendaView
+    {
+        Day,
+        Week,
+        Month
+    }
+
+    private sealed class AgendaEditorModel
+    {
+        public Guid? EventId { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public DateTime StartLocal { get; set; } = DateTime.Now.AddHours(1);
+        public DateTime? EndLocal { get; set; }
+        public DateTime? ReminderLocal { get; set; }
+        public EventRecurrenceFrequency? RecurrenceFrequency { get; set; }
+        public int? RecurrenceInterval { get; set; }
+        public int? RecurrenceCount { get; set; }
+        public DateTime? RecurrenceUntilLocal { get; set; }
+        public string? LinkTargetType { get; set; }
+        public string? LinkTargetId { get; set; }
+        public bool IsCompleted { get; set; }
+
+        public static AgendaEditorModel Create(string? entity = null)
+            => new()
+            {
+                Title = string.Empty,
+                StartLocal = DateTime.Now.AddHours(1),
+                ReminderLocal = DateTime.Now,
+                RecurrenceInterval = 1,
+                LinkTargetType = entity
+            };
+
+        public static AgendaEditorModel FromEvent(S_Event evt)
+        {
+            var firstLink = evt.Links.FirstOrDefault();
+            return new AgendaEditorModel
+            {
+                EventId = evt.Id,
+                Title = evt.Title,
+                Description = evt.Description,
+                StartLocal = evt.Start.ToLocalTime().DateTime,
+                EndLocal = evt.End?.ToLocalTime().DateTime,
+                ReminderLocal = evt.ReminderAt?.ToLocalTime().DateTime,
+                RecurrenceFrequency = evt.RecurrenceFrequency,
+                RecurrenceInterval = evt.RecurrenceInterval,
+                RecurrenceCount = evt.RecurrenceCount,
+                RecurrenceUntilLocal = evt.RecurrenceUntil?.ToLocalTime().DateTime,
+                LinkTargetType = firstLink?.TargetType,
+                LinkTargetId = firstLink?.TargetId.ToString(),
+                IsCompleted = evt.IsCompleted
+            };
+        }
     }
 }
