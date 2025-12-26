@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,6 +10,7 @@ using Aion.Infrastructure.Observability;
 using Aion.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -172,6 +174,76 @@ public class DataEngineValidationTests
     }
 
     [Fact]
+    public async Task InsertAsync_batches_lookup_validation_queries()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        var interceptor = new LookupCommandCounter();
+        var options = new DbContextOptionsBuilder<AionDbContext>()
+            .UseSqlite(connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using var context = new AionDbContext(options);
+        await context.Database.MigrateAsync();
+
+        var peopleTable = new STable
+        {
+            Name = "people",
+            DisplayName = "People",
+            Fields =
+            {
+                new SFieldDefinition { Name = "Name", Label = "Name", DataType = FieldDataType.Text, IsRequired = true }
+            }
+        };
+
+        var teamsTable = new STable
+        {
+            Name = "teams",
+            DisplayName = "Teams",
+            Fields =
+            {
+                new SFieldDefinition { Name = "Name", Label = "Name", DataType = FieldDataType.Text, IsRequired = true }
+            }
+        };
+
+        var assignmentTable = new STable
+        {
+            Name = "assignments",
+            DisplayName = "Assignments",
+            Fields =
+            {
+                new SFieldDefinition { Name = "Title", Label = "Title", DataType = FieldDataType.Text, IsRequired = true },
+                new SFieldDefinition { Name = "Owner", Label = "Owner", DataType = FieldDataType.Lookup, LookupTarget = peopleTable.Id.ToString() },
+                new SFieldDefinition { Name = "Reviewer", Label = "Reviewer", DataType = FieldDataType.Lookup, LookupTarget = peopleTable.Id.ToString() },
+                new SFieldDefinition { Name = "Team", Label = "Team", DataType = FieldDataType.Lookup, LookupTarget = teamsTable.Id.ToString() }
+            }
+        };
+
+        var engine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine(), new CurrentUserService());
+
+        await engine.CreateTableAsync(peopleTable);
+        await engine.CreateTableAsync(teamsTable);
+        await engine.CreateTableAsync(assignmentTable);
+
+        var owner = await engine.InsertAsync(peopleTable.Id, "{ \"Name\": \"Owner\" }");
+        var reviewer = await engine.InsertAsync(peopleTable.Id, "{ \"Name\": \"Reviewer\" }");
+        var team = await engine.InsertAsync(teamsTable.Id, "{ \"Name\": \"Team A\" }");
+
+        interceptor.Reset();
+
+        await engine.InsertAsync(assignmentTable.Id, new Dictionary<string, object?>
+        {
+            ["Title"] = "Assignment",
+            ["Owner"] = owner.Id,
+            ["Reviewer"] = reviewer.Id,
+            ["Team"] = team.Id
+        });
+
+        Assert.Equal(2, interceptor.LookupSelectCount);
+    }
+
+    [Fact]
     public async Task QueryAsync_rejects_contains_filters()
     {
         await using var connection = new SqliteConnection("DataSource=:memory:");
@@ -216,6 +288,48 @@ file sealed class NullSearchService : ISearchService
     public Task IndexFileAsync(F_File file, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     public Task RemoveAsync(string targetType, Guid targetId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+}
+
+file sealed class LookupCommandCounter : DbCommandInterceptor
+{
+    public int LookupSelectCount { get; private set; }
+
+    public void Reset()
+    {
+        LookupSelectCount = 0;
+    }
+
+    public override InterceptionResult<DbDataReader> ReaderExecuting(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<DbDataReader> result)
+    {
+        CountLookupSelect(command.CommandText);
+        return base.ReaderExecuting(command, eventData, result);
+    }
+
+    public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<DbDataReader> result,
+        CancellationToken cancellationToken = default)
+    {
+        CountLookupSelect(command.CommandText);
+        return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+    }
+
+    private void CountLookupSelect(string? commandText)
+    {
+        if (string.IsNullOrWhiteSpace(commandText))
+        {
+            return;
+        }
+
+        if (commandText.Contains("FROM \"Records\"", StringComparison.OrdinalIgnoreCase))
+        {
+            LookupSelectCount += 1;
+        }
+    }
 }
 
 file sealed class NullAutomationRuleEngine : IAutomationRuleEngine

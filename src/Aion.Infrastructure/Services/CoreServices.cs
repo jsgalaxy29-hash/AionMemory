@@ -1447,6 +1447,7 @@ LIMIT $take OFFSET $skip;
     {
         var sourceValues = new Dictionary<string, object?>(values, StringComparer.OrdinalIgnoreCase);
         var normalized = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        var lookupValidations = new List<LookupValidationEntry>();
 
         foreach (var kv in sourceValues.ToArray())
         {
@@ -1478,11 +1479,16 @@ LIMIT $take OFFSET $skip;
             if (!string.IsNullOrWhiteSpace(field.LookupTarget) && normalizedValue is not null)
             {
                 var lookupId = ParseGuid(normalizedValue) ?? throw new InvalidOperationException($"Field '{field.Name}' expects a GUID lookup value");
-                await EnsureLookupTargetExists(field, lookupId, cancellationToken).ConfigureAwait(false);
+                lookupValidations.Add(new LookupValidationEntry(field, field.LookupTarget!, lookupId));
                 normalizedValue = lookupId;
             }
 
             normalized[field.Name] = normalizedValue;
+        }
+
+        if (lookupValidations.Count > 0)
+        {
+            await ValidateLookupTargetsAsync(lookupValidations, cancellationToken).ConfigureAwait(false);
         }
 
         return normalized;
@@ -1833,15 +1839,52 @@ LIMIT $take OFFSET $skip;
         return $"{prefix} #{record.Id.ToString()[..8]}";
     }
 
-    private async Task EnsureLookupTargetExists(SFieldDefinition field, Guid lookupId, CancellationToken cancellationToken)
-    {
-        var targetTable = await FindLookupTableAsync(field, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Lookup target '{field.LookupTarget}' not found for field {field.Name}");
+    private sealed record LookupValidationEntry(SFieldDefinition Field, string LookupTarget, Guid LookupId);
 
-        var exists = await FilterByTable(_db.Records.AsQueryable(), targetTable).AnyAsync(r => r.Id == lookupId, cancellationToken).ConfigureAwait(false);
-        if (!exists)
+    private async Task ValidateLookupTargetsAsync(IReadOnlyCollection<LookupValidationEntry> lookups, CancellationToken cancellationToken)
+    {
+        var tableCache = new Dictionary<string, STable?>(StringComparer.OrdinalIgnoreCase);
+        var tablesByLookup = new Dictionary<string, STable>(StringComparer.OrdinalIgnoreCase);
+        var existingIdsByLookup = new Dictionary<string, HashSet<Guid>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in lookups.GroupBy(entry => entry.LookupTarget, StringComparer.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException($"Lookup value {lookupId} not found in table {targetTable.Name}");
+            if (!tableCache.TryGetValue(group.Key, out var targetTable))
+            {
+                var field = group.First().Field;
+                targetTable = await FindLookupTableAsync(field, cancellationToken).ConfigureAwait(false);
+                tableCache[group.Key] = targetTable;
+            }
+
+            if (targetTable is null)
+            {
+                var field = group.First().Field;
+                throw new InvalidOperationException($"Lookup target '{field.LookupTarget}' not found for field {field.Name}");
+            }
+
+            var ids = group.Select(entry => entry.LookupId).Distinct().ToArray();
+            var existingIds = await FilterByTable(_db.Records.AsQueryable(), targetTable)
+                .Where(record => ids.Contains(record.Id))
+                .Select(record => record.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            tablesByLookup[group.Key] = targetTable;
+            existingIdsByLookup[group.Key] = existingIds.ToHashSet();
+        }
+
+        foreach (var entry in lookups)
+        {
+            if (!existingIdsByLookup.TryGetValue(entry.LookupTarget, out var existingIds))
+            {
+                continue;
+            }
+
+            if (!existingIds.Contains(entry.LookupId))
+            {
+                var targetTable = tablesByLookup[entry.LookupTarget];
+                throw new InvalidOperationException($"Lookup value {entry.LookupId} not found in table {targetTable.Name}");
+            }
         }
     }
 
