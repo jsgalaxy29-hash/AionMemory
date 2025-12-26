@@ -418,7 +418,7 @@ public sealed class IntentRecognizer : IIntentDetector
             "Contraintes :",
             "- Réponds UNIQUEMENT avec un JSON compact sans texte additionnel.",
             $"- Schéma attendu: {StructuredJsonSchemas.Intent.Description}",
-            "- Intentions typiques: chat, create, read, update, delete, design_module, report, agenda, note.",
+            $"- Intentions typiques: {IntentCatalog.PromptIntents}.",
             $"Entrée: \"{request.Input}\"",
             $"Contexte: {contextLines}",
             $"Locale: {request.Locale}"
@@ -485,7 +485,18 @@ public sealed class IntentRecognizer : IIntentDetector
                 return false;
             }
 
-            result = new IntentDetectionResult(intent, parameters, confidence, json);
+            var normalizedIntent = IntentCatalog.Normalize(intent);
+            if (normalizedIntent.Name != intent)
+            {
+                parameters["raw_intent"] = intent;
+            }
+
+            if (normalizedIntent.Name == IntentCatalog.Unknown && !IntentCatalog.IsUnknownName(intent))
+            {
+                return false;
+            }
+
+            result = new IntentDetectionResult(normalizedIntent.Name, parameters, confidence, json);
             return true;
         }
         catch (JsonException ex)
@@ -497,13 +508,18 @@ public sealed class IntentRecognizer : IIntentDetector
 
     private static IntentDetectionResult BuildFallback(string input, string? rawResponse, string? error = null, double confidence = 0.1)
     {
-        var parameters = new Dictionary<string, string> { ["raw"] = input };
+        var guessed = IntentHeuristics.Detect(input);
+        var parameters = new Dictionary<string, string>
+        {
+            ["raw"] = input,
+            ["fallback"] = "heuristic"
+        };
         if (!string.IsNullOrWhiteSpace(error))
         {
             parameters["error"] = error;
         }
 
-        return new IntentDetectionResult("unknown", parameters, confidence, rawResponse);
+        return new IntentDetectionResult(guessed.Name, parameters, confidence, rawResponse);
     }
 
     private sealed class NullScope : IDisposable

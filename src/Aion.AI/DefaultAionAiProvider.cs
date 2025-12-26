@@ -192,7 +192,7 @@ public sealed class DefaultIntentRecognizer : IIntentDetector
     {
         var prompt = $"Analyse l'intention utilisateur pour: {request.Input}";
         var response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
-        return new IntentDetectionResult("analysis", new Dictionary<string, string> { ["prompt"] = request.Input }, 0.5, response.RawResponse ?? response.Content);
+        return new IntentDetectionResult(IntentCatalog.Chat, new Dictionary<string, string> { ["prompt"] = request.Input }, 0.5, response.RawResponse ?? response.Content);
     }
 }
 

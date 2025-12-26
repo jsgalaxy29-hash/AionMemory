@@ -75,9 +75,15 @@ internal static class StructuredJsonSchemas
             return false;
         }
 
-        if (!TryGetNonEmptyString(root, "intent", out _))
+        if (!TryGetNonEmptyString(root, "intent", out var intent))
         {
             error = "intent manquant ou vide";
+            return false;
+        }
+
+        if (!IntentCatalog.IsKnownName(intent))
+        {
+            error = "intent non reconnue";
             return false;
         }
 

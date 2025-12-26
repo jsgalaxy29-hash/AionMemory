@@ -20,7 +20,7 @@ public class StructuredJsonValidationTests
 
         var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "Analyse ça" });
 
-        Assert.Equal("unknown", result.Intent);
+        Assert.Equal(IntentCatalog.Report, result.Intent);
         Assert.Equal(3, provider.CallCount);
     }
 

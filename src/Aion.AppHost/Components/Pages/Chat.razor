@@ -1,11 +1,6 @@
 @page "/chat"
-@inject IChatModel TextGen
 @inject IIntentDetector IntentDetector
-@inject IModuleDesigner ModuleDesigner
-@inject ICrudInterpreter CrudInterpreter
-@inject IAgendaInterpreter AgendaInterpreter
-@inject INoteInterpreter NoteInterpreter
-@inject IReportInterpreter ReportInterpreter
+@inject IIntentRouter IntentRouter
 @inject ISearchService SearchService
 @inject AiProviderSelector AiSelector
 @inject NavigationManager Navigation
@@ -170,7 +165,15 @@
             ContextHits = (await SearchService.SearchAsync(input, cancellationToken)).ToList();
 
             StatusMessage = "Appel orchestrateur…";
-            var orchestratedReply = await HandleIntentAsync(intent, input, cancellationToken);
+            var routing = await IntentRouter.RouteAsync(new IntentRouteRequest
+            {
+                Input = input,
+                Intent = intent,
+                ModuleContext = DemoModule,
+                ModuleId = DemoModule.Id,
+                IsOffline = IsOfflineProvider
+            }, cancellationToken);
+            var orchestratedReply = routing.Response;
 
             if (ContextHits.Count > 0)
             {
@@ -196,78 +199,6 @@
         {
             IsProcessing = false;
         }
-    }
-
-    private async Task<string> HandleIntentAsync(IntentDetectionResult intentResult, string input, CancellationToken cancellationToken)
-    {
-        var normalized = intentResult.Intent?.ToLowerInvariant() ?? string.Empty;
-        return normalized switch
-        {
-            "module" or "design" => await DescribeModuleAsync(input, cancellationToken),
-            "agenda" => await BuildAgendaAsync(input, cancellationToken),
-            "note" => await BuildNoteAsync(input, cancellationToken),
-            "rapport" or "report" => await BuildReportAsync(input, cancellationToken),
-            "crud" or "query" => await BuildCrudAsync(intentResult, cancellationToken),
-            _ => await GenerateChatAsync(input, cancellationToken)
-        };
-    }
-
-    private async Task<string> DescribeModuleAsync(string input, CancellationToken cancellationToken)
-    {
-        var design = await ModuleDesigner.GenerateModuleAsync(new ModuleDesignRequest { Prompt = input }, cancellationToken);
-        var module = design.Module;
-        var entities = module.EntityTypes.Any()
-            ? string.Join(", ", module.EntityTypes.Select(e => $"{e.Name} ({e.Fields.Count} champs)"))
-            : "Aucune entité proposée";
-
-        return $"Module généré: {module.Name}. Entités: {entities}.";
-    }
-
-    private async Task<string> BuildAgendaAsync(string input, CancellationToken cancellationToken)
-    {
-        var evt = await AgendaInterpreter.CreateEventAsync(input, cancellationToken);
-        var start = evt.Start.ToString("t");
-        var end = evt.End?.ToString("t") ?? "?";
-        return $"Événement proposé: {evt.Title} de {start} à {end}.";
-    }
-
-    private async Task<string> BuildNoteAsync(string input, CancellationToken cancellationToken)
-    {
-        var note = await NoteInterpreter.RefineNoteAsync("Note IA", input, cancellationToken);
-        return $"Note enrichie: {note.Title}\n{note.Content}";
-    }
-
-    private async Task<string> BuildReportAsync(string input, CancellationToken cancellationToken)
-    {
-        var report = await ReportInterpreter.BuildReportAsync(new ReportBuildRequest
-        {
-            ModuleId = DemoModule.Id,
-            Description = input,
-            PreferredVisualization = "list"
-        }, cancellationToken);
-
-        return $"Rapport IA: {report.Report.Name} (visualisation: {report.Report.Visualization ?? "n/a"}).";
-    }
-
-    private async Task<string> BuildCrudAsync(IntentDetectionResult intentResult, CancellationToken cancellationToken)
-    {
-        var interpretation = await CrudInterpreter.GenerateQueryAsync(new CrudQueryRequest
-        {
-            Intent = intentResult.Intent,
-            Module = DemoModule
-        }, cancellationToken);
-
-        var filters = interpretation.Filters.Count == 0
-            ? "aucun filtre"
-            : string.Join(", ", interpretation.Filters.Select(kvp => $"{kvp.Key}={kvp.Value}"));
-
-        return $"Action: {interpretation.Action}. Filtres: {filters}. Payload: {string.Join(", ", interpretation.Payload.Select(kvp => $"{kvp.Key}={kvp.Value}"))}.";
-    }
-
-    private async Task<string> GenerateChatAsync(string input, CancellationToken cancellationToken)
-    {
-        var reply = await TextGen.GenerateAsync(input, cancellationToken);
-        return reply.Content;
     }
 
     private void UseSuggestion(string suggestion)
