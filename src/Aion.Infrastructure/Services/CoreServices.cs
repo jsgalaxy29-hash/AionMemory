@@ -2173,7 +2173,10 @@ LIMIT $take OFFSET $skip;
             SourceId = history.Id,
             TargetType = table.Name,
             TargetId = recordId,
-            Relation = "record"
+            Relation = "record",
+            Type = "history",
+            CreatedBy = _currentUserService.GetCurrentUserId(),
+            Reason = "record history"
         });
 
         await _db.HistoryEvents.AddAsync(history, cancellationToken).ConfigureAwait(false);
@@ -2187,6 +2190,7 @@ public sealed class NoteService : IAionNoteService, INoteService
     private readonly IAudioTranscriptionProvider _transcriptionProvider;
     private readonly INoteTaggingService _taggingService;
     private readonly ISearchService _search;
+    private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<NoteService> _logger;
 
     public NoteService(
@@ -2195,6 +2199,7 @@ public sealed class NoteService : IAionNoteService, INoteService
         IAudioTranscriptionProvider transcriptionProvider,
         INoteTaggingService taggingService,
         ISearchService search,
+        ICurrentUserService currentUserService,
         ILogger<NoteService> logger)
     {
         _db = db;
@@ -2202,6 +2207,7 @@ public sealed class NoteService : IAionNoteService, INoteService
         _transcriptionProvider = transcriptionProvider;
         _taggingService = taggingService;
         _search = search;
+        _currentUserService = currentUserService;
         _logger = logger;
     }
 
@@ -2296,7 +2302,10 @@ public sealed class NoteService : IAionNoteService, INoteService
             SourceId = history.Id,
             TargetType = note.JournalContext ?? nameof(S_Note),
             TargetId = note.Id,
-            Relation = "note"
+            Relation = "note",
+            Type = "history",
+            CreatedBy = _currentUserService.GetCurrentUserId(),
+            Reason = "note created"
         });
 
         await _db.HistoryEvents.AddAsync(history, cancellationToken).ConfigureAwait(false);
@@ -2341,12 +2350,18 @@ public sealed class AionAgendaService : IAionAgendaService, IAgendaService
 {
     private readonly AionDbContext _db;
     private readonly INotificationService _notifications;
+    private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<AionAgendaService> _logger;
 
-    public AionAgendaService(AionDbContext db, INotificationService notifications, ILogger<AionAgendaService> logger)
+    public AionAgendaService(
+        AionDbContext db,
+        INotificationService notifications,
+        ICurrentUserService currentUserService,
+        ILogger<AionAgendaService> logger)
     {
         _db = db;
         _notifications = notifications;
+        _currentUserService = currentUserService;
         _logger = logger;
     }
 
@@ -2376,7 +2391,10 @@ public sealed class AionAgendaService : IAionAgendaService, IAgendaService
                 SourceId = history.Id,
                 TargetType = link.TargetType,
                 TargetId = link.TargetId,
-                Relation = "agenda"
+                Relation = "agenda",
+                Type = "history",
+                CreatedBy = _currentUserService.GetCurrentUserId(),
+                Reason = "agenda event"
             });
         }
 

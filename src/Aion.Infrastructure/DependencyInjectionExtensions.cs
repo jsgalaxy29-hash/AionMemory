@@ -163,6 +163,7 @@ public static class DependencyInjectionExtensions
         services.AddScoped<ISearchService, SemanticSearchService>();
         services.AddScoped<RecordSearchIndexService>();
         services.AddScoped<IAionVisionService, AionVisionService>();
+        services.AddScoped<ILinkGraphService, LinkGraphService>();
         services.AddScoped<ISyncEngine, SyncEngine>();
         services.AddScoped<SyncOutboxService>();
         services.AddScoped<IDataExportService, DataExportService>();

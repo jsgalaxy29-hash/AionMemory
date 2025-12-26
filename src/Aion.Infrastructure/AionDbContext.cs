@@ -317,6 +317,10 @@ public class AionDbContext : DbContext
             builder.Property(l => l.SourceType).IsRequired().HasMaxLength(128);
             builder.Property(l => l.TargetType).IsRequired().HasMaxLength(128);
             builder.Property(l => l.Relation).IsRequired().HasMaxLength(64);
+            builder.Property(l => l.Type).IsRequired().HasMaxLength(64);
+            builder.Property(l => l.CreatedBy).IsRequired();
+            builder.Property(l => l.Reason).HasMaxLength(512);
+            builder.HasIndex(l => new { l.SourceId, l.TargetId, l.Type });
         });
 
         modelBuilder.Entity<DashboardWidget>(builder =>

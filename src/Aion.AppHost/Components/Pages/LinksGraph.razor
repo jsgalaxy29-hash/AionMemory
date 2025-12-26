@@ -1,0 +1,189 @@
+@page "/links"
+@using Aion.Domain
+@inject ILinkGraphService LinkGraph
+
+<section class="page">
+    <header class="page__header">
+        <h1>Graphe sémantique</h1>
+        <p class="text-muted">Créez des liens et explorez les voisins ou la traversal simple.</p>
+    </header>
+
+    <div class="grid two">
+        <div class="card">
+            <h2>Créer un lien</h2>
+            <div class="form-grid">
+                <label class="text-muted">SourceId</label>
+                <InputText class="input" @bind-Value="_sourceIdInput" placeholder="GUID source" />
+                <label class="text-muted">TargetId</label>
+                <InputText class="input" @bind-Value="_targetIdInput" placeholder="GUID cible" />
+                <label class="text-muted">Type</label>
+                <InputText class="input" @bind-Value="_typeInput" />
+                <label class="text-muted">Reason</label>
+                <InputText class="input" @bind-Value="_reasonInput" placeholder="Pourquoi ce lien ?" />
+            </div>
+            <div style="margin-top:12px;">
+                <button class="button" @onclick="CreateLinkAsync">Créer</button>
+                @if (!string.IsNullOrWhiteSpace(_statusMessage))
+                {
+                    <p class="text-muted">@_statusMessage</p>
+                }
+            </div>
+        </div>
+        <div class="card">
+            <h2>Explorer</h2>
+            <div class="form-grid">
+                <label class="text-muted">RecordId racine</label>
+                <InputText class="input" @bind-Value="_rootIdInput" placeholder="GUID racine" />
+                <label class="text-muted">Depth</label>
+                <InputNumber class="input" @bind-Value="_depth" min="1" max="4" />
+                <label class="text-muted">Filtre Type (optionnel)</label>
+                <InputText class="input" @bind-Value="_filterType" placeholder="manual / ai / history" />
+            </div>
+            <div style="margin-top:12px;">
+                <button class="button secondary" @onclick="LoadGraphAsync">Charger</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid two" style="margin-top:16px;">
+        <div class="card">
+            <h2>Voisins</h2>
+            @if (_neighbors.Count == 0)
+            {
+                <p class="text-muted">Aucun lien.</p>
+            }
+            else
+            {
+                <ul class="list">
+                    @foreach (var link in _neighbors)
+                    {
+                        <li>
+                            <strong>@link.Type</strong> :
+                            @ShortId(link.SourceId) → @ShortId(link.TargetId)
+                            @if (!string.IsNullOrWhiteSpace(link.Reason))
+                            {
+                                <span class="text-muted">(@link.Reason)</span>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+        <div class="card">
+            <h2>Mini-graphe</h2>
+            @if (_graphNodes.Count == 0)
+            {
+                <p class="text-muted">Chargez un record pour afficher le graphe.</p>
+            }
+            else
+            {
+                <svg width="320" height="220" viewBox="0 0 320 220">
+                    @foreach (var link in _graphLinks)
+                    {
+                        if (_graphNodeLookup.TryGetValue(link.SourceId, out var source) &&
+                            _graphNodeLookup.TryGetValue(link.TargetId, out var target))
+                        {
+                            <line x1="@source.X" y1="@source.Y" x2="@target.X" y2="@target.Y" stroke="#94a3b8" stroke-width="1" />
+                        }
+                    }
+                    @foreach (var node in _graphNodes)
+                    {
+                        <circle cx="@node.X" cy="@node.Y" r="10" fill="@(node.Id == _rootNodeId ? "#38bdf8" : "#94a3b8")" />
+                        <text x="@node.X" y="@node.Y" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#0f172a">@node.Label</text>
+                    }
+                </svg>
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    private string? _sourceIdInput;
+    private string? _targetIdInput;
+    private string _typeInput = "manual";
+    private string? _reasonInput;
+    private string? _rootIdInput;
+    private int _depth = 2;
+    private string? _filterType;
+    private string? _statusMessage;
+    private IReadOnlyCollection<S_Link> _neighbors = Array.Empty<S_Link>();
+    private IReadOnlyCollection<S_Link> _graphLinks = Array.Empty<S_Link>();
+    private IReadOnlyList<GraphNode> _graphNodes = Array.Empty<GraphNode>();
+    private Dictionary<Guid, GraphNode> _graphNodeLookup = new();
+    private Guid? _rootNodeId;
+
+    private async Task CreateLinkAsync()
+    {
+        _statusMessage = null;
+        if (!Guid.TryParse(_sourceIdInput, out var sourceId) ||
+            !Guid.TryParse(_targetIdInput, out var targetId))
+        {
+            _statusMessage = "Veuillez fournir des GUID valides.";
+            return;
+        }
+
+        var request = new LinkCreateRequest(
+            sourceId,
+            targetId,
+            _typeInput,
+            _reasonInput);
+
+        var link = await LinkGraph.CreateLinkAsync(request);
+        _rootIdInput = sourceId.ToString();
+        _statusMessage = $"Lien créé: {ShortId(link.SourceId)} → {ShortId(link.TargetId)}";
+        await LoadGraphAsync();
+    }
+
+    private async Task LoadGraphAsync()
+    {
+        if (!Guid.TryParse(_rootIdInput, out var rootId))
+        {
+            _neighbors = Array.Empty<S_Link>();
+            _graphLinks = Array.Empty<S_Link>();
+            _graphNodes = Array.Empty<GraphNode>();
+            _graphNodeLookup = new Dictionary<Guid, GraphNode>();
+            _rootNodeId = null;
+            _statusMessage = "Guid racine invalide.";
+            return;
+        }
+
+        _neighbors = await LinkGraph.GetNeighborsAsync(rootId, _filterType);
+        var slice = await LinkGraph.TraverseAsync(rootId, _depth, _filterType);
+        _graphLinks = slice.Links;
+        _rootNodeId = rootId;
+        BuildGraph(slice.Nodes);
+    }
+
+    private void BuildGraph(IReadOnlyCollection<Guid> nodes)
+    {
+        var list = nodes.ToList();
+        if (list.Count == 0)
+        {
+            _graphNodes = Array.Empty<GraphNode>();
+            _graphNodeLookup = new Dictionary<Guid, GraphNode>();
+            return;
+        }
+
+        var centerX = 160.0;
+        var centerY = 110.0;
+        var radius = 70.0;
+        var step = Math.PI * 2 / list.Count;
+
+        var graphNodes = new List<GraphNode>();
+        for (var index = 0; index < list.Count; index++)
+        {
+            var angle = index * step;
+            var x = centerX + Math.Cos(angle) * radius;
+            var y = centerY + Math.Sin(angle) * radius;
+            graphNodes.Add(new GraphNode(list[index], x, y, ShortId(list[index])));
+        }
+
+        _graphNodes = graphNodes;
+        _graphNodeLookup = graphNodes.ToDictionary(node => node.Id, node => node);
+    }
+
+    private static string ShortId(Guid id)
+        => id.ToString("N")[..6];
+
+    private sealed record GraphNode(Guid Id, double X, double Y, string Label);
+}

@@ -21,7 +21,8 @@ public class AgendaServiceTests
         await context.Database.MigrateAsync();
 
         var notifications = new RecordingNotificationService();
-        var service = new AionAgendaService(context, notifications, NullLogger<AionAgendaService>.Instance);
+        var currentUserService = new FixedCurrentUserService(Guid.NewGuid());
+        var service = new AionAgendaService(context, notifications, currentUserService, NullLogger<AionAgendaService>.Instance);
 
         var recordId = Guid.NewGuid();
         var reminderAt = DateTimeOffset.UtcNow.AddHours(1);
@@ -50,6 +51,18 @@ public class AgendaServiceTests
         Assert.Equal(saved.Id, notifications.Scheduled[0].Id);
         Assert.Equal(reminderAt, notifications.Scheduled[0].ScheduledAt);
     }
+}
+
+file sealed class FixedCurrentUserService : ICurrentUserService
+{
+    private readonly Guid _userId;
+
+    public FixedCurrentUserService(Guid userId)
+    {
+        _userId = userId;
+    }
+
+    public Guid GetCurrentUserId() => _userId;
 }
 
 file sealed class RecordingNotificationService : INotificationService
