@@ -33,6 +33,7 @@ public static class AiAdapterServiceCollectionExtensions
         services.TryAddScoped<IAgendaInterpreter, SimpleAgendaInterpreter>();
         services.TryAddScoped<INoteInterpreter, SimpleNoteInterpreter>();
         services.TryAddScoped<IReportInterpreter, SimpleReportInterpreter>();
+        services.TryAddScoped<ITranscriptionMetadataInterpreter, TranscriptionMetadataInterpreter>();
         services.TryAddScoped<IMemoryAnalyzer, MemoryAnalyzer>();
         services.TryAddScoped<IMemoryContextBuilder, MemoryContextBuilder>();
         services.TryAddScoped<IChatAnswerer, ChatAnswerer>();
@@ -98,11 +99,17 @@ public sealed class BasicIntentDetector : IIntentDetector
         }) ?? NullScope.Instance;
         var stopwatch = Stopwatch.StartNew();
 
-        var response = await _provider.GenerateAsync($"Analyse l'intention: {request.Input}", cancellationToken).ConfigureAwait(false);
-        var raw = response.RawResponse ?? response.Content;
+        var prompt = $"Analyse l'intention: {request.Input}. Réponds uniquement en JSON strict: {StructuredJsonSchemas.Intent.Description}";
+        var structured = await StructuredJsonResponseHandler.GetValidJsonAsync(
+            _provider,
+            prompt,
+            StructuredJsonSchemas.Intent,
+            _logger,
+            cancellationToken).ConfigureAwait(false);
+        var raw = structured.RawResponse ?? structured.Json ?? string.Empty;
         var elapsedMs = stopwatch.Elapsed.TotalMilliseconds;
 
-        if (TryParseIntent(raw, out var parsed))
+        if (structured.IsValid && TryParseIntent(structured.Json, out var parsed))
         {
             _logger.LogInformation("Intent detection parsed response in {ElapsedMs}ms via {Provider}", elapsedMs, _provider.GetType().Name);
             return parsed with { RawResponse = raw };

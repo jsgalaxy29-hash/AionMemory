@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Net;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Linq;
@@ -51,7 +49,7 @@ public sealed class MistralTextGenerationProvider : IChatModel
 
         try
         {
-            var response = await HttpRetryHelper.SendWithRetryAsync(
+            var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "chat/completions")
                 {
@@ -99,23 +97,7 @@ public sealed class MistralTextGenerationProvider : IChatModel
         var client = _httpClientFactory.CreateClient(clientName);
         var resolvedEndpoint = endpoint ?? opts.BaseEndpoint ?? "https://api.mistral.ai/v1/";
 
-        if (client.BaseAddress is null && Uri.TryCreate(resolvedEndpoint, UriKind.Absolute, out var uri))
-        {
-            client.BaseAddress = uri;
-        }
-
-        client.Timeout = opts.RequestTimeout;
-
-        if (!string.IsNullOrWhiteSpace(opts.ApiKey) && client.DefaultRequestHeaders.Authorization is null)
-        {
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", opts.ApiKey);
-        }
-
-        foreach (var header in opts.DefaultHeaders)
-        {
-            client.DefaultRequestHeaders.Remove(header.Key);
-            client.DefaultRequestHeaders.Add(header.Key, header.Value);
-        }
+        AiHttpClientConfigurator.ConfigureClient(client, resolvedEndpoint, opts);
 
         return client;
     }
@@ -154,7 +136,7 @@ public sealed class MistralEmbeddingProvider : IEmbeddingsModel
         try
         {
             var payload = new { model = opts.EmbeddingModel ?? "mistral-embed", input = text };
-            var response = await HttpRetryHelper.SendWithRetryAsync(
+            var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "embeddings")
                 {
@@ -226,7 +208,7 @@ public sealed class MistralAudioTranscriptionProvider : ITranscriptionModel
 
         try
         {
-            var response = await HttpRetryHelper.SendWithRetryAsync(
+            var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "audio/transcriptions")
                 {

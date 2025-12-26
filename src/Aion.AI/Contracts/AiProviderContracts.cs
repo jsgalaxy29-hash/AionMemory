@@ -41,3 +41,14 @@ public interface ITranscriptionModel : IAudioTranscriptionProvider
 public interface IVisionModel : IVisionService
 {
 }
+
+public sealed record TranscriptionMetadata(string Language, string Summary, IReadOnlyList<string> Keywords, double? DurationSeconds);
+
+public sealed record TranscriptionMetadataResult(TranscriptionMetadata Metadata, string RawResponse, bool IsValid);
+
+public sealed record TranscriptionMetadataRequest(string Text, string? Locale = null, double? DurationSeconds = null);
+
+public interface ITranscriptionMetadataInterpreter
+{
+    Task<TranscriptionMetadataResult> ExtractAsync(TranscriptionMetadataRequest request, CancellationToken cancellationToken = default);
+}

@@ -93,6 +93,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAgendaInterpreter, AgendaInterpreter>();
         services.AddScoped<INoteInterpreter, NoteInterpreter>();
         services.AddScoped<IReportInterpreter, ReportInterpreter>();
+        services.AddScoped<ITranscriptionMetadataInterpreter, TranscriptionMetadataInterpreter>();
         services.AddScoped<IMemoryAnalyzer, MemoryAnalyzer>();
         services.AddScoped<IMemoryContextBuilder, MemoryContextBuilder>();
         services.AddScoped<IChatAnswerer, ChatAnswerer>();
@@ -113,23 +114,6 @@ public static class ServiceCollectionExtensions
                 HttpClientNames.Vision => options.VisionEndpoint ?? options.BaseEndpoint,
                 _ => options.BaseEndpoint
             };
-
-            if (Uri.TryCreate(endpoint ?? string.Empty, UriKind.Absolute, out var uri))
-            {
-                client.BaseAddress = uri;
-            }
-
-            client.Timeout = options.RequestTimeout;
-
-            if (!string.IsNullOrWhiteSpace(options.ApiKey))
-            {
-                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", options.ApiKey);
-            }
-
-            foreach (var header in options.DefaultHeaders)
-            {
-                client.DefaultRequestHeaders.Remove(header.Key);
-                client.DefaultRequestHeaders.Add(header.Key, header.Value);
-            }
+            AiHttpClientConfigurator.ConfigureClient(client, endpoint, options);
         };
 }

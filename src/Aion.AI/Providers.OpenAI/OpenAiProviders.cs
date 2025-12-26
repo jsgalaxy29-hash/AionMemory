@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Net;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Aion.Domain;
@@ -53,7 +51,7 @@ public sealed class OpenAiTextGenerationProvider : IChatModel
 
         try
         {
-            var response = await OpenAiRetryHelper.SendWithRetryAsync(
+            var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "chat/completions")
                 {
@@ -95,29 +93,7 @@ public sealed class OpenAiTextGenerationProvider : IChatModel
         var opts = _options.CurrentValue;
         var client = _httpClientFactory.CreateClient(clientName);
 
-        if (client.BaseAddress is null && Uri.TryCreate(endpoint ?? opts.BaseEndpoint ?? "https://api.openai.com/v1/", UriKind.Absolute, out var uri))
-        {
-            client.BaseAddress = uri;
-        }
-
-        client.Timeout = opts.RequestTimeout;
-
-        if (!string.IsNullOrWhiteSpace(opts.ApiKey) && client.DefaultRequestHeaders.Authorization is null)
-        {
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", opts.ApiKey);
-        }
-
-        if (!string.IsNullOrWhiteSpace(opts.Organization))
-        {
-            client.DefaultRequestHeaders.Remove("OpenAI-Organization");
-            client.DefaultRequestHeaders.Add("OpenAI-Organization", opts.Organization);
-        }
-
-        foreach (var header in opts.DefaultHeaders)
-        {
-            client.DefaultRequestHeaders.Remove(header.Key);
-            client.DefaultRequestHeaders.Add(header.Key, header.Value);
-        }
+        AiHttpClientConfigurator.ConfigureClient(client, endpoint ?? opts.BaseEndpoint ?? "https://api.openai.com/v1/", opts, includeOrganizationHeader: true);
 
         return client;
     }
@@ -156,7 +132,7 @@ public sealed class OpenAiEmbeddingProvider : IEmbeddingsModel
         try
         {
             var payload = new { model = opts.EmbeddingModel ?? "text-embedding-3-small", input = text };
-            var response = await OpenAiRetryHelper.SendWithRetryAsync(
+            var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "embeddings")
                 {
@@ -228,7 +204,7 @@ public sealed class OpenAiAudioTranscriptionProvider : ITranscriptionModel
 
         try
         {
-            var response = await OpenAiRetryHelper.SendWithRetryAsync(
+            var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "audio/transcriptions")
                 {
@@ -263,43 +239,4 @@ public sealed class OpenAiAudioTranscriptionProvider : ITranscriptionModel
             AiMetrics.RecordLatency(operation, providerName, opts.TranscriptionModel ?? "whisper-1", stopwatch.Elapsed);
         }
     }
-}
-
-internal static class OpenAiRetryHelper
-{
-    internal static async Task<HttpResponseMessage> SendWithRetryAsync(
-        HttpClient client,
-        Func<HttpRequestMessage> requestFactory,
-        ILogger logger,
-        string operationName,
-        string providerName,
-        CancellationToken cancellationToken)
-    {
-        const int maxAttempts = 3;
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            using var request = requestFactory();
-            var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
-
-            if (response.IsSuccessStatusCode || !ShouldRetry(response.StatusCode))
-            {
-                return response;
-            }
-
-            response.Dispose();
-
-            AiMetrics.RecordRetry(operationName, providerName);
-            var delay = GetRetryDelay(response.Headers.RetryAfter?.Delta, attempt);
-            logger.LogWarning("OpenAI request throttled (status {Status}), retrying in {Delay}s", response.StatusCode, delay.TotalSeconds);
-            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
-        }
-
-        return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
-    }
-
-    private static bool ShouldRetry(HttpStatusCode statusCode)
-        => statusCode == HttpStatusCode.TooManyRequests || (int)statusCode >= 500;
-
-    private static TimeSpan GetRetryDelay(TimeSpan? retryAfter, int attempt)
-        => retryAfter ?? TimeSpan.FromSeconds(Math.Pow(2, attempt));
 }
