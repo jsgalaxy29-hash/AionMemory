@@ -170,7 +170,7 @@ public sealed class BasicIntentDetector : IIntentDetector
         }) ?? NullScope.Instance;
         var stopwatch = Stopwatch.StartNew();
 
-        var prompt = $"Analyse l'intention: {request.Input}. Réponds uniquement en JSON strict: {StructuredJsonSchemas.Intent.Description}";
+        var prompt = $"Analyse l'intention: {request.Input}. Réponds uniquement en JSON strict: {StructuredJsonSchemas.Intent.Description}. Intentions attendues: {IntentCatalog.PromptIntents}.";
         var structured = await StructuredJsonResponseHandler.GetValidJsonAsync(
             _provider,
             prompt,
@@ -186,8 +186,9 @@ public sealed class BasicIntentDetector : IIntentDetector
             return parsed with { RawResponse = raw };
         }
 
-        _logger.LogWarning("Intent not parsed, fallback to chat intent after {ElapsedMs}ms ({Prompt})", elapsedMs, safePrompt);
-        return new IntentDetectionResult("chat", new Dictionary<string, string> { ["query"] = request.Input }, 0.42, raw);
+        _logger.LogWarning("Intent not parsed, fallback to heuristic intent after {ElapsedMs}ms ({Prompt})", elapsedMs, safePrompt);
+        var guessed = IntentHeuristics.Detect(request.Input);
+        return new IntentDetectionResult(guessed.Name, new Dictionary<string, string> { ["query"] = request.Input, ["fallback"] = "heuristic" }, 0.42, raw);
     }
 
     private static bool TryParseIntent(string? raw, out IntentDetectionResult result)
@@ -244,7 +245,18 @@ public sealed class BasicIntentDetector : IIntentDetector
                 return false;
             }
 
-            result = new IntentDetectionResult(intent, parameters, confidence, normalized);
+            var normalizedIntent = IntentCatalog.Normalize(intent);
+            if (normalizedIntent.Name != intent)
+            {
+                parameters["raw_intent"] = intent;
+            }
+
+            if (normalizedIntent.Name == IntentCatalog.Unknown && !IntentCatalog.IsUnknownName(intent))
+            {
+                return false;
+            }
+
+            result = new IntentDetectionResult(normalizedIntent.Name, parameters, confidence, normalized);
             return true;
         }
         catch (JsonException)

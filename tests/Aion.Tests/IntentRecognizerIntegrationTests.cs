@@ -18,9 +18,10 @@ public class IntentRecognizerIntegrationTests
 
         var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "ajoute une tâche" });
 
-        Assert.Equal("create_task", result.Intent);
+        Assert.Equal(IntentCatalog.Agenda, result.Intent);
         Assert.Equal(0.73, result.Confidence, 2);
         Assert.Equal("Planter", result.Parameters["title"]);
+        Assert.Equal("create_task", result.Parameters["raw_intent"]);
         Assert.Equal(payload, result.RawResponse);
     }
 

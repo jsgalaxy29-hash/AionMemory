@@ -87,6 +87,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IVisionService>(sp => sp.GetRequiredService<IVisionModel>());
 
         services.AddScoped<IIntentDetector, IntentRecognizer>();
+        services.AddScoped<IIntentRouter, IntentRouter>();
         services.AddScoped<IModuleDesigner, ModuleDesigner>();
         services.AddScoped<IModuleSpecDesigner, ModuleSpecDesigner>();
         services.AddScoped<ModuleDesignerService>();

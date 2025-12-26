@@ -18,9 +18,10 @@ public class OrchestratorTests
 
         var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "ajoute une note" });
 
-        Assert.Equal("create_note", result.Intent);
+        Assert.Equal(IntentCatalog.Note, result.Intent);
         Assert.Equal(0.82, result.Confidence, 2);
         Assert.Equal("Hello", result.Parameters["title"]);
+        Assert.Equal("create_note", result.Parameters["raw_intent"]);
         Assert.Equal(provider.Payload, result.RawResponse);
     }
 

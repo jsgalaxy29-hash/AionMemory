@@ -67,7 +67,7 @@ public class AiProviderSelectionTests
 
         var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "ping" });
 
-        Assert.Equal("unknown", result.Intent);
+        Assert.Equal(IntentCatalog.Chat, result.Intent);
         Assert.Equal("ping", result.Parameters["raw"]);
     }
 
@@ -82,7 +82,7 @@ public class AiProviderSelectionTests
 
         var result = await recognizer.DetectAsync(new IntentDetectionRequest { Input = "ping" });
 
-        Assert.Equal("unknown", result.Intent);
+        Assert.Equal(IntentCatalog.Chat, result.Intent);
         Assert.Contains("timeout", result.Parameters["error"]);
     }
 
