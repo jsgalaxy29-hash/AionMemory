@@ -309,7 +309,10 @@ public class AionDbContext : DbContext
         {
             builder.Property(t => t.Name).IsRequired().HasMaxLength(128);
             builder.Property(t => t.Description).HasMaxLength(512);
+            builder.Property(t => t.Author).HasMaxLength(128);
+            builder.Property(t => t.Signature).HasMaxLength(128);
             builder.Property(t => t.Payload).IsRequired();
+            builder.Property(t => t.AssetsManifest);
             builder.Property(t => t.Version).IsRequired().HasMaxLength(32);
         });
 
