@@ -63,6 +63,7 @@ public class AionDbContext : DbContext
     public DbSet<MemoryInsight> MemoryInsights => Set<MemoryInsight>();
     public DbSet<KnowledgeNode> KnowledgeNodes => Set<KnowledgeNode>();
     public DbSet<KnowledgeEdge> KnowledgeEdges => Set<KnowledgeEdge>();
+    public DbSet<SyncOutboxItem> SyncOutbox => Set<SyncOutboxItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -424,6 +425,16 @@ public class AionDbContext : DbContext
             builder.HasOne<KnowledgeNode>().WithMany().HasForeignKey(e => e.ToNodeId).OnDelete(DeleteBehavior.Cascade);
             builder.HasIndex(e => new { e.FromNodeId, e.ToNodeId, e.RelationType }).IsUnique();
             builder.HasIndex(e => e.RelationType);
+        });
+
+        modelBuilder.Entity<SyncOutboxItem>(builder =>
+        {
+            builder.Property(o => o.Path).IsRequired().HasMaxLength(512);
+            builder.Property(o => o.Action).HasConversion<string>().HasMaxLength(16);
+            builder.Property(o => o.EnqueuedAt).IsRequired();
+            builder.Property(o => o.Status).HasConversion<string>().HasMaxLength(16);
+            builder.HasIndex(o => new { o.Status, o.EnqueuedAt });
+            builder.ToTable("SyncOutbox");
         });
 
         ConfigureWorkspacePartitioning(modelBuilder);

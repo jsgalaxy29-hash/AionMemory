@@ -142,6 +142,7 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IMemoryIntelligenceService, MemoryIntelligenceService>();
         services.AddScoped<ISearchService, SemanticSearchService>();
         services.AddScoped<ISyncEngine, SyncEngine>();
+        services.AddScoped<SyncOutboxService>();
         services.AddScoped<IDataExportService, DataExportService>();
         services.AddScoped<IDataImportService, DataImportService>();
         services.AddScoped<IModuleValidator, ModuleValidator>();
