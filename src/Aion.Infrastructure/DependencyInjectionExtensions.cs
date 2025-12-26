@@ -155,6 +155,7 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IMemoryIntelligenceService, MemoryIntelligenceService>();
         services.AddScoped<ISearchService, SemanticSearchService>();
         services.AddScoped<RecordSearchIndexService>();
+        services.AddScoped<IAionVisionService, AionVisionService>();
         services.AddScoped<ISyncEngine, SyncEngine>();
         services.AddScoped<SyncOutboxService>();
         services.AddScoped<IDataExportService, DataExportService>();

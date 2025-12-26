@@ -82,8 +82,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ILLMProvider>(sp => sp.GetRequiredService<IChatModel>());
         services.AddScoped<IEmbeddingProvider>(sp => sp.GetRequiredService<IEmbeddingsModel>());
         services.AddScoped<IAudioTranscriptionProvider>(sp => sp.GetRequiredService<ITranscriptionModel>());
-        services.AddScoped<IAionVisionService>(sp => sp.GetRequiredService<IVisionModel>());
-        services.AddScoped<IVisionService>(sp => sp.GetRequiredService<IVisionModel>());
+        services.TryAddScoped<IAionVisionService>(sp => sp.GetRequiredService<IVisionModel>());
+        services.TryAddScoped<IVisionService>(sp => sp.GetRequiredService<IVisionModel>());
 
         services.AddScoped<IIntentDetector, IntentRecognizer>();
         services.AddScoped<IModuleDesigner, ModuleDesigner>();

@@ -71,7 +71,7 @@ public sealed class SemanticSearchService : ISearchService
 
     public Task IndexFileAsync(F_File file, CancellationToken cancellationToken = default)
     {
-        var content = string.Join(" ", new[] { file.FileName, file.MimeType, file.ThumbnailPath })
+        var content = string.Join(" ", new[] { file.FileName, file.MimeType, file.ThumbnailPath, file.OcrText })
             .Trim();
         return UpsertSemanticEntryAsync("File", file.Id, file.FileName, content, cancellationToken);
     }

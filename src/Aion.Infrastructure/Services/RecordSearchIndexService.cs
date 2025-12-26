@@ -122,10 +122,35 @@ public sealed class RecordSearchIndexService
         var lookupTokens = await ResolveLookupLabelsAsync(table, values, cancellationToken).ConfigureAwait(false);
         tokens.AddRange(lookupTokens);
 
+        var fileTokens = await BuildLinkedFileTokensAsync(record.Id, cancellationToken).ConfigureAwait(false);
+        tokens.AddRange(fileTokens);
+
         var normalized = string.Join(" ", tokens.Where(token => !string.IsNullOrWhiteSpace(token)));
         return string.IsNullOrWhiteSpace(normalized)
             ? record.DataJson
             : $"{normalized} {record.DataJson}".Trim();
+    }
+
+    private async Task<IReadOnlyCollection<string>> BuildLinkedFileTokensAsync(Guid recordId, CancellationToken cancellationToken)
+    {
+        var tokens = new List<string>();
+        var linked = await _db.FileLinks
+            .AsNoTracking()
+            .Where(link => link.TargetId == recordId)
+            .Join(_db.Files.AsNoTracking(),
+                link => link.FileId,
+                file => file.Id,
+                (_, file) => file)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var file in linked)
+        {
+            AppendToken(tokens, file.FileName);
+            AppendToken(tokens, file.OcrText);
+        }
+
+        return tokens;
     }
 
     private async Task<IReadOnlyCollection<string>> ResolveLookupLabelsAsync(
