@@ -131,7 +131,7 @@
                 var now = DateTimeOffset.UtcNow;
                 var from = now.AddDays(-TimelineWindowDays);
                 var to = now.AddDays(TimelineWindowDays);
-                var events = await agendaSvc.GetEventsAsync(from, to, _loadCts.Token).ConfigureAwait(false);
+                var events = await agendaSvc.GetOccurrencesAsync(from, to, _loadCts.Token).ConfigureAwait(false);
                 entries.AddRange(events.Where(MatchesContext)
                     .Select(e => new TimelineEntry(e.Id, e.Title, e.Description, e.Start, "Évènement", Array.Empty<string>())));
             }

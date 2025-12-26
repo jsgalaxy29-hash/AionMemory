@@ -138,7 +138,30 @@ file sealed class RecordingAgendaService : IAgendaService
         return Task.FromResult(evt);
     }
 
+    public Task<S_Event> UpdateEventAsync(S_Event evt, CancellationToken cancellationToken = default)
+    {
+        var index = Events.FindIndex(existing => existing.Id == evt.Id);
+        if (index >= 0)
+        {
+            Events[index] = evt;
+        }
+        else
+        {
+            Events.Add(evt);
+        }
+        return Task.FromResult(evt);
+    }
+
+    public Task DeleteEventAsync(Guid eventId, CancellationToken cancellationToken = default)
+    {
+        Events.RemoveAll(evt => evt.Id == eventId);
+        return Task.CompletedTask;
+    }
+
     public Task<IEnumerable<S_Event>> GetEventsAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default)
+        => Task.FromResult<IEnumerable<S_Event>>(Events);
+
+    public Task<IEnumerable<S_Event>> GetOccurrencesAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default)
         => Task.FromResult<IEnumerable<S_Event>>(Events);
 
     public Task<IEnumerable<S_Event>> GetPendingRemindersAsync(DateTimeOffset asOf, CancellationToken cancellationToken = default)

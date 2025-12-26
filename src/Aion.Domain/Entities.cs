@@ -247,8 +247,19 @@ public class S_Event
     public DateTimeOffset Start { get; set; }
     public DateTimeOffset? End { get; set; }
     public DateTimeOffset? ReminderAt { get; set; }
+    public EventRecurrenceFrequency? RecurrenceFrequency { get; set; }
+    public int? RecurrenceInterval { get; set; }
+    public int? RecurrenceCount { get; set; }
+    public DateTimeOffset? RecurrenceUntil { get; set; }
     public bool IsCompleted { get; set; }
     public ICollection<J_Event_Link> Links { get; set; } = new List<J_Event_Link>();
+}
+
+public enum EventRecurrenceFrequency
+{
+    Daily = 1,
+    Weekly = 2,
+    Monthly = 3
 }
 
 public class J_Event_Link

@@ -77,8 +77,19 @@ public interface INoteTaggingService
 public interface IAgendaService
 {
     Task<S_Event> AddEventAsync(S_Event evt, CancellationToken cancellationToken = default);
+    Task<S_Event> UpdateEventAsync(S_Event evt, CancellationToken cancellationToken = default);
+    Task DeleteEventAsync(Guid eventId, CancellationToken cancellationToken = default);
     Task<IEnumerable<S_Event>> GetEventsAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default);
+    Task<IEnumerable<S_Event>> GetOccurrencesAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default);
     Task<IEnumerable<S_Event>> GetPendingRemindersAsync(DateTimeOffset asOf, CancellationToken cancellationToken = default);
+}
+
+public readonly record struct NotificationRequest(Guid Id, string Title, string Body, DateTimeOffset ScheduledAt);
+
+public interface INotificationService
+{
+    Task ScheduleAsync(NotificationRequest request, CancellationToken cancellationToken = default);
+    Task CancelAsync(Guid notificationId, CancellationToken cancellationToken = default);
 }
 
 public interface IFileStorageService

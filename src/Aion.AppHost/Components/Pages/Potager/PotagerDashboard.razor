@@ -34,7 +34,7 @@
     protected override async Task OnInitializedAsync()
     {
         var now = DateTimeOffset.Now;
-        UpcomingEvents = await AgendaService.GetEventsAsync(now, now.AddDays(14));
+        UpcomingEvents = await AgendaService.GetOccurrencesAsync(now, now.AddDays(14));
     }
 
     private void OpenAgenda() => Navigation.NavigateTo("/agenda/potager");
