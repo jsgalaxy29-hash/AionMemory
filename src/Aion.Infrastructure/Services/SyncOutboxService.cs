@@ -6,10 +6,12 @@ namespace Aion.Infrastructure.Services;
 public sealed class SyncOutboxService
 {
     private readonly AionDbContext _db;
+    private readonly ILifeService _timeline;
 
-    public SyncOutboxService(AionDbContext db)
+    public SyncOutboxService(AionDbContext db, ILifeService timeline)
     {
         _db = db;
+        _timeline = timeline;
     }
 
     public async Task<SyncOutboxItem> EnqueueAsync(SyncItem item, SyncAction action, CancellationToken cancellationToken = default)
@@ -28,6 +30,12 @@ public sealed class SyncOutboxService
 
         _db.SyncOutbox.Add(entry);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await _timeline.AddHistoryAsync(new S_HistoryEvent
+        {
+            Title = "Synchronisation en attente",
+            Description = entry.Path,
+            OccurredAt = DateTimeOffset.UtcNow
+        }, cancellationToken).ConfigureAwait(false);
         return entry;
     }
 
@@ -71,5 +79,24 @@ public sealed class SyncOutboxService
         }
 
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        var title = status switch
+        {
+            SyncOutboxStatus.Applied => "Synchronisation appliquée",
+            SyncOutboxStatus.Conflict => "Synchronisation en conflit",
+            SyncOutboxStatus.Failed => "Synchronisation échouée",
+            _ => "Synchronisation mise à jour"
+        };
+
+        var description = string.IsNullOrWhiteSpace(reason)
+            ? entry.Path
+            : $"{entry.Path} — {reason}";
+
+        await _timeline.AddHistoryAsync(new S_HistoryEvent
+        {
+            Title = title,
+            Description = description,
+            OccurredAt = entry.LastAttemptAt ?? DateTimeOffset.UtcNow
+        }, cancellationToken).ConfigureAwait(false);
     }
 }

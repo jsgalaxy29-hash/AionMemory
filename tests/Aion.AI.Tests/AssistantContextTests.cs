@@ -103,6 +103,16 @@ public class AssistantContextTests
             return Task.FromResult(evt);
         }
 
+        public Task<TimelinePage> GetTimelinePageAsync(TimelineQuery query, CancellationToken cancellationToken = default)
+        {
+            var items = _events
+                .Skip(query.NormalizedSkip)
+                .Take(query.NormalizedTake)
+                .ToList();
+            var hasMore = _events.Count > query.NormalizedSkip + items.Count;
+            return Task.FromResult(new TimelinePage(items, hasMore, query.NormalizedSkip + items.Count));
+        }
+
         public Task<IEnumerable<S_HistoryEvent>> GetTimelineAsync(DateTimeOffset? from = null, DateTimeOffset? to = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IEnumerable<S_HistoryEvent>>(_events);
     }

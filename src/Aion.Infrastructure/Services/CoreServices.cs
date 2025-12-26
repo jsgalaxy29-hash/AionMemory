@@ -308,6 +308,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
             await UpsertRecordEmbeddingAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
             await AddAuditEntryAsync(tableId, record.Id, ChangeType.Create, record.DataJson, null, record.Version, now, cancellationToken).ConfigureAwait(false);
+            await AddRecordHistoryAsync(table, record.Id, "Enregistrement créé", validated.Values, now, cancellationToken).ConfigureAwait(false);
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Record {RecordId} inserted for table {TableId} in {ElapsedMs}ms", record.Id, tableId, operation.Elapsed.TotalMilliseconds);
             await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
@@ -357,6 +358,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
             await UpsertRecordIndexesAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
             await UpsertRecordEmbeddingAsync(table, record, validated.Values, cancellationToken).ConfigureAwait(false);
             await AddAuditEntryAsync(tableId, id, ChangeType.Update, record.DataJson, previousDataJson, record.Version, now, cancellationToken).ConfigureAwait(false);
+            await AddRecordHistoryAsync(table, record.Id, "Enregistrement mis à jour", validated.Values, now, cancellationToken).ConfigureAwait(false);
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Record {RecordId} updated for table {TableId} in {ElapsedMs}ms", id, tableId, operation.Elapsed.TotalMilliseconds);
             await _search.IndexRecordAsync(record, cancellationToken).ConfigureAwait(false);
@@ -410,6 +412,8 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
         }
 
         await AddAuditEntryAsync(tableId, id, changeType, snapshotJson, snapshotJson, nextVersion, now, cancellationToken).ConfigureAwait(false);
+        var deletedValues = ParseJsonPayload(snapshotJson);
+        await AddRecordHistoryAsync(table, id, "Enregistrement supprimé", deletedValues, now, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Record {RecordId} deleted for table {TableId} in {ElapsedMs}ms", id, tableId, operation.Elapsed.TotalMilliseconds);
         await _search.RemoveAsync("Record", id, cancellationToken).ConfigureAwait(false);
@@ -2127,6 +2131,53 @@ LIMIT $take OFFSET $skip;
 
         return values.Values.Select(v => v?.ToString()).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
     }
+
+    private static string? ResolveRecordLabel(STable table, IReadOnlyDictionary<string, object?> values)
+    {
+        var templateLabel = ApplyRowLabelTemplate(table.RowLabelTemplate, values);
+        if (!string.IsNullOrWhiteSpace(templateLabel))
+        {
+            return templateLabel;
+        }
+
+        return GetFirstTextValue(table, values);
+    }
+
+    private async Task<Guid?> ResolveModuleIdAsync(Guid tableId, CancellationToken cancellationToken)
+        => await _db.EntityTypes.AsNoTracking()
+            .Where(entity => entity.Id == tableId)
+            .Select(entity => (Guid?)entity.ModuleId)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+    private async Task AddRecordHistoryAsync(
+        STable table,
+        Guid recordId,
+        string title,
+        IReadOnlyDictionary<string, object?> values,
+        DateTimeOffset occurredAt,
+        CancellationToken cancellationToken)
+    {
+        var history = new S_HistoryEvent
+        {
+            Title = title,
+            Description = ResolveRecordLabel(table, values),
+            OccurredAt = occurredAt,
+            ModuleId = await ResolveModuleIdAsync(table.Id, cancellationToken).ConfigureAwait(false),
+            Links = new List<S_Link>()
+        };
+
+        history.Links.Add(new S_Link
+        {
+            SourceType = nameof(S_HistoryEvent),
+            SourceId = history.Id,
+            TargetType = table.Name,
+            TargetId = recordId,
+            Relation = "record"
+        });
+
+        await _db.HistoryEvents.AddAsync(history, cancellationToken).ConfigureAwait(false);
+    }
 }
 
 public sealed class NoteService : IAionNoteService, INoteService
@@ -2237,6 +2288,8 @@ public sealed class NoteService : IAionNoteService, INoteService
             Links = new List<S_Link>()
         };
 
+        history.ModuleId = await ResolveModuleIdAsync(note.Links.Select(l => l.TargetType), cancellationToken).ConfigureAwait(false);
+
         history.Links.Add(new S_Link
         {
             SourceType = nameof(S_HistoryEvent),
@@ -2251,6 +2304,36 @@ public sealed class NoteService : IAionNoteService, INoteService
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Note {NoteId} persisted (source={Source})", note.Id, note.Source);
         await _search.IndexNoteAsync(note, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<Guid?> ResolveModuleIdAsync(IEnumerable<string> targetTypes, CancellationToken cancellationToken)
+    {
+        var normalized = targetTypes
+            .Where(type => !string.IsNullOrWhiteSpace(type))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (normalized.Length == 0)
+        {
+            return null;
+        }
+
+        var tableIds = await _db.Tables.AsNoTracking()
+            .Where(table => normalized.Contains(table.Name))
+            .Select(table => table.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (tableIds.Count == 0)
+        {
+            return null;
+        }
+
+        return await _db.EntityTypes.AsNoTracking()
+            .Where(entity => tableIds.Contains(entity.Id))
+            .Select(entity => (Guid?)entity.ModuleId)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 }
 
@@ -2282,6 +2365,8 @@ public sealed class AionAgendaService : IAionAgendaService, IAgendaService
             OccurredAt = DateTimeOffset.UtcNow,
             Links = new List<S_Link>()
         };
+
+        history.ModuleId = await ResolveModuleIdAsync(evt.Links.Select(l => l.TargetType), cancellationToken).ConfigureAwait(false);
 
         foreach (var link in evt.Links)
         {
@@ -2529,6 +2614,36 @@ public sealed class AionAgendaService : IAionAgendaService, IAgendaService
             new NotificationRequest(evt.Id, evt.Title, evt.Description ?? evt.Title, evt.ReminderAt.Value),
             cancellationToken).ConfigureAwait(false);
     }
+
+    private async Task<Guid?> ResolveModuleIdAsync(IEnumerable<string> targetTypes, CancellationToken cancellationToken)
+    {
+        var normalized = targetTypes
+            .Where(type => !string.IsNullOrWhiteSpace(type))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (normalized.Length == 0)
+        {
+            return null;
+        }
+
+        var tableIds = await _db.Tables.AsNoTracking()
+            .Where(table => normalized.Contains(table.Name))
+            .Select(table => table.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (tableIds.Count == 0)
+        {
+            return null;
+        }
+
+        return await _db.EntityTypes.AsNoTracking()
+            .Where(entity => tableIds.Contains(entity.Id))
+            .Select(entity => (Guid?)entity.ModuleId)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
 }
 
 public sealed class FileStorageService : IFileStorageService
@@ -2739,13 +2854,15 @@ public sealed class TemplateService : IAionTemplateMarketplaceService, ITemplate
     private readonly ISecurityAuditService _securityAudit;
     private readonly ICurrentUserService _currentUserService;
     private readonly IModuleApplier _moduleApplier;
+    private readonly ILifeService _timeline;
 
     public TemplateService(
         AionDbContext db,
         IOptions<MarketplaceOptions> options,
         ISecurityAuditService securityAudit,
         ICurrentUserService currentUserService,
-        IModuleApplier moduleApplier)
+        IModuleApplier moduleApplier,
+        ILifeService timeline)
     {
         _db = db;
         ArgumentNullException.ThrowIfNull(options);
@@ -2753,6 +2870,7 @@ public sealed class TemplateService : IAionTemplateMarketplaceService, ITemplate
         _securityAudit = securityAudit;
         _currentUserService = currentUserService;
         _moduleApplier = moduleApplier;
+        _timeline = timeline;
         Directory.CreateDirectory(_marketplaceFolder);
     }
 
@@ -2807,6 +2925,13 @@ public sealed class TemplateService : IAionTemplateMarketplaceService, ITemplate
                 ["templateId"] = package.Id,
                 ["version"] = package.Version
             }), cancellationToken).ConfigureAwait(false);
+        await _timeline.AddHistoryAsync(new S_HistoryEvent
+        {
+            Title = "Module exporté",
+            Description = module.Name,
+            OccurredAt = DateTimeOffset.UtcNow,
+            ModuleId = module.Id
+        }, cancellationToken).ConfigureAwait(false);
         return package;
     }
 
@@ -2850,6 +2975,13 @@ public sealed class TemplateService : IAionTemplateMarketplaceService, ITemplate
                 ["templateId"] = package.Id,
                 ["version"] = package.Version
             }), cancellationToken).ConfigureAwait(false);
+        await _timeline.AddHistoryAsync(new S_HistoryEvent
+        {
+            Title = "Module importé",
+            Description = module.Name,
+            OccurredAt = DateTimeOffset.UtcNow,
+            ModuleId = module.Id
+        }, cancellationToken).ConfigureAwait(false);
         return module;
     }
 
@@ -3349,6 +3481,45 @@ public sealed class LifeService : IAionLifeLogService, ILifeService
         await _db.HistoryEvents.AddAsync(evt, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return evt;
+    }
+
+    public async Task<TimelinePage> GetTimelinePageAsync(TimelineQuery query, CancellationToken cancellationToken = default)
+    {
+        var take = query.NormalizedTake;
+        var skip = query.NormalizedSkip;
+
+        var eventsQuery = _db.HistoryEvents.Include(h => h.Links).AsQueryable();
+        if (query.ModuleId.HasValue)
+        {
+            eventsQuery = eventsQuery.Where(h => h.ModuleId == query.ModuleId.Value);
+        }
+
+        if (query.From.HasValue)
+        {
+            eventsQuery = eventsQuery.Where(h => h.OccurredAt >= query.From.Value);
+        }
+
+        if (query.To.HasValue)
+        {
+            eventsQuery = eventsQuery.Where(h => h.OccurredAt <= query.To.Value);
+        }
+
+        var results = await eventsQuery
+            .OrderByDescending(h => h.OccurredAt)
+            .ThenByDescending(h => h.Id)
+            .Skip(skip)
+            .Take(take + 1)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var hasMore = results.Count > take;
+        if (hasMore)
+        {
+            results.RemoveAt(results.Count - 1);
+        }
+
+        var nextSkip = skip + results.Count;
+        return new TimelinePage(results, hasMore, nextSkip);
     }
 
     public async Task<IEnumerable<S_HistoryEvent>> GetTimelineAsync(DateTimeOffset? from = null, DateTimeOffset? to = null, CancellationToken cancellationToken = default)

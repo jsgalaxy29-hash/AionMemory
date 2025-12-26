@@ -153,7 +153,7 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IAutomationService>(sp => sp.GetRequiredService<IAionAutomationService>());
         services.AddScoped<IAionTemplateMarketplaceService, TemplateService>();
         services.AddScoped<ITemplateService>(sp => sp.GetRequiredService<IAionTemplateMarketplaceService>());
-        services.AddScoped<IAionLifeLogService, LifeService>();
+        services.AddScoped<IAionLifeLogService, TimelineService>();
         services.AddScoped<ILifeService>(sp => sp.GetRequiredService<IAionLifeLogService>());
         services.AddScoped<IAionPredictionService, PredictService>();
         services.AddScoped<IPredictService>(sp => sp.GetRequiredService<IAionPredictionService>());

@@ -395,6 +395,7 @@ public class S_VisionAnalysis
 public class S_HistoryEvent
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? ModuleId { get; set; }
     [Required, StringLength(256)]
     public string Title { get; set; } = string.Empty;
     [StringLength(1024)]
