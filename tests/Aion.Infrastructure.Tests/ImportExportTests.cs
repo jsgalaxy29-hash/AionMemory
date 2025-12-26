@@ -55,7 +55,7 @@ public sealed class ImportExportTests : IAsyncLifetime
             var operationScopeFactory = new OperationScopeFactory();
             var dataEngine = new AionDataEngine(context, NullLogger<AionDataEngine>.Instance, search, operationScopeFactory, new NullAutomationRuleEngine(), new CurrentUserService());
             var fileStorage = new FileStorageService(storageOptions, context, search, storage, NullLogger<FileStorageService>.Instance);
-            var moduleValidator = new ModuleValidator(context);
+            var moduleValidator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
             var moduleApplier = new ModuleApplier(context, moduleValidator, NullLogger<ModuleApplier>.Instance, operationScopeFactory);
             var exportService = new DataExportService(context, storage, storageOptions, NullLogger<DataExportService>.Instance);
 
@@ -99,7 +99,7 @@ public sealed class ImportExportTests : IAsyncLifetime
             var operationScopeFactory = new OperationScopeFactory();
             var dataEngine = new AionDataEngine(importContext, NullLogger<AionDataEngine>.Instance, search, operationScopeFactory, new NullAutomationRuleEngine(), new CurrentUserService());
             var fileStorage = new FileStorageService(storageOptions, importContext, search, storage, NullLogger<FileStorageService>.Instance);
-            var moduleValidator = new ModuleValidator(importContext);
+            var moduleValidator = new ModuleValidator(importContext, NullLogger<ModuleValidator>.Instance);
             var moduleApplier = new ModuleApplier(importContext, moduleValidator, NullLogger<ModuleApplier>.Instance, operationScopeFactory);
             var importService = new DataImportService(importContext, moduleApplier, dataEngine, fileStorage, storage, storageOptions, NullLogger<DataImportService>.Instance);
 

@@ -24,7 +24,7 @@ public class EndToEndSmokeTests : IClassFixture<SqliteInMemoryFixture>
     public async Task Module_applier_and_data_engine_smoke_path_is_healthy()
     {
         await using var context = _fixture.CreateContext();
-        var validator = new ModuleValidator(context);
+        var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
         var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
 
         var spec = BuildSmokeSpec();
