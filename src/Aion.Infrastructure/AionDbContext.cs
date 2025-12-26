@@ -308,6 +308,7 @@ public class AionDbContext : DbContext
         {
             builder.Property(h => h.Title).IsRequired().HasMaxLength(256);
             builder.Property(h => h.Description).HasMaxLength(1024);
+            builder.HasIndex(h => new { h.ModuleId, h.OccurredAt });
             builder.HasMany(h => h.Links).WithOne().HasForeignKey(l => l.SourceId);
         });
 

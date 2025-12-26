@@ -1103,6 +1103,9 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("ModuleId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("OccurredAt")
                         .HasColumnType("TEXT");
 
@@ -1115,6 +1118,8 @@ namespace Aion.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ModuleId", "OccurredAt");
 
                     b.HasIndex("WorkspaceId");
 

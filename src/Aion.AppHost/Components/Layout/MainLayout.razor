@@ -19,6 +19,7 @@
             <div class="app-shell__nav-title">Navigation</div>
             <button class="button secondary full-width" @onclick="NavigateHome">Accueil</button>
             <button class="button secondary full-width" @onclick="NavigateDashboard">Dashboard</button>
+            <button class="button secondary full-width" @onclick="NavigateTimeline">Timeline</button>
             <button class="button secondary full-width" @onclick="NavigateAutomations">Automatisations</button>
             <button class="button secondary full-width" @onclick="NavigateBackups">Backups</button>
         </div>
@@ -148,6 +149,7 @@
         var target = State.CurrentModule?.Name?.ToLowerInvariant() ?? "global";
         Navigation.NavigateTo($"/dashboard/{target}");
     }
+    private void NavigateTimeline() => Navigation.NavigateTo("/timeline");
     private void NavigateAutomations() => Navigation.NavigateTo("/automations");
     private void NavigateModules() => Navigation.NavigateTo("/modules");
     private void NavigateExtensions() => Navigation.NavigateTo("/extensions");
