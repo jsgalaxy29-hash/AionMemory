@@ -1,8 +1,6 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
-using System.Net;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Aion.Domain;
@@ -52,7 +50,7 @@ public sealed class HttpTextGenerationProvider : IChatModel
         };
         try
         {
-            var response = await HttpRetryHelper.SendWithRetryAsync(
+            var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "chat/completions")
                 {
@@ -97,53 +95,8 @@ public sealed class HttpTextGenerationProvider : IChatModel
     }
     internal static void EnsureClientConfigured(HttpClient client, string? endpoint, AionAiOptions options)
     {
-        if (client.BaseAddress is null && Uri.TryCreate(endpoint ?? options.BaseEndpoint ?? string.Empty, UriKind.Absolute, out var uri))
-        {
-            client.BaseAddress = uri;
-        }
-        client.Timeout = options.RequestTimeout;
-        if (!string.IsNullOrWhiteSpace(options.ApiKey) && client.DefaultRequestHeaders.Authorization is null)
-        {
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
-        }
-        foreach (var header in options.DefaultHeaders)
-        {
-            client.DefaultRequestHeaders.Remove(header.Key);
-            client.DefaultRequestHeaders.Add(header.Key, header.Value);
-        }
+        AiHttpClientConfigurator.ConfigureClient(client, endpoint, options);
     }
-}
-internal static class HttpRetryHelper
-{
-    internal static async Task<HttpResponseMessage> SendWithRetryAsync(
-        HttpClient client,
-        Func<HttpRequestMessage> requestFactory,
-        ILogger logger,
-        string operationName,
-        string providerName,
-        CancellationToken cancellationToken)
-    {
-        const int maxAttempts = 3;
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            using var request = requestFactory();
-            var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
-            if (response.IsSuccessStatusCode || !ShouldRetry(response.StatusCode))
-            {
-                return response;
-            }
-            response.Dispose();
-            AiMetrics.RecordRetry(operationName, providerName);
-            var delay = GetDelay(response.Headers.RetryAfter?.Delta, attempt);
-            logger.LogWarning("Request throttled (status {Status}); retrying in {Delay}s", response.StatusCode, delay.TotalSeconds);
-            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
-        }
-        return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
-    }
-    private static bool ShouldRetry(HttpStatusCode statusCode)
-        => statusCode == HttpStatusCode.TooManyRequests || (int)statusCode >= 500;
-    private static TimeSpan GetDelay(TimeSpan? retryAfter, int attempt)
-        => retryAfter ?? TimeSpan.FromSeconds(Math.Pow(2, attempt));
 }
 
 internal static class JsonHelper
@@ -202,7 +155,7 @@ public sealed class HttpEmbeddingProvider : IEmbeddingsModel
         try
         {
             var payload = new { model = opts.EmbeddingModel ?? opts.LlmModel ?? "generic-embedding", input = text };
-            var response = await HttpRetryHelper.SendWithRetryAsync(
+            var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "embeddings")
                 {
@@ -269,7 +222,7 @@ public sealed class HttpAudioTranscriptionProvider : ITranscriptionModel
         content.Add(new StringContent(opts.TranscriptionModel ?? opts.LlmModel ?? "whisper"), "model");
         try
         {
-            var response = await HttpRetryHelper.SendWithRetryAsync(
+            var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "audio/transcriptions")
                 {
@@ -332,7 +285,7 @@ public sealed class HttpVisionProvider : IVisionModel
         var payload = new { fileId = request.FileId, analysisType = request.AnalysisType.ToString(), model = request.Model ?? opts.VisionModel ?? "vision-generic" };
         try
         {
-            using var response = await HttpRetryHelper.SendWithRetryAsync(
+            using var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "vision/analyze")
                 {
@@ -414,17 +367,22 @@ public sealed class IntentRecognizer : IIntentDetector
             "Tu es l'orchestrateur d'intentions AION. Identifie l'intention principale de l'utilisateur.",
             "Contraintes :",
             "- Réponds UNIQUEMENT avec un JSON compact sans texte additionnel.",
-            "- Schéma attendu: {\"intent\":\"\",\"parameters\":{},\"confidence\":0.0}",
+            $"- Schéma attendu: {StructuredJsonSchemas.Intent.Description}",
             "- Intentions typiques: chat, create, read, update, delete, design_module, report, agenda, note.",
             $"Entrée: \"{request.Input}\"",
             $"Contexte: {contextLines}",
             $"Locale: {request.Locale}"
         });
 
-        LlmResponse response;
+        StructuredJsonResult structuredJson;
         try
         {
-            response = await _provider.GenerateAsync(prompt, cancellationToken).ConfigureAwait(false);
+            structuredJson = await StructuredJsonResponseHandler.GetValidJsonAsync(
+                _provider,
+                prompt,
+                StructuredJsonSchemas.Intent,
+                _logger,
+                cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException oce) when (cancellationToken.IsCancellationRequested && oce.CancellationToken == cancellationToken)
         {
@@ -436,18 +394,16 @@ public sealed class IntentRecognizer : IIntentDetector
             return BuildFallback(request.Input, null, ex.Message, 0.05);
         }
 
-        var json = JsonHelper.ExtractJson(response.Content);
-
-        if (TryParseIntent(json, out var parsed))
+        if (structuredJson.IsValid && TryParseIntent(structuredJson.Json, out var parsed))
         {
             _logger.LogInformation("Intent detection parsed response in {ElapsedMs}ms (confidence={Confidence:F2})", stopwatch.Elapsed.TotalMilliseconds, parsed.Confidence);
-            return parsed with { RawResponse = response.RawResponse ?? json };
+            return parsed with { RawResponse = structuredJson.RawResponse ?? structuredJson.Json ?? string.Empty };
         }
 
         _logger.LogWarning("Intent parsing failed after {ElapsedMs}ms ({Prompt})", stopwatch.Elapsed.TotalMilliseconds, safePrompt);
-        return BuildFallback(request.Input, response.RawResponse ?? json);
+        return BuildFallback(request.Input, structuredJson.RawResponse ?? structuredJson.Json);
     }
-    private bool TryParseIntent(string json, out IntentDetectionResult result)
+    private bool TryParseIntent(string? json, out IntentDetectionResult result)
     {
         result = default;
         if (string.IsNullOrWhiteSpace(json))
@@ -459,19 +415,6 @@ public sealed class IntentRecognizer : IIntentDetector
         {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            if (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0)
-            {
-                root = root[0];
-            }
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
-            {
-                var content = choices[0].GetProperty("message").GetProperty("content").GetString();
-                if (!string.IsNullOrWhiteSpace(content))
-                {
-                    return TryParseIntent(JsonHelper.ExtractJson(content), out result);
-                }
-            }
-
             var intent = root.TryGetProperty("intent", out var intentProp) ? intentProp.GetString() : null;
             intent = string.IsNullOrWhiteSpace(intent) ? null : intent.Trim();
             var confidence = root.TryGetProperty("confidence", out var confidenceProp) ? confidenceProp.GetDouble() : 0.5;
@@ -541,28 +484,27 @@ public sealed class ModuleDesigner : IModuleDesigner
     public async Task<ModuleDesignResult> GenerateModuleAsync(ModuleDesignRequest request, CancellationToken cancellationToken = default)
     {
         var generationPrompt = $@"Tu es l'orchestrateur AION. Génère STRICTEMENT du JSON compact sans texte additionnel avec ce schéma :
-{{
-  ""module"": {{ ""name"": """", ""pluralName"": """", ""icon"": """" }},
-  ""entities"": [
-    {{
-      ""name"": """",
-      ""pluralName"": """",
-      ""icon"": """",
-      ""fields"": [ {{ ""name"": """", ""label"": """", ""type"": ""Text|Number|Decimal|Boolean|Date|DateTime|Lookup|File|Note|Json|Tags|Calculated"" }} ]
-    }}
-  ],
-  ""relations"": [ {{ ""fromEntity"": """", ""toEntity"": """", ""fromField"": """", ""kind"": ""OneToMany|ManyToMany"", ""isBidirectional"": false }} ]
-}}
+{StructuredJsonSchemas.ModuleDesign.Description}
 Description utilisateur: {request.Prompt}
 Ne réponds que par du JSON valide.";
-        var response = await _provider.GenerateAsync(generationPrompt, cancellationToken).ConfigureAwait(false);
-        LastGeneratedJson = JsonHelper.ExtractJson(response.Content);
+
+        var structured = await StructuredJsonResponseHandler.GetValidJsonAsync(
+            _provider,
+            generationPrompt,
+            StructuredJsonSchemas.ModuleDesign,
+            _logger,
+            cancellationToken).ConfigureAwait(false);
+
+        LastGeneratedJson = structured.Json;
         try
         {
-            var design = JsonSerializer.Deserialize<ModuleDesignSchema>(LastGeneratedJson, SerializerOptions);
-            if (design is not null)
+            if (structured.IsValid && !string.IsNullOrWhiteSpace(LastGeneratedJson))
             {
-                return new ModuleDesignResult(BuildModule(design, request), LastGeneratedJson ?? string.Empty);
+                var design = JsonSerializer.Deserialize<ModuleDesignSchema>(LastGeneratedJson, SerializerOptions);
+                if (design is not null)
+                {
+                    return new ModuleDesignResult(BuildModule(design, request), LastGeneratedJson ?? string.Empty);
+                }
             }
         }
         catch (JsonException ex)
