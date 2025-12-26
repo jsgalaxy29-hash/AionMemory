@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Aion.Domain;
@@ -53,7 +54,9 @@ public sealed class ModuleApplier : IModuleApplier
             }
 
             UpdateTable(table, tableSpec);
-            UpsertFields(table, tableSpec.Fields);
+            var fieldSync = UpsertFields(table, tableSpec.Fields);
+            await ApplyFieldRenamesAsync(table, fieldSync.Renames, cancellationToken).ConfigureAwait(false);
+            await DeactivateRemovedFieldsAsync(table, fieldSync.RemovedFields, cancellationToken).ConfigureAwait(false);
             UpsertViews(table, tableSpec.Views);
             EnsureDefaults(table, tableSpec);
 
@@ -126,11 +129,29 @@ public sealed class ModuleApplier : IModuleApplier
         table.RowLabelTemplate = spec.RowLabelTemplate;
     }
 
-    private static void UpsertFields(STable table, IEnumerable<FieldSpec> fields)
+    private sealed record FieldRename(string OldName, string NewName, Guid FieldId);
+
+    private sealed record FieldSyncResult(IReadOnlyList<FieldRename> Renames, IReadOnlyList<SFieldDefinition> RemovedFields);
+
+    private static FieldSyncResult UpsertFields(STable table, IEnumerable<FieldSpec> fields)
     {
+        var existingById = table.Fields.ToDictionary(f => f.Id);
+        var existingByName = table.Fields.ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
+        var matched = new HashSet<Guid>();
+        var renames = new List<FieldRename>();
+
         foreach (var spec in fields)
         {
-            var field = table.Fields.FirstOrDefault(f => string.Equals(f.Name, spec.Slug, StringComparison.OrdinalIgnoreCase));
+            SFieldDefinition? field = null;
+            if (spec.Id.HasValue && existingById.TryGetValue(spec.Id.Value, out var fieldById))
+            {
+                field = fieldById;
+            }
+            else if (existingByName.TryGetValue(spec.Slug, out var fieldByName))
+            {
+                field = fieldByName;
+            }
+
             if (field is null)
             {
                 field = new SFieldDefinition
@@ -141,7 +162,13 @@ public sealed class ModuleApplier : IModuleApplier
                 table.Fields.Add(field);
             }
 
+            if (!string.Equals(field.Name, spec.Slug, StringComparison.OrdinalIgnoreCase))
+            {
+                renames.Add(new FieldRename(field.Name, spec.Slug, field.Id));
+            }
+
             field.TableId = table.Id;
+            field.Name = spec.Slug;
             field.Label = spec.Label;
             field.DataType = ModuleFieldDataTypes.ToDomainType(spec.DataType);
             field.IsRequired = spec.IsRequired;
@@ -168,6 +195,90 @@ public sealed class ModuleApplier : IModuleApplier
             field.ValidationPattern = spec.ValidationPattern;
             field.Placeholder = spec.Placeholder;
             field.Unit = spec.Unit;
+
+            matched.Add(field.Id);
+        }
+
+        var removedFields = table.Fields.Where(f => !matched.Contains(f.Id)).ToList();
+        return new FieldSyncResult(renames, removedFields);
+    }
+
+    private async Task ApplyFieldRenamesAsync(STable table, IReadOnlyList<FieldRename> renames, CancellationToken cancellationToken)
+    {
+        if (renames.Count == 0)
+        {
+            return;
+        }
+
+        var renameMap = renames
+            .Where(r => !string.Equals(r.OldName, r.NewName, StringComparison.OrdinalIgnoreCase))
+            .DistinctBy(r => r.OldName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(r => r.OldName, r => r.NewName, StringComparer.OrdinalIgnoreCase);
+
+        if (renameMap.Count == 0)
+        {
+            return;
+        }
+
+        var records = await _db.Records
+            .Where(r => r.TableId == table.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var record in records)
+        {
+            if (TryRenameRecordFields(record.DataJson, renameMap, out var updatedJson))
+            {
+                record.DataJson = updatedJson;
+                record.ModifiedAt = DateTimeOffset.UtcNow;
+            }
+        }
+
+        var indexes = await _db.RecordIndexes
+            .Where(r => r.TableId == table.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var index in indexes)
+        {
+            if (renameMap.TryGetValue(index.FieldName, out var newName))
+            {
+                index.FieldName = newName;
+            }
+        }
+    }
+
+    private async Task DeactivateRemovedFieldsAsync(STable table, IReadOnlyList<SFieldDefinition> removedFields, CancellationToken cancellationToken)
+    {
+        if (removedFields.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var field in removedFields)
+        {
+            field.IsHidden = true;
+            field.IsReadOnly = true;
+            field.IsSearchable = false;
+            field.IsListVisible = false;
+            field.IsPrimaryKey = false;
+            field.IsUnique = false;
+            field.IsIndexed = false;
+            field.IsFilterable = false;
+            field.IsSortable = false;
+            field.IsRequired = false;
+        }
+
+        var removedNames = removedFields.Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var indexes = await _db.RecordIndexes
+            .Where(r => r.TableId == table.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var toRemove = indexes.Where(index => removedNames.Contains(index.FieldName)).ToList();
+        if (toRemove.Count > 0)
+        {
+            _db.RecordIndexes.RemoveRange(toRemove);
         }
     }
 
@@ -255,6 +366,50 @@ public sealed class ModuleApplier : IModuleApplier
 
     private static string BuildQueryDefinition(Dictionary<string, string?>? filter)
         => filter is null || filter.Count == 0 ? "{}" : JsonSerializer.Serialize(filter, SerializerOptions);
+
+    private static bool TryRenameRecordFields(string dataJson, IReadOnlyDictionary<string, string> renameMap, out string updatedJson)
+    {
+        updatedJson = dataJson;
+        JsonNode? node;
+        try
+        {
+            node = JsonNode.Parse(dataJson);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        if (node is not JsonObject obj)
+        {
+            return false;
+        }
+
+        var changed = false;
+        foreach (var (oldName, newName) in renameMap)
+        {
+            if (!obj.TryGetPropertyValue(oldName, out var value))
+            {
+                continue;
+            }
+
+            if (!obj.ContainsKey(newName))
+            {
+                obj[newName] = value;
+            }
+
+            obj.Remove(oldName);
+            changed = true;
+        }
+
+        if (!changed)
+        {
+            return false;
+        }
+
+        updatedJson = obj.ToJsonString(SerializerOptions);
+        return true;
+    }
 
     private static string? SerializeDefaultValue(JsonElement? value)
     {

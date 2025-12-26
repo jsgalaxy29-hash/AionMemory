@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Linq;
+using System.Text.Json;
 using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
 using Aion.Infrastructure.ModuleBuilder;
@@ -25,7 +26,7 @@ public class ModuleBuilderTests
         await using var context = new AionDbContext(options);
         await context.Database.MigrateAsync();
 
-        var validator = new ModuleValidator(context);
+        var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
         var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
 
         var spec = BuildSimpleSpec();
@@ -55,7 +56,7 @@ public class ModuleBuilderTests
         await using var context = new AionDbContext(options);
         await context.Database.MigrateAsync();
 
-        var validator = new ModuleValidator(context);
+        var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
         var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
 
         var initialSpec = BuildSimpleSpec();
@@ -102,7 +103,7 @@ public class ModuleBuilderTests
         await using var context = new AionDbContext(options);
         await context.Database.MigrateAsync();
 
-        var validator = new ModuleValidator(context);
+        var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
         var spec = new ModuleSpec
         {
             Slug = "invalid-module",
@@ -136,7 +137,7 @@ public class ModuleBuilderTests
         await using var context = new AionDbContext(options);
         await context.Database.MigrateAsync();
 
-        var validator = new ModuleValidator(context);
+        var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
         var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
 
         var spec = BuildSimpleSpec();
@@ -159,6 +160,94 @@ public class ModuleBuilderTests
         Assert.Single(table.Views, v => v.IsDefault);
         Assert.Equal("all", table.DefaultView);
         Assert.Contains(table.Views, v => v.Name == "board" && !v.IsDefault);
+    }
+
+    [Fact]
+    public async Task Update_module_marks_removed_fields_inactive()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
+
+        await using var context = new AionDbContext(options);
+        await context.Database.MigrateAsync();
+
+        var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
+        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
+
+        var initialSpec = BuildSimpleSpec();
+        await applier.ApplyAsync(initialSpec);
+
+        var updatedSpec = BuildSimpleSpec();
+        updatedSpec.Tables[0].Fields.RemoveAll(f => f.Slug == "assignee");
+
+        await applier.ApplyAsync(updatedSpec);
+
+        var table = await context.Tables
+            .Include(t => t.Fields)
+            .SingleAsync(t => t.Name == "tasks");
+
+        var removedField = table.Fields.Single(f => f.Name == "assignee");
+        Assert.True(removedField.IsHidden);
+        Assert.True(removedField.IsReadOnly);
+        Assert.False(removedField.IsSearchable);
+        Assert.False(removedField.IsListVisible);
+        Assert.False(removedField.IsFilterable);
+        Assert.False(removedField.IsSortable);
+        Assert.Equal(table.Fields.Count, table.Fields.Select(f => f.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
+    public async Task Update_module_renames_field_and_migrates_data()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
+
+        await using var context = new AionDbContext(options);
+        await context.Database.MigrateAsync();
+
+        var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
+        var applier = new ModuleApplier(context, validator, NullLogger<ModuleApplier>.Instance, new OperationScopeFactory());
+
+        var initialSpec = BuildSimpleSpec();
+        await applier.ApplyAsync(initialSpec);
+
+        var table = await context.Tables
+            .Include(t => t.Fields)
+            .SingleAsync(t => t.Name == "tasks");
+        var titleFieldId = table.Fields.Single(f => f.Name == "title").Id;
+
+        var record = new F_Record
+        {
+            TableId = table.Id,
+            DataJson = "{\"title\":\"Tâche 1\"}"
+        };
+        context.Records.Add(record);
+        context.RecordIndexes.Add(new F_RecordIndex
+        {
+            TableId = table.Id,
+            RecordId = record.Id,
+            FieldName = "title",
+            StringValue = "Tâche 1"
+        });
+        await context.SaveChangesAsync();
+
+        var updatedSpec = BuildSimpleSpec();
+        var renamedField = updatedSpec.Tables[0].Fields.Single(f => f.Slug == "title");
+        renamedField.Id = titleFieldId;
+        renamedField.Slug = "name";
+        renamedField.Label = "Nom";
+
+        await applier.ApplyAsync(updatedSpec);
+
+        var updatedRecord = await context.Records.SingleAsync(r => r.Id == record.Id);
+        using var document = JsonDocument.Parse(updatedRecord.DataJson);
+        Assert.True(document.RootElement.TryGetProperty("name", out _));
+        Assert.False(document.RootElement.TryGetProperty("title", out _));
+
+        var updatedIndex = await context.RecordIndexes.SingleAsync(i => i.RecordId == record.Id);
+        Assert.Equal("name", updatedIndex.FieldName);
     }
 
     private static ModuleSpec BuildSimpleSpec()

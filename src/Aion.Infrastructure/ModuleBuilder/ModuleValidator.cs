@@ -9,18 +9,22 @@ using System.Threading.Tasks;
 using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Aion.Infrastructure.ModuleBuilder;
 
 public sealed class ModuleValidator : IModuleValidator
 {
-    private sealed record ExistingTable(Guid Id, string Name);
+    private sealed record ExistingField(Guid Id, string Name);
+    private sealed record ExistingTable(Guid Id, string Name, IReadOnlyList<ExistingField> Fields);
 
     private readonly AionDbContext _db;
+    private readonly ILogger<ModuleValidator> _logger;
 
-    public ModuleValidator(AionDbContext db)
+    public ModuleValidator(AionDbContext db, ILogger<ModuleValidator> logger)
     {
         _db = db;
+        _logger = logger;
     }
 
     public async Task<ModuleValidationResult> ValidateAsync(ModuleSpec spec, CancellationToken cancellationToken = default)
@@ -43,7 +47,11 @@ public sealed class ModuleValidator : IModuleValidator
         }
 
         var existingTables = await _db.Tables.AsNoTracking()
-            .Select(t => new ExistingTable(t.Id, t.Name))
+            .Include(t => t.Fields)
+            .Select(t => new ExistingTable(
+                t.Id,
+                t.Name,
+                t.Fields.Select(f => new ExistingField(f.Id, f.Name)).ToList()))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -68,6 +76,7 @@ public sealed class ModuleValidator : IModuleValidator
             }
 
             ValidateTable(table, spec, existingTables, errors);
+            WarnOnFieldChanges(table, existingTables);
         }
 
         return errors.Count == 0 ? ModuleValidationResult.Success() : ModuleValidationResult.Failure(errors);
@@ -122,6 +131,63 @@ public sealed class ModuleValidator : IModuleValidator
         {
             errors.Add($"Default view '{table.DefaultView}' does not match any view for table '{table.Slug}'.");
         }
+    }
+
+    private void WarnOnFieldChanges(TableSpec table, IReadOnlyCollection<ExistingTable> existingTables)
+    {
+        var existingTable = FindExistingTable(table, existingTables);
+        if (existingTable is null)
+        {
+            return;
+        }
+
+        var specFieldsById = table.Fields.Where(f => f.Id.HasValue)
+            .ToDictionary(f => f.Id!.Value, f => f);
+        var specFieldsBySlug = table.Fields
+            .ToDictionary(f => f.Slug, f => f, System.StringComparer.OrdinalIgnoreCase);
+
+        foreach (var existingField in existingTable.Fields)
+        {
+            var existsById = specFieldsById.ContainsKey(existingField.Id);
+            var existsBySlug = specFieldsBySlug.ContainsKey(existingField.Name);
+            if (!existsById && !existsBySlug)
+            {
+                _logger.LogWarning(
+                    "ModuleSpec for table {TableSlug} removes field {FieldName} ({FieldId}). Data will be preserved but the field will be marked inactive.",
+                    table.Slug,
+                    existingField.Name,
+                    existingField.Id);
+            }
+        }
+
+        foreach (var (fieldId, specField) in specFieldsById)
+        {
+            var existingField = existingTable.Fields.FirstOrDefault(f => f.Id == fieldId);
+            if (existingField is null)
+            {
+                continue;
+            }
+
+            if (!string.Equals(existingField.Name, specField.Slug, System.StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning(
+                    "ModuleSpec for table {TableSlug} renames field {OldName} ({FieldId}) to {NewName}. Existing data will be migrated.",
+                    table.Slug,
+                    existingField.Name,
+                    existingField.Id,
+                    specField.Slug);
+            }
+        }
+    }
+
+    private static ExistingTable? FindExistingTable(TableSpec table, IReadOnlyCollection<ExistingTable> existingTables)
+    {
+        if (table.Id.HasValue)
+        {
+            return existingTables.FirstOrDefault(t => t.Id == table.Id.Value);
+        }
+
+        return existingTables.FirstOrDefault(t => string.Equals(t.Name, table.Slug, System.StringComparison.OrdinalIgnoreCase));
     }
 
     private static void ValidateField(FieldSpec field, TableSpec table, ModuleSpec spec, IReadOnlyCollection<ExistingTable> existingTables, ICollection<string> errors)
