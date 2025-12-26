@@ -76,7 +76,7 @@ public sealed class AppInitializationService : IAppInitializationService
         var destination = Path.GetFullPath(connectionBuilder.DataSource);
 
         var backupService = serviceProvider.GetRequiredService<ICloudBackupService>();
-        await backupService.RestoreAsync(destination, cancellationToken).ConfigureAwait(false);
+        await backupService.RestoreLatestAsync(destination, dryRun: false, cancellationToken).ConfigureAwait(false);
         logger.LogInformation("Latest backup restored to {Destination}", destination);
     }
 }

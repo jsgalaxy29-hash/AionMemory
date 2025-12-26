@@ -1,0 +1,196 @@
+@page "/backups"
+@using Aion.Domain
+@using Microsoft.Data.Sqlite
+@inject ICloudBackupService CloudBackupService
+@inject IOptions<CloudBackupOptions> CloudOptions
+@inject IOptions<AionDatabaseOptions> DatabaseOptions
+
+<section class="panel">
+    <header class="panel__header">
+        <div>
+            <h1>Backups</h1>
+            <p class="text-muted">Sauvegardes chiffrées stockées en S3 compatible.</p>
+        </div>
+        <button class="button" @onclick="CreateBackupAsync" disabled="@IsBusy">Créer un backup</button>
+    </header>
+
+    @if (!CloudOptions.Value.Enabled)
+    {
+        <p class="text-muted">Les sauvegardes cloud sont désactivées. Configurez Aion:Backup:Cloud.</p>
+    }
+    else if (IsLoading)
+    {
+        <p class="text-muted">Chargement…</p>
+    }
+    else if (Backups.Count == 0)
+    {
+        <p class="text-muted">Aucune sauvegarde disponible.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Identifiant</th>
+                    <th>Créée</th>
+                    <th>Taille</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var backup in Backups)
+                {
+                    <tr>
+                        <td>@backup.Id</td>
+                        <td>@backup.CreatedAt.ToLocalTime().ToString("g")</td>
+                        <td>@FormatSize(backup.Size)</td>
+                        <td>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                <button class="button secondary" @onclick="() => PreviewBackupAsync(backup)" disabled="@IsBusy">Prévisualiser</button>
+                                <button class="button" @onclick="() => RestoreBackupAsync(backup)" disabled="@IsBusy">Restaurer</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Status))
+    {
+        <div class="alert">@Status</div>
+    }
+
+    @if (Preview is not null)
+    {
+        <div class="panel__section">
+            <h2>Contenu de la sauvegarde @Preview.Backup.Id</h2>
+            <ul>
+                @foreach (var entry in Preview.Entries)
+                {
+                    <li>@entry</li>
+                }
+            </ul>
+        </div>
+    }
+</section>
+
+@code {
+    private readonly List<CloudBackupEntry> Backups = new();
+    private bool IsLoading { get; set; } = true;
+    private bool IsBusy { get; set; }
+    private string? Status { get; set; }
+    private CloudRestorePreview? Preview { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBackupsAsync();
+    }
+
+    private async Task LoadBackupsAsync()
+    {
+        IsLoading = true;
+        Status = null;
+        try
+        {
+            if (CloudOptions.Value.Enabled)
+            {
+                var items = await CloudBackupService.ListBackupsAsync();
+                Backups.Clear();
+                Backups.AddRange(items);
+            }
+        }
+        catch (Exception ex)
+        {
+            Status = $"Erreur lors du chargement: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task CreateBackupAsync()
+    {
+        IsBusy = true;
+        Status = null;
+        Preview = null;
+        try
+        {
+            await CloudBackupService.CreateBackupAsync();
+            await LoadBackupsAsync();
+            Status = "Sauvegarde créée.";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Erreur lors de la sauvegarde: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task PreviewBackupAsync(CloudBackupEntry backup)
+    {
+        IsBusy = true;
+        Status = null;
+        Preview = null;
+        try
+        {
+            var destination = GetDatabasePath();
+            Preview = await CloudBackupService.RestoreAsync(backup.Id, destination, dryRun: true);
+            Status = "Prévisualisation terminée.";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Erreur lors de la prévisualisation: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task RestoreBackupAsync(CloudBackupEntry backup)
+    {
+        IsBusy = true;
+        Status = null;
+        Preview = null;
+        try
+        {
+            var destination = GetDatabasePath();
+            var result = await CloudBackupService.RestoreAsync(backup.Id, destination, dryRun: false);
+            Preview = result;
+            Status = "Restauration terminée.";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Erreur lors de la restauration: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private string GetDatabasePath()
+    {
+        var builder = new SqliteConnectionStringBuilder(DatabaseOptions.Value.ConnectionString);
+        return Path.GetFullPath(builder.DataSource);
+    }
+
+    private static string FormatSize(long size)
+    {
+        var units = new[] { "octets", "Ko", "Mo", "Go", "To" };
+        var value = (double)size;
+        var index = 0;
+        while (value >= 1024 && index < units.Length - 1)
+        {
+            value /= 1024;
+            index++;
+        }
+
+        return $"{value:0.##} {units[index]}";
+    }
+}
