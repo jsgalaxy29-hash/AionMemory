@@ -138,7 +138,7 @@ public sealed class DataImportService : IDataImportService
                 }
             }
 
-            await _moduleApplier.ApplyAsync(module, cancellationToken).ConfigureAwait(false);
+            await _moduleApplier.ApplyAsync(module, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
         return mapping;

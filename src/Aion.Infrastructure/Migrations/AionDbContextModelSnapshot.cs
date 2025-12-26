@@ -1558,6 +1558,54 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("TableViews");
                 });
 
+            modelBuilder.Entity("Aion.Domain.ModuleBuilder.ModuleSchemaVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ModuleSlug")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SpecHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ModuleSlug", "Version")
+                        .IsUnique();
+
+                    b.HasIndex("ModuleSlug", "IsActive");
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.ToTable("ModuleSchemaVersions");
+                });
+
             modelBuilder.Entity("Aion.Domain.Permission", b =>
                 {
                     b.Property<Guid>("Id")

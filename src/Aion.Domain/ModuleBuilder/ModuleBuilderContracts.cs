@@ -38,5 +38,10 @@ public interface IModuleValidator
 
 public interface IModuleApplier
 {
-    Task<IReadOnlyList<STable>> ApplyAsync(ModuleSpec spec, CancellationToken cancellationToken = default);
+    Task<ChangePlan> BuildChangePlanAsync(ModuleSpec spec, ModuleSchemaState targetState = ModuleSchemaState.Draft, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<STable>> ApplyAsync(ModuleSpec spec, ModuleSchemaState targetState = ModuleSchemaState.Draft, CancellationToken cancellationToken = default);
+    Task<ModuleSchemaVersion?> GetActiveVersionAsync(string moduleSlug, CancellationToken cancellationToken = default);
+    Task<ModuleSchemaVersion?> GetLatestVersionAsync(string moduleSlug, CancellationToken cancellationToken = default);
+    Task<ModuleSchemaVersion> PublishAsync(string moduleSlug, int version, CancellationToken cancellationToken = default);
+    Task<ModuleSchemaVersion> RollbackPublicationAsync(string moduleSlug, CancellationToken cancellationToken = default);
 }
