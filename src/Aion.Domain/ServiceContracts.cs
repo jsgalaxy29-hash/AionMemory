@@ -87,8 +87,10 @@ public interface IFileStorageService
 
 public interface ICloudBackupService
 {
-    Task BackupAsync(string encryptedDatabasePath, CancellationToken cancellationToken = default);
-    Task RestoreAsync(string destinationPath, CancellationToken cancellationToken = default);
+    Task<CloudBackupEntry> CreateBackupAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CloudBackupEntry>> ListBackupsAsync(CancellationToken cancellationToken = default);
+    Task<CloudRestorePreview> RestoreLatestAsync(string destinationPath, bool dryRun = false, CancellationToken cancellationToken = default);
+    Task<CloudRestorePreview> RestoreAsync(string backupId, string destinationPath, bool dryRun = false, CancellationToken cancellationToken = default);
 }
 
 public interface IBackupService

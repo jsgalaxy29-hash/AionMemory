@@ -34,3 +34,19 @@ public sealed record BackupOptions
     public int BackupIntervalMinutes { get; set; } = 24 * 60;
     public bool EnableBackgroundServices { get; set; } = !(OperatingSystem.IsAndroid() || OperatingSystem.IsIOS());
 }
+
+public sealed record CloudBackupOptions
+{
+    public bool Enabled { get; set; }
+    public string? Endpoint { get; set; }
+    public string? Bucket { get; set; }
+    public string? Region { get; set; } = "us-east-1";
+    public string? AccessKeyId { get; set; }
+    public string? SecretAccessKey { get; set; }
+    public string? Prefix { get; set; }
+    public bool UsePathStyle { get; set; } = true;
+    public int RetentionDays { get; set; } = 30;
+    public int MaxBackups { get; set; } = 10;
+    public int MaxRetries { get; set; } = 3;
+    public int RetryBaseDelayMs { get; set; } = 500;
+}

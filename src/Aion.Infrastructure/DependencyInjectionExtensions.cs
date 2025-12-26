@@ -101,6 +101,18 @@ public static class DependencyInjectionExtensions
         backupOptions.Validate(o => o.BackupIntervalMinutes > 0, "The backup interval must be greater than zero minutes.");
         backupOptions.ValidateOnStart();
 
+        var cloudBackupOptions = services.AddOptions<CloudBackupOptions>()
+            .Bind(configuration.GetSection("Aion:Backup:Cloud"));
+        cloudBackupOptions.Validate(o => o.MaxBackups > 0, "Cloud backups must keep at least one backup.");
+        cloudBackupOptions.Validate(o => o.RetentionDays > 0, "Cloud backup retention days must be greater than zero.");
+        cloudBackupOptions.Validate(o => o.MaxRetries >= 0, "Cloud backup max retries must be non-negative.");
+        cloudBackupOptions.Validate(o => o.RetryBaseDelayMs > 0, "Cloud backup retry delay must be greater than zero.");
+        cloudBackupOptions.Validate(o => !o.Enabled || !string.IsNullOrWhiteSpace(o.Endpoint), "Cloud backup endpoint is required when enabled.");
+        cloudBackupOptions.Validate(o => !o.Enabled || !string.IsNullOrWhiteSpace(o.Bucket), "Cloud backup bucket is required when enabled.");
+        cloudBackupOptions.Validate(o => !o.Enabled || !string.IsNullOrWhiteSpace(o.AccessKeyId), "Cloud backup access key is required when enabled.");
+        cloudBackupOptions.Validate(o => !o.Enabled || !string.IsNullOrWhiteSpace(o.SecretAccessKey), "Cloud backup secret key is required when enabled.");
+        cloudBackupOptions.ValidateOnStart();
+
         services.AddScoped<IWorkspaceContext, DefaultWorkspaceContext>();
 
         services.AddDbContext<AionDbContext>((serviceProvider, dbOptions) =>
@@ -150,13 +162,16 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IModuleValidator, ModuleValidator>();
         services.AddScoped<IModuleApplier, ModuleApplier>();
         services.AddScoped<ModuleBuilderService>();
-        services.AddScoped<ICloudBackupService, CloudBackupService>();
+        services.AddHttpClient(CloudHttpClientNames.CloudBackup);
+        services.AddScoped<ICloudObjectStore, S3ObjectStore>();
+        services.AddScoped<ICloudBackupService, AionCloudBackupService>();
         services.AddScoped<IBackupService, BackupService>();
         services.AddScoped<IRestoreService, RestoreService>();
         services.AddScoped<ILogService, LogService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddHostedService<BackupCleanupService>();
         services.AddHostedService<BackupSchedulerService>();
+        services.AddHostedService<CloudBackupSchedulerService>();
         services.AddScoped<DemoModuleSeeder>();
         services.TryAddSingleton<IExtensionState, DefaultExtensionState>();
         services.AddSingleton<IExtensionCatalog, ExtensionCatalog>();
