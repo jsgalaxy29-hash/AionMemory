@@ -40,6 +40,6 @@ public sealed class ModuleBuilderService
     public async Task<IReadOnlyList<STable>> DesignAndApplyAsync(string prompt, CancellationToken cancellationToken = default)
     {
         var design = await DesignAsync(prompt, cancellationToken).ConfigureAwait(false);
-        return await _applier.ApplyAsync(design.Spec, cancellationToken).ConfigureAwait(false);
+        return await _applier.ApplyAsync(design.Spec, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 }

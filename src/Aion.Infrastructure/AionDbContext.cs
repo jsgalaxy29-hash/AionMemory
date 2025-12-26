@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 using Aion.Domain;
+using Aion.Domain.ModuleBuilder;
 using Microsoft.EntityFrameworkCore;
 
 namespace Aion.Infrastructure;
@@ -51,6 +52,7 @@ public class AionDbContext : DbContext
     public DbSet<STable> Tables => Set<STable>();
     public DbSet<SFieldDefinition> TableFields => Set<SFieldDefinition>();
     public DbSet<SViewDefinition> TableViews => Set<SViewDefinition>();
+    public DbSet<ModuleSchemaVersion> ModuleSchemaVersions => Set<ModuleSchemaVersion>();
     public DbSet<S_VisionAnalysis> VisionAnalyses => Set<S_VisionAnalysis>();
     public DbSet<S_HistoryEvent> HistoryEvents => Set<S_HistoryEvent>();
     public DbSet<S_Link> Links => Set<S_Link>();
@@ -370,6 +372,15 @@ public class AionDbContext : DbContext
             builder.Property(v => v.PageSize);
             builder.Property(v => v.Visualization).HasMaxLength(128);
             builder.HasIndex(v => new { v.TableId, v.Name }).IsUnique();
+        });
+
+        modelBuilder.Entity<ModuleSchemaVersion>(builder =>
+        {
+            builder.Property(v => v.ModuleSlug).IsRequired().HasMaxLength(128);
+            builder.Property(v => v.SpecHash).IsRequired().HasMaxLength(64);
+            builder.Property(v => v.State).HasConversion<string>().HasMaxLength(16);
+            builder.HasIndex(v => new { v.ModuleSlug, v.Version }).IsUnique();
+            builder.HasIndex(v => new { v.ModuleSlug, v.IsActive });
         });
 
         modelBuilder.Entity<NoteSearchEntry>()

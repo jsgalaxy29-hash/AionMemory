@@ -275,6 +275,62 @@ public class ModuleBuilderTests
         Assert.Equal("name", updatedIndex.FieldName);
     }
 
+    [Fact]
+    public async Task Schema_versions_support_publish_and_rollback()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
+
+        await using var context = new AionDbContext(options);
+        await context.Database.MigrateAsync();
+
+        var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
+        var applier = new ModuleApplier(
+            context,
+            validator,
+            NullLogger<ModuleApplier>.Instance,
+            new OperationScopeFactory(),
+            new NullSecurityAuditService());
+
+        var v1Spec = BuildSimpleSpec();
+        await applier.ApplyAsync(v1Spec, ModuleSchemaState.Published);
+
+        var v2Spec = BuildSimpleSpec();
+        v2Spec.Tables[0].Fields.Add(new FieldSpec
+        {
+            Slug = "priority",
+            Label = "Priorité",
+            DataType = ModuleFieldDataTypes.Number,
+            IsFilterable = true
+        });
+
+        var changePlan = await applier.BuildChangePlanAsync(v2Spec, ModuleSchemaState.Draft);
+        Assert.Contains(changePlan.Changes, c => c.Kind == ModuleChangeKind.FieldAdded && c.FieldSlug == "priority");
+
+        await applier.ApplyAsync(v2Spec, ModuleSchemaState.Draft);
+
+        var active = await applier.GetActiveVersionAsync(v1Spec.Slug);
+        var latest = await applier.GetLatestVersionAsync(v1Spec.Slug);
+
+        Assert.NotNull(active);
+        Assert.NotNull(latest);
+        Assert.Equal(1, active!.Version);
+        Assert.Equal(ModuleSchemaState.Published, active.State);
+        Assert.Equal(2, latest!.Version);
+        Assert.Equal(ModuleSchemaState.Draft, latest.State);
+
+        await applier.PublishAsync(v1Spec.Slug, latest.Version);
+        active = await applier.GetActiveVersionAsync(v1Spec.Slug);
+        Assert.NotNull(active);
+        Assert.Equal(2, active!.Version);
+
+        await applier.RollbackPublicationAsync(v1Spec.Slug);
+        active = await applier.GetActiveVersionAsync(v1Spec.Slug);
+        Assert.NotNull(active);
+        Assert.Equal(1, active!.Version);
+    }
+
     private static ModuleSpec BuildSimpleSpec()
         => new()
         {
