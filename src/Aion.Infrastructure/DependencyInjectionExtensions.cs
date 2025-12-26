@@ -113,6 +113,11 @@ public static class DependencyInjectionExtensions
         cloudBackupOptions.Validate(o => !o.Enabled || !string.IsNullOrWhiteSpace(o.SecretAccessKey), "Cloud backup secret key is required when enabled.");
         cloudBackupOptions.ValidateOnStart();
 
+        var automationSchedulerOptions = services.AddOptions<AutomationSchedulerOptions>()
+            .Bind(configuration.GetSection("Aion:Automation:Scheduler"));
+        automationSchedulerOptions.Validate(o => o.PollingIntervalSeconds > 0, "Automation scheduler polling interval must be greater than zero.");
+        automationSchedulerOptions.ValidateOnStart();
+
         services.AddScoped<IWorkspaceContext, DefaultWorkspaceContext>();
 
         services.AddDbContext<AionDbContext>((serviceProvider, dbOptions) =>
@@ -175,6 +180,7 @@ public static class DependencyInjectionExtensions
         services.AddHostedService<BackupCleanupService>();
         services.AddHostedService<BackupSchedulerService>();
         services.AddHostedService<CloudBackupSchedulerService>();
+        services.AddHostedService<AutomationSchedulerService>();
         services.AddScoped<DemoModuleSeeder>();
         services.TryAddSingleton<IExtensionState, DefaultExtensionState>();
         services.AddSingleton<IExtensionCatalog, ExtensionCatalog>();

@@ -2678,6 +2678,23 @@ public sealed class AutomationService : IAionAutomationService, IAutomationServi
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
+    public async Task<S_AutomationRule> SetRuleEnabledAsync(Guid ruleId, bool isEnabled, CancellationToken cancellationToken = default)
+    {
+        var rule = await _db.AutomationRules.FirstOrDefaultAsync(r => r.Id == ruleId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Automation rule {ruleId} not found");
+
+        if (rule.IsEnabled == isEnabled)
+        {
+            return rule;
+        }
+
+        rule.IsEnabled = isEnabled;
+        _db.AutomationRules.Update(rule);
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("Automation rule {Rule} updated: enabled={Enabled}", rule.Name, rule.IsEnabled);
+        return rule;
+    }
+
     public Task<IEnumerable<AutomationExecution>> TriggerAsync(string eventName, object payload, CancellationToken cancellationToken = default)
         => _orchestrator.TriggerAsync(eventName, payload, cancellationToken);
 }

@@ -35,7 +35,8 @@ public class AutomationRuleEngineTests
             Fields =
             {
                 new SFieldDefinition { Name = "Title", Label = "Title", DataType = FieldDataType.Text, IsRequired = true },
-                new SFieldDefinition { Name = "Tags", Label = "Tags", DataType = FieldDataType.Tags }
+                new SFieldDefinition { Name = "Tags", Label = "Tags", DataType = FieldDataType.Tags },
+                new SFieldDefinition { Name = "Status", Label = "Status", DataType = FieldDataType.Text }
             }
         };
 
@@ -61,6 +62,11 @@ public class AutomationRuleEngineTests
                 {
                     ActionType = AutomationActionType.Tag,
                     ParametersJson = "{\"tag\":\"finance\",\"field\":\"Tags\"}"
+                },
+                new AutomationAction
+                {
+                    ActionType = AutomationActionType.UpdateField,
+                    ParametersJson = "{\"field\":\"Status\",\"value\":\"Nouvelle\"}"
                 },
                 new AutomationAction
                 {
@@ -100,6 +106,7 @@ public class AutomationRuleEngineTests
         Assert.NotNull(updated);
         using var payload = JsonDocument.Parse(updated!.DataJson);
         Assert.Equal("finance", payload.RootElement.GetProperty("Tags")[0].GetString());
+        Assert.Equal("Nouvelle", payload.RootElement.GetProperty("Status").GetString());
 
         Assert.Single(notes.Notes);
         Assert.Single(agenda.Events);
@@ -107,6 +114,23 @@ public class AutomationRuleEngineTests
         var execution = await context.AutomationExecutions.OrderByDescending(e => e.StartedAt).FirstOrDefaultAsync();
         Assert.NotNull(execution);
         Assert.Equal(AutomationExecutionStatus.Succeeded, execution!.Status);
+
+        var automationPayload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["tableId"] = table.Id,
+            ["recordId"] = record.Id,
+            ["data"] = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Title"] = "Nouvelle facture"
+            }
+        };
+        var duplicateEvent = new AutomationEvent("record.created", AutomationTriggerType.OnCreate, automationPayload, null, table.Id);
+        var reExecutions = await automationEngine.ExecuteAsync(duplicateEvent);
+
+        Assert.Single(notes.Notes);
+        Assert.Single(agenda.Events);
+        Assert.Single(reExecutions);
+        Assert.Equal(1, await context.AutomationExecutions.CountAsync());
     }
 }
 

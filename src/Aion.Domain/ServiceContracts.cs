@@ -141,6 +141,7 @@ public interface IAutomationService
 {
     Task<S_AutomationRule> AddRuleAsync(S_AutomationRule rule, CancellationToken cancellationToken = default);
     Task<IEnumerable<S_AutomationRule>> GetRulesAsync(CancellationToken cancellationToken = default);
+    Task<S_AutomationRule> SetRuleEnabledAsync(Guid ruleId, bool isEnabled, CancellationToken cancellationToken = default);
 }
 
 public interface IAutomationOrchestrator

@@ -50,3 +50,9 @@ public sealed record CloudBackupOptions
     public int MaxRetries { get; set; } = 3;
     public int RetryBaseDelayMs { get; set; } = 500;
 }
+
+public sealed record AutomationSchedulerOptions
+{
+    public bool EnableBackgroundServices { get; set; } = !(OperatingSystem.IsAndroid() || OperatingSystem.IsIOS());
+    public int PollingIntervalSeconds { get; set; } = 60;
+}

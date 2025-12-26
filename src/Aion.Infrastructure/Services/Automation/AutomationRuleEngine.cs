@@ -35,14 +35,22 @@ public sealed class AutomationRuleEngine : IAutomationRuleEngine
 
         var rules = await LoadRulesAsync(automationEvent, cancellationToken).ConfigureAwait(false);
         var executions = new List<AutomationExecution>();
+        var payloadSnapshot = SerializePayload(automationEvent.Payload);
 
         foreach (var rule in rules)
         {
+            var existingExecution = await FindExistingExecutionAsync(rule.Id, payloadSnapshot, cancellationToken).ConfigureAwait(false);
+            if (existingExecution is not null)
+            {
+                executions.Add(existingExecution);
+                continue;
+            }
+
             var execution = new AutomationExecution
             {
                 RuleId = rule.Id,
                 Trigger = automationEvent.Name,
-                PayloadSnapshot = SerializePayload(automationEvent.Payload),
+                PayloadSnapshot = payloadSnapshot,
                 Status = AutomationExecutionStatus.Running,
                 StartedAt = DateTimeOffset.UtcNow,
                 Outcome = string.Empty
@@ -96,6 +104,7 @@ public sealed class AutomationRuleEngine : IAutomationRuleEngine
             AutomationActionType.Tag => await ApplyTagAsync(action, automationEvent, cancellationToken).ConfigureAwait(false),
             AutomationActionType.CreateNote or AutomationActionType.GenerateNote => await CreateNoteAsync(action, automationEvent, cancellationToken).ConfigureAwait(false),
             AutomationActionType.ScheduleReminder => await ScheduleReminderAsync(action, automationEvent, cancellationToken).ConfigureAwait(false),
+            AutomationActionType.UpdateField => await UpdateFieldAsync(action, automationEvent, cancellationToken).ConfigureAwait(false),
             _ => $"Action {action.ActionType} skipped (unsupported)"
         };
 
@@ -179,6 +188,52 @@ public sealed class AutomationRuleEngine : IAutomationRuleEngine
 
         await _agendaService.AddEventAsync(evt, cancellationToken).ConfigureAwait(false);
         return "reminder:scheduled";
+    }
+
+    private async Task<string> UpdateFieldAsync(AutomationAction action, AutomationEvent automationEvent, CancellationToken cancellationToken)
+    {
+        var parameters = DeserializeParameters(action);
+        var fieldName = GetRequiredString(parameters, "field");
+        var hasValue = parameters.TryGetValue("value", out var rawValue);
+        if (!hasValue)
+        {
+            throw new InvalidOperationException("Parameter 'value' is required.");
+        }
+
+        if (!TryGetGuid(automationEvent.Payload, "tableId", out var tableId) ||
+            !TryGetGuid(automationEvent.Payload, "recordId", out var recordId))
+        {
+            return "update skipped (missing record context)";
+        }
+
+        var dataEngine = _dataEngineFactory();
+        var record = await dataEngine.GetAsync(tableId, recordId, cancellationToken).ConfigureAwait(false);
+        if (record is null)
+        {
+            return "update skipped (record not found)";
+        }
+
+        var data = JsonSerializer.Deserialize<Dictionary<string, object?>>(record.DataJson, SerializerOptions) ??
+                   new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        if (data.Comparer != StringComparer.OrdinalIgnoreCase)
+        {
+            data = new Dictionary<string, object?>(data, StringComparer.OrdinalIgnoreCase);
+        }
+
+        var normalizedValue = NormalizeParameterValue(rawValue);
+        data.TryGetValue(fieldName, out var existing);
+
+        if (AreEquivalent(existing, normalizedValue))
+        {
+            return $"field:{fieldName} unchanged";
+        }
+
+        data[fieldName] = normalizedValue;
+
+        using var suppression = AutomationExecutionContext.Suppress();
+        await dataEngine.UpdateAsync(tableId, recordId, data, cancellationToken).ConfigureAwait(false);
+        return $"field:{fieldName} updated";
     }
 
     private static IReadOnlyCollection<S_Link> BuildLinks(AutomationEvent automationEvent)
@@ -423,5 +478,55 @@ public sealed class AutomationRuleEngine : IAutomationRuleEngine
         }
 
         return DateTimeOffset.TryParse(value.ToString(), out var date) ? date : null;
+    }
+
+    private async Task<AutomationExecution?> FindExistingExecutionAsync(Guid ruleId, string payloadSnapshot, CancellationToken cancellationToken)
+        => await _db.AutomationExecutions.AsNoTracking()
+            .Where(e => e.RuleId == ruleId && e.PayloadSnapshot == payloadSnapshot &&
+                        (e.Status == AutomationExecutionStatus.Succeeded || e.Status == AutomationExecutionStatus.Running))
+            .OrderByDescending(e => e.StartedAt)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+    private static object? NormalizeParameterValue(object? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value is JsonElement element)
+        {
+            return element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.Number when element.TryGetInt64(out var l) => l,
+                JsonValueKind.Number when element.TryGetDouble(out var d) => d,
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Null => null,
+                JsonValueKind.Array => element.EnumerateArray().Select(e => NormalizeParameterValue(e)).ToList(),
+                JsonValueKind.Object => JsonSerializer.Deserialize<Dictionary<string, object?>>(element.GetRawText(), SerializerOptions),
+                _ => element.ToString()
+            };
+        }
+
+        return value;
+    }
+
+    private static bool AreEquivalent(object? left, object? right)
+    {
+        if (left is null && right is null)
+        {
+            return true;
+        }
+
+        var normalizedLeft = NormalizeParameterValue(left);
+        var normalizedRight = NormalizeParameterValue(right);
+
+        return string.Equals(
+            JsonSerializer.Serialize(normalizedLeft, SerializerOptions),
+            JsonSerializer.Serialize(normalizedRight, SerializerOptions),
+            StringComparison.Ordinal);
     }
 }
