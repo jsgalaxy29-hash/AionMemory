@@ -2134,14 +2134,22 @@ public sealed class NoteService : IAionNoteService, INoteService
     private readonly AionDbContext _db;
     private readonly IFileStorageService _fileStorage;
     private readonly IAudioTranscriptionProvider _transcriptionProvider;
+    private readonly INoteTaggingService _taggingService;
     private readonly ISearchService _search;
     private readonly ILogger<NoteService> _logger;
 
-    public NoteService(AionDbContext db, IFileStorageService fileStorage, IAudioTranscriptionProvider transcriptionProvider, ISearchService search, ILogger<NoteService> logger)
+    public NoteService(
+        AionDbContext db,
+        IFileStorageService fileStorage,
+        IAudioTranscriptionProvider transcriptionProvider,
+        INoteTaggingService taggingService,
+        ISearchService search,
+        ILogger<NoteService> logger)
     {
         _db = db;
         _fileStorage = fileStorage;
         _transcriptionProvider = transcriptionProvider;
+        _taggingService = taggingService;
         _search = search;
         _logger = logger;
     }
@@ -2152,14 +2160,16 @@ public sealed class NoteService : IAionNoteService, INoteService
         audioStream.Position = 0;
         var transcription = await _transcriptionProvider.TranscribeAsync(audioStream, fileName, cancellationToken).ConfigureAwait(false);
 
-        var note = BuildNote(title, transcription.Text, NoteSourceType.Voice, links, audioFile.Id);
+        var tags = await _taggingService.SuggestTagsAsync(title, transcription.Text, cancellationToken).ConfigureAwait(false);
+        var note = BuildNote(title, transcription.Text, NoteSourceType.Voice, links, audioFile.Id, tags);
         await PersistNoteAsync(note, cancellationToken).ConfigureAwait(false);
         return note;
     }
 
     public async Task<S_Note> CreateTextNoteAsync(string title, string content, IEnumerable<J_Note_Link>? links = null, CancellationToken cancellationToken = default)
     {
-        var note = BuildNote(title, content, NoteSourceType.Text, links, null);
+        var tags = await _taggingService.SuggestTagsAsync(title, content, cancellationToken).ConfigureAwait(false);
+        var note = BuildNote(title, content, NoteSourceType.Text, links, null, tags);
         await PersistNoteAsync(note, cancellationToken).ConfigureAwait(false);
         return note;
     }
@@ -2177,9 +2187,16 @@ public sealed class NoteService : IAionNoteService, INoteService
             .ToList();
     }
 
-    private S_Note BuildNote(string title, string content, NoteSourceType source, IEnumerable<J_Note_Link>? links, Guid? audioFileId)
+    private S_Note BuildNote(
+        string title,
+        string content,
+        NoteSourceType source,
+        IEnumerable<J_Note_Link>? links,
+        Guid? audioFileId,
+        IEnumerable<string>? tags)
     {
         var linkList = links?.ToList() ?? new List<J_Note_Link>();
+        var normalizedTags = NormalizeTags(tags);
         var context = linkList.Count == 0
             ? null
             : string.Join(", ", linkList.Select(l => $"{l.TargetType}:{l.TargetId}"));
@@ -2192,10 +2209,22 @@ public sealed class NoteService : IAionNoteService, INoteService
             AudioFileId = audioFileId,
             IsTranscribed = source == NoteSourceType.Voice,
             CreatedAt = DateTimeOffset.UtcNow,
+            Tags = normalizedTags,
             Links = linkList,
             JournalContext = context
         };
     }
+
+    private static List<string> NormalizeTags(IEnumerable<string>? tags)
+        => tags is null
+            ? new List<string>()
+            : tags
+                .Select(tag => tag.Trim())
+                .Where(tag => !string.IsNullOrWhiteSpace(tag))
+                .Select(tag => tag.ToLowerInvariant())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(tag => tag)
+                .ToList();
 
     private async Task PersistNoteAsync(S_Note note, CancellationToken cancellationToken)
     {
