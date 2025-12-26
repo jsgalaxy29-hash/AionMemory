@@ -37,7 +37,13 @@ public class DataEngineBenchmarks : IAsyncDisposable
         _context = new AionDbContext(options);
         await _context.Database.MigrateAsync().ConfigureAwait(false);
 
-        _engine = new AionDataEngine(_context, NullLogger<AionDataEngine>.Instance, new NullSearchService(), new OperationScopeFactory(), new NullAutomationRuleEngine());
+        _engine = new AionDataEngine(
+            _context,
+            NullLogger<AionDataEngine>.Instance,
+            new NullSearchService(),
+            new OperationScopeFactory(),
+            new NullAutomationRuleEngine(),
+            new CurrentUserService());
 
         await CreateTablesAsync().ConfigureAwait(false);
         await SeedQueryDataAsync().ConfigureAwait(false);

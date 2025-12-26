@@ -3,6 +3,7 @@ using System.Text.Json;
 using Aion.Domain;
 using Aion.Infrastructure.Services;
 using Aion.Tests.Fixtures;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace Aion.Tests;
@@ -225,6 +226,40 @@ public class DataEngineCrudTests : IClassFixture<SqliteInMemoryFixture>
                 Assert.Equal(3, change.Version);
                 Assert.Contains("Updated", change.DataJson);
             });
+    }
+
+    [Fact]
+    public async Task DataEngine_audits_record_operations_with_current_user()
+    {
+        var table = new STable
+        {
+            Name = "audit",
+            DisplayName = "Audit",
+            Fields =
+            [
+                new() { Name = "Title", Label = "Titre", DataType = FieldDataType.Text, IsRequired = true }
+            ]
+        };
+
+        var engine = _fixture.CreateDataEngine();
+        await engine.CreateTableAsync(table);
+
+        var record = await engine.InsertAsync(table.Id, new Dictionary<string, object?> { ["Title"] = "Initial" });
+        await engine.UpdateAsync(table.Id, record.Id, new Dictionary<string, object?> { ["Title"] = "Updated" });
+        await engine.DeleteAsync(table.Id, record.Id);
+
+        await using var context = _fixture.CreateContext();
+        var audits = await context.RecordAudits
+            .Where(a => a.TableId == table.Id && a.RecordId == record.Id)
+            .OrderBy(a => a.Version)
+            .ToListAsync();
+
+        Assert.Equal(3, audits.Count);
+        Assert.All(audits, audit => Assert.Equal(_fixture.CurrentUserId, audit.UserId));
+        Assert.Collection(audits,
+            audit => Assert.Equal(ChangeType.Create, audit.ChangeType),
+            audit => Assert.Equal(ChangeType.Update, audit.ChangeType),
+            audit => Assert.Equal(ChangeType.Delete, audit.ChangeType));
     }
 
     private static string? ReadField(F_Record record, string fieldName)

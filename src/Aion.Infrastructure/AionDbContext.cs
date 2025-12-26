@@ -240,6 +240,7 @@ public class AionDbContext : DbContext
             builder.Property(r => r.ChangeType).HasConversion<string>().HasMaxLength(16);
             builder.Property(r => r.DataJson).IsRequired();
             builder.Property(r => r.PreviousDataJson);
+            builder.Property(r => r.UserId).IsRequired();
             builder.Property(r => r.Version).IsRequired().HasDefaultValue(1L);
             builder.Property(r => r.ChangedAt).IsRequired().HasDefaultValueSql("CURRENT_TIMESTAMP");
             builder.HasIndex(r => new { r.TableId, r.RecordId, r.Version }).IsUnique();
