@@ -175,10 +175,16 @@ public interface IMemoryIntelligenceService
 public interface ISyncBackend
 {
     Task<IReadOnlyCollection<SyncItem>> ListAsync(CancellationToken cancellationToken = default);
+    Task<SyncItem?> GetAsync(string path, CancellationToken cancellationToken = default);
+    Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken = default);
+    Task WriteAsync(SyncItem item, Stream content, CancellationToken cancellationToken = default);
+    Task DeleteAsync(string path, CancellationToken cancellationToken = default);
+    Task<bool> HasAppliedAsync(Guid operationId, CancellationToken cancellationToken = default);
+    Task MarkAppliedAsync(Guid operationId, CancellationToken cancellationToken = default);
 }
 
 public interface ISyncEngine
 {
     Task<IReadOnlyCollection<SyncState>> PlanAsync(ISyncBackend local, ISyncBackend remote, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<SyncState>> ApplyAsync(ISyncBackend local, ISyncBackend remote, IReadOnlyCollection<SyncOperation> operations, CancellationToken cancellationToken = default);
 }
-

@@ -23,6 +23,8 @@ public enum SyncConflictRule
     LastWriteWins
 }
 
+public sealed record SyncOperation(Guid OperationId, SyncAction Action, SyncItem Item);
+
 public sealed record SyncItem
 {
     public SyncItem(string path, DateTimeOffset modifiedAt, long version, long? length = null, string? hash = null)
