@@ -18,6 +18,12 @@ internal static class InfrastructureMetrics
     private static readonly Counter<long> SyncConflicts = Meter.CreateCounter<long>(
         "aion.sync.conflicts",
         description: "Sync conflicts detected during sync planning or application.");
+    private static readonly Counter<long> LookupValidationQueries = Meter.CreateCounter<long>(
+        "aion.dataengine.lookup_validation_queries",
+        description: "Queries executed while validating lookup references.");
+    private static readonly Counter<long> LookupValidationCacheHits = Meter.CreateCounter<long>(
+        "aion.dataengine.lookup_validation_cache_hits",
+        description: "Lookup references satisfied by the per-request cache.");
 
     internal static void RecordDataEngineDuration(string operationName, TimeSpan elapsed)
     {
@@ -49,6 +55,26 @@ internal static class InfrastructureMetrics
             { "stage", stage }
         };
         SyncConflicts.Add(1, tags);
+    }
+
+    internal static void RecordLookupValidationQueries(int count)
+    {
+        if (count <= 0)
+        {
+            return;
+        }
+
+        LookupValidationQueries.Add(count);
+    }
+
+    internal static void RecordLookupValidationCacheHits(int count)
+    {
+        if (count <= 0)
+        {
+            return;
+        }
+
+        LookupValidationCacheHits.Add(count);
     }
 
     private static string NormalizeDataEngineOperation(string operationName)
