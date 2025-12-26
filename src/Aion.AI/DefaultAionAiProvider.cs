@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Aion.Domain;
+using Aion.AI.Observability;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -18,22 +20,29 @@ public sealed class DefaultAionAiProvider : ILLMProvider, IEmbeddingProvider, IA
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AionAiOptions _options;
     private readonly ILogger<DefaultAionAiProvider> _logger;
+    private readonly IAiCallLogService _callLogService;
 
-    public DefaultAionAiProvider(IHttpClientFactory httpClientFactory, IOptions<AionAiOptions> options, ILogger<DefaultAionAiProvider> logger)
+    public DefaultAionAiProvider(IHttpClientFactory httpClientFactory, IOptions<AionAiOptions> options, ILogger<DefaultAionAiProvider> logger, IAiCallLogService? callLogService = null)
     {
         _httpClientFactory = httpClientFactory;
         _options = options.Value;
         _logger = logger;
+        _callLogService = callLogService ?? NoopAiCallLogService.Instance;
     }
 
     public async Task<LlmResponse> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
     {
         var endpoint = _options.LlmEndpoint ?? _options.BaseEndpoint;
+        var stopwatch = Stopwatch.StartNew();
+        var status = AiCallStatus.Success;
 
         if (string.IsNullOrWhiteSpace(endpoint))
         {
             _logger.LogWarning("Endpoint IA non configuré, retour d'une réponse stub.");
+            status = AiCallStatus.Inactive;
             var content1 = $"[stub] {_options.LlmModel ?? "model"}: {prompt}";
+            stopwatch.Stop();
+            await _callLogService.LogAsync(new AiCallLogEntry("Default", _options.LlmModel, "chat", null, null, stopwatch.Elapsed.TotalMilliseconds, status), cancellationToken).ConfigureAwait(false);
             return new LlmResponse(content1, content1, _options.LlmModel);
         }
 
@@ -54,11 +63,17 @@ public sealed class DefaultAionAiProvider : ILLMProvider, IEmbeddingProvider, IA
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("Appel IA non réussi ({Status}) - bascule en mode stub", response.StatusCode);
+            status = AiCallStatus.Fallback;
             var content2 = $"[stub-fallback] {prompt}";
+            stopwatch.Stop();
+            await _callLogService.LogAsync(new AiCallLogEntry("Default", _options.LlmModel, "chat", null, null, stopwatch.Elapsed.TotalMilliseconds, status), cancellationToken).ConfigureAwait(false);
             return new LlmResponse(content2, content2, _options.LlmModel);
         }
 
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var usage = AiUsageParser.Extract(json);
+        stopwatch.Stop();
+        await _callLogService.LogAsync(new AiCallLogEntry("Default", _options.LlmModel, "chat", usage.tokens, usage.cost, stopwatch.Elapsed.TotalMilliseconds, status), cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
         var content = doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
         return new LlmResponse(content ?? string.Empty, json, _options.LlmModel);
@@ -67,11 +82,16 @@ public sealed class DefaultAionAiProvider : ILLMProvider, IEmbeddingProvider, IA
     public async Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default)
     {
         var endpoint = _options.EmbeddingsEndpoint ?? _options.BaseEndpoint;
+        var stopwatch = Stopwatch.StartNew();
+        var status = AiCallStatus.Success;
 
         if (string.IsNullOrWhiteSpace(endpoint))
         {
             _logger.LogWarning("Embedding endpoint not configured, returning deterministic stub vector.");
+            status = AiCallStatus.Inactive;
             var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            stopwatch.Stop();
+            await _callLogService.LogAsync(new AiCallLogEntry("Default", _options.EmbeddingModel ?? _options.LlmModel, "embeddings", null, null, stopwatch.Elapsed.TotalMilliseconds, status), cancellationToken).ConfigureAwait(false);
             return new EmbeddingResult(vector, _options.EmbeddingModel ?? _options.LlmModel);
         }
 
@@ -91,6 +111,9 @@ public sealed class DefaultAionAiProvider : ILLMProvider, IEmbeddingProvider, IA
 
         response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var usage = AiUsageParser.Extract(json);
+        stopwatch.Stop();
+        await _callLogService.LogAsync(new AiCallLogEntry("Default", _options.EmbeddingModel ?? _options.LlmModel, "embeddings", usage.tokens, usage.cost, stopwatch.Elapsed.TotalMilliseconds, status), cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
         var values = doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(e => e.GetSingle()).ToArray();
         return new EmbeddingResult(values, _options.EmbeddingModel ?? _options.LlmModel, json);
@@ -99,10 +122,15 @@ public sealed class DefaultAionAiProvider : ILLMProvider, IEmbeddingProvider, IA
     public async Task<TranscriptionResult> TranscribeAsync(Stream audioStream, string fileName, CancellationToken cancellationToken = default)
     {
         var endpoint = _options.TranscriptionEndpoint ?? _options.BaseEndpoint;
+        var stopwatch = Stopwatch.StartNew();
+        var status = AiCallStatus.Success;
 
         if (string.IsNullOrWhiteSpace(endpoint))
         {
             _logger.LogWarning("Transcription endpoint not configured, returning stub result.");
+            status = AiCallStatus.Inactive;
+            stopwatch.Stop();
+            await _callLogService.LogAsync(new AiCallLogEntry("Default", _options.TranscriptionModel ?? _options.LlmModel, "transcription", null, null, stopwatch.Elapsed.TotalMilliseconds, status), cancellationToken).ConfigureAwait(false);
             return new TranscriptionResult("Transcription stub", TimeSpan.Zero, _options.TranscriptionModel ?? _options.LlmModel);
         }
 
@@ -125,6 +153,9 @@ public sealed class DefaultAionAiProvider : ILLMProvider, IEmbeddingProvider, IA
 
         response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var usage = AiUsageParser.Extract(json);
+        stopwatch.Stop();
+        await _callLogService.LogAsync(new AiCallLogEntry("Default", _options.TranscriptionModel ?? _options.LlmModel, "transcription", usage.tokens, usage.cost, stopwatch.Elapsed.TotalMilliseconds, status), cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
         var text = doc.RootElement.GetProperty("text").GetString() ?? string.Empty;
         return new TranscriptionResult(text, TimeSpan.Zero, _options.TranscriptionModel ?? _options.LlmModel);

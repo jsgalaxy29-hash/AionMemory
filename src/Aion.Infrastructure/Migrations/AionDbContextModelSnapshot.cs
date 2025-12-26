@@ -546,6 +546,62 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("SecurityAuditLogs");
                 });
 
+            modelBuilder.Entity("Aion.Domain.AiCallLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("Cost")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("DurationMs")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Model")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("Tokens")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Provider", "Model", "OccurredAt");
+
+                    b.HasIndex("Status", "OccurredAt");
+
+                    b.HasIndex("WorkspaceId", "OccurredAt");
+
+                    b.ToTable("AiCallLogs");
+                });
+
             modelBuilder.Entity("Aion.Domain.F_RecordEmbedding", b =>
                 {
                     b.Property<Guid>("RecordId")

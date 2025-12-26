@@ -177,6 +177,7 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IBackupService, BackupService>();
         services.AddScoped<IRestoreService, RestoreService>();
         services.AddScoped<ILogService, LogService>();
+        services.AddScoped<IAiCallLogService, AiCallLogService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddHostedService<BackupCleanupService>();
         services.AddHostedService<BackupSchedulerService>();

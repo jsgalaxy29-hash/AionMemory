@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
         optionsBuilder.ValidateOnStart();
 
         services.TryAddSingleton<IOperationScopeFactory, NoopOperationScopeFactory>();
+        services.TryAddSingleton<IAiCallLogService, Observability.NoopAiCallLogService>();
         services.AddHttpClient(HttpClientNames.Llm, ConfigureClient(HttpClientNames.Llm));
         services.AddHttpClient(HttpClientNames.Embeddings, ConfigureClient(HttpClientNames.Embeddings));
         services.AddHttpClient(HttpClientNames.Transcription, ConfigureClient(HttpClientNames.Transcription));
