@@ -23,6 +23,7 @@
             <button class="button secondary full-width" @onclick="NavigateAutomations">Automatisations</button>
             <button class="button secondary full-width" @onclick="NavigateLinks">Graphe</button>
             <button class="button secondary full-width" @onclick="NavigateBackups">Backups</button>
+            <button class="button secondary full-width" @onclick="NavigateAiDiagnostics">Diagnostics IA</button>
         </div>
         <div class="app-shell__nav-section">
             <div class="app-shell__nav-title">
@@ -158,6 +159,7 @@
     private void NavigateTrust() => Navigation.NavigateTo("/trust-ux");
     private void NavigateLinks() => Navigation.NavigateTo("/links");
     private void NavigateBackups() => Navigation.NavigateTo("/backups");
+    private void NavigateAiDiagnostics() => Navigation.NavigateTo("/diagnostics/ai");
 
     private void NavigateToModule(S_Module module)
     {

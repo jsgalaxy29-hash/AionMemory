@@ -47,6 +47,7 @@ public class AionDbContext : DbContext
     public DbSet<F_RecordIndex> RecordIndexes => Set<F_RecordIndex>();
     public DbSet<F_RecordAudit> RecordAudits => Set<F_RecordAudit>();
     public DbSet<S_SecurityAuditLog> SecurityAuditLogs => Set<S_SecurityAuditLog>();
+    public DbSet<AiCallLog> AiCallLogs => Set<AiCallLog>();
     public DbSet<F_RecordEmbedding> Embeddings => Set<F_RecordEmbedding>();
     public DbSet<NoteSearchEntry> NoteSearch => Set<NoteSearchEntry>();
     public DbSet<RecordSearchEntry> RecordSearch => Set<RecordSearchEntry>();
@@ -285,6 +286,21 @@ public class AionDbContext : DbContext
             builder.Property(r => r.WorkspaceId).IsRequired();
             builder.HasIndex(r => new { r.WorkspaceId, r.OccurredAt });
             builder.HasIndex(r => new { r.Category, r.OccurredAt });
+        });
+
+        modelBuilder.Entity<AiCallLog>(builder =>
+        {
+            builder.ToTable("AiCallLogs");
+            builder.Property(r => r.Provider).IsRequired().HasMaxLength(64);
+            builder.Property(r => r.Model).HasMaxLength(128);
+            builder.Property(r => r.Operation).IsRequired().HasMaxLength(32);
+            builder.Property(r => r.Status).IsRequired().HasMaxLength(32);
+            builder.Property(r => r.CorrelationId).HasMaxLength(64);
+            builder.Property(r => r.OccurredAt).IsRequired().HasDefaultValueSql("CURRENT_TIMESTAMP");
+            builder.Property(r => r.WorkspaceId).IsRequired();
+            builder.HasIndex(r => new { r.WorkspaceId, r.OccurredAt });
+            builder.HasIndex(r => new { r.Provider, r.Model, r.OccurredAt });
+            builder.HasIndex(r => new { r.Status, r.OccurredAt });
         });
 
         modelBuilder.Entity<F_RecordEmbedding>(builder =>

@@ -22,11 +22,13 @@ public sealed class HttpTextGenerationProvider : IChatModel
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptionsMonitor<AionAiOptions> _options;
     private readonly ILogger<HttpTextGenerationProvider> _logger;
-    public HttpTextGenerationProvider(IHttpClientFactory httpClientFactory, IOptionsMonitor<AionAiOptions> options, ILogger<HttpTextGenerationProvider> logger)
+    private readonly IAiCallLogService _callLogService;
+    public HttpTextGenerationProvider(IHttpClientFactory httpClientFactory, IOptionsMonitor<AionAiOptions> options, ILogger<HttpTextGenerationProvider> logger, IAiCallLogService callLogService)
     {
         _httpClientFactory = httpClientFactory;
         _options = options;
         _logger = logger;
+        _callLogService = callLogService;
     }
     public async Task<LlmResponse> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
     {
@@ -35,21 +37,27 @@ public sealed class HttpTextGenerationProvider : IChatModel
         var stopwatch = Stopwatch.StartNew();
         var opts = _options.CurrentValue;
         var client = CreateClient(HttpClientNames.Llm, opts.LlmEndpoint ?? opts.BaseEndpoint);
-        if (client.BaseAddress is null)
-        {
-            _logger.LogWarning("LLM endpoint not configured; returning stub response");
-            AiMetrics.RecordError(operation, providerName, opts.LlmModel);
-            return new LlmResponse($"[stub-llm] {prompt}", string.Empty, opts.LlmModel);
-        }
-        var payload = new
-        {
-            model = opts.LlmModel ?? opts.EmbeddingModel ?? "generic-llm",
-            messages = new[] { new { role = "user", content = prompt } },
-            max_tokens = opts.MaxTokens,
-            temperature = opts.Temperature
-        };
+        var status = AiCallStatus.Success;
+        long? tokens = null;
+        double? cost = null;
         try
         {
+            if (client.BaseAddress is null)
+            {
+                _logger.LogWarning("LLM endpoint not configured; returning stub response");
+                AiMetrics.RecordError(operation, providerName, opts.LlmModel);
+                status = AiCallStatus.Inactive;
+                return new LlmResponse($"[stub-llm] {prompt}", string.Empty, opts.LlmModel);
+            }
+
+            var payload = new
+            {
+                model = opts.LlmModel ?? opts.EmbeddingModel ?? "generic-llm",
+                messages = new[] { new { role = "user", content = prompt } },
+                max_tokens = opts.MaxTokens,
+                temperature = opts.Temperature
+            };
+
             var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "chat/completions")
@@ -64,10 +72,12 @@ public sealed class HttpTextGenerationProvider : IChatModel
             {
                 _logger.LogWarning("LLM call failed with status {Status}; returning stub", response.StatusCode);
                 AiMetrics.RecordError(operation, providerName, opts.LlmModel);
+                status = AiCallStatus.Fallback;
                 return new LlmResponse($"[stub-llm-fallback] {prompt}", string.Empty, opts.LlmModel);
             }
             var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             AiMetrics.RecordUsageFromJson(json, operation, providerName, opts.LlmModel);
+            (tokens, cost) = Observability.AiUsageParser.Extract(json);
             using var doc = JsonDocument.Parse(json);
             var content = doc.RootElement
                 .GetProperty("choices")[0]
@@ -78,6 +88,7 @@ public sealed class HttpTextGenerationProvider : IChatModel
         }
         catch (Exception)
         {
+            status = AiCallStatus.Error;
             AiMetrics.RecordError(operation, providerName, opts.LlmModel);
             throw;
         }
@@ -85,6 +96,9 @@ public sealed class HttpTextGenerationProvider : IChatModel
         {
             stopwatch.Stop();
             AiMetrics.RecordLatency(operation, providerName, opts.LlmModel, stopwatch.Elapsed);
+            await _callLogService.LogAsync(
+                new AiCallLogEntry(providerName, opts.LlmModel, operation, tokens, cost, stopwatch.Elapsed.TotalMilliseconds, status),
+                cancellationToken).ConfigureAwait(false);
         }
     }
     private HttpClient CreateClient(string clientName, string? endpoint)
@@ -127,12 +141,14 @@ public sealed class HttpEmbeddingProvider : IEmbeddingsModel
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptionsMonitor<AionAiOptions> _options;
     private readonly ILogger<HttpEmbeddingProvider> _logger;
+    private readonly IAiCallLogService _callLogService;
 
-    public HttpEmbeddingProvider(IHttpClientFactory httpClientFactory, IOptionsMonitor<AionAiOptions> options, ILogger<HttpEmbeddingProvider> logger)
+    public HttpEmbeddingProvider(IHttpClientFactory httpClientFactory, IOptionsMonitor<AionAiOptions> options, ILogger<HttpEmbeddingProvider> logger, IAiCallLogService callLogService)
     {
         _httpClientFactory = httpClientFactory;
         _options = options;
         _logger = logger;
+        _callLogService = callLogService;
     }
 
     public async Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default)
@@ -143,17 +159,21 @@ public sealed class HttpEmbeddingProvider : IEmbeddingsModel
         var opts = _options.CurrentValue;
         var client = _httpClientFactory.CreateClient(HttpClientNames.Embeddings);
         HttpTextGenerationProvider.EnsureClientConfigured(client, opts.EmbeddingsEndpoint ?? opts.BaseEndpoint, opts);
-
-        if (client.BaseAddress is null)
-        {
-            _logger.LogWarning("Embedding endpoint not configured; returning stub vector");
-            AiMetrics.RecordError(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
-            var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
-            return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
-        }
+        var status = AiCallStatus.Success;
+        long? tokens = null;
+        double? cost = null;
 
         try
         {
+            if (client.BaseAddress is null)
+            {
+                _logger.LogWarning("Embedding endpoint not configured; returning stub vector");
+                AiMetrics.RecordError(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
+                status = AiCallStatus.Inactive;
+                var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+                return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
+            }
+
             var payload = new { model = opts.EmbeddingModel ?? opts.LlmModel ?? "generic-embedding", input = text };
             var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
@@ -170,18 +190,21 @@ public sealed class HttpEmbeddingProvider : IEmbeddingsModel
             {
                 _logger.LogWarning("Embedding call failed with status {Status}; returning stub", response.StatusCode);
                 AiMetrics.RecordError(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
+                status = AiCallStatus.Fallback;
                 var vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
                 return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
             }
 
             var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             AiMetrics.RecordUsageFromJson(json, operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
+            (tokens, cost) = Observability.AiUsageParser.Extract(json);
             using var doc = JsonDocument.Parse(json);
             var values = doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(e => e.GetSingle()).ToArray();
             return new EmbeddingResult(values, opts.EmbeddingModel ?? opts.LlmModel, json);
         }
         catch (Exception)
         {
+            status = AiCallStatus.Error;
             AiMetrics.RecordError(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
             throw;
         }
@@ -189,6 +212,9 @@ public sealed class HttpEmbeddingProvider : IEmbeddingsModel
         {
             stopwatch.Stop();
             AiMetrics.RecordLatency(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel, stopwatch.Elapsed);
+            await _callLogService.LogAsync(
+                new AiCallLogEntry(providerName, opts.EmbeddingModel ?? opts.LlmModel, operation, tokens, cost, stopwatch.Elapsed.TotalMilliseconds, status),
+                cancellationToken).ConfigureAwait(false);
         }
     }
 }
@@ -197,11 +223,13 @@ public sealed class HttpAudioTranscriptionProvider : ITranscriptionModel
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptionsMonitor<AionAiOptions> _options;
     private readonly ILogger<HttpAudioTranscriptionProvider> _logger;
-    public HttpAudioTranscriptionProvider(IHttpClientFactory httpClientFactory, IOptionsMonitor<AionAiOptions> options, ILogger<HttpAudioTranscriptionProvider> logger)
+    private readonly IAiCallLogService _callLogService;
+    public HttpAudioTranscriptionProvider(IHttpClientFactory httpClientFactory, IOptionsMonitor<AionAiOptions> options, ILogger<HttpAudioTranscriptionProvider> logger, IAiCallLogService callLogService)
     {
         _httpClientFactory = httpClientFactory;
         _options = options;
         _logger = logger;
+        _callLogService = callLogService;
     }
     public async Task<TranscriptionResult> TranscribeAsync(Stream audioStream, string fileName, CancellationToken cancellationToken = default)
     {
@@ -211,17 +239,21 @@ public sealed class HttpAudioTranscriptionProvider : ITranscriptionModel
         var opts = _options.CurrentValue;
         var client = _httpClientFactory.CreateClient(HttpClientNames.Transcription);
         HttpTextGenerationProvider.EnsureClientConfigured(client, opts.TranscriptionEndpoint ?? opts.BaseEndpoint, opts);
-        if (client.BaseAddress is null)
-        {
-            _logger.LogWarning("Transcription endpoint not configured; returning stub transcription");
-            AiMetrics.RecordError(operation, providerName, opts.TranscriptionModel);
-            return new TranscriptionResult($"[stub-transcription] {fileName}", TimeSpan.Zero, opts.TranscriptionModel);
-        }
+        var status = AiCallStatus.Success;
+        long? tokens = null;
+        double? cost = null;
         using var content = new MultipartFormDataContent();
         content.Add(new StreamContent(audioStream), "file", fileName);
         content.Add(new StringContent(opts.TranscriptionModel ?? opts.LlmModel ?? "whisper"), "model");
         try
         {
+            if (client.BaseAddress is null)
+            {
+                _logger.LogWarning("Transcription endpoint not configured; returning stub transcription");
+                AiMetrics.RecordError(operation, providerName, opts.TranscriptionModel);
+                status = AiCallStatus.Inactive;
+                return new TranscriptionResult($"[stub-transcription] {fileName}", TimeSpan.Zero, opts.TranscriptionModel);
+            }
             var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "audio/transcriptions")
@@ -236,16 +268,19 @@ public sealed class HttpAudioTranscriptionProvider : ITranscriptionModel
             {
                 _logger.LogWarning("Transcription call failed with status {Status}; returning stub", response.StatusCode);
                 AiMetrics.RecordError(operation, providerName, opts.TranscriptionModel);
+                status = AiCallStatus.Fallback;
                 return new TranscriptionResult($"[stub-transcription] {fileName}", TimeSpan.Zero, opts.TranscriptionModel);
             }
             var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             AiMetrics.RecordUsageFromJson(json, operation, providerName, opts.TranscriptionModel);
+            (tokens, cost) = Observability.AiUsageParser.Extract(json);
             using var doc = JsonDocument.Parse(json);
             var text = doc.RootElement.GetProperty("text").GetString() ?? string.Empty;
             return new TranscriptionResult(text, TimeSpan.Zero, opts.TranscriptionModel);
         }
         catch (Exception)
         {
+            status = AiCallStatus.Error;
             AiMetrics.RecordError(operation, providerName, opts.TranscriptionModel);
             throw;
         }
@@ -253,6 +288,9 @@ public sealed class HttpAudioTranscriptionProvider : ITranscriptionModel
         {
             stopwatch.Stop();
             AiMetrics.RecordLatency(operation, providerName, opts.TranscriptionModel, stopwatch.Elapsed);
+            await _callLogService.LogAsync(
+                new AiCallLogEntry(providerName, opts.TranscriptionModel, operation, tokens, cost, stopwatch.Elapsed.TotalMilliseconds, status),
+                cancellationToken).ConfigureAwait(false);
         }
     }
 }
@@ -262,11 +300,13 @@ public sealed class HttpVisionProvider : IVisionModel
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptionsMonitor<AionAiOptions> _options;
     private readonly ILogger<HttpVisionProvider> _logger;
-    public HttpVisionProvider(IHttpClientFactory httpClientFactory, IOptionsMonitor<AionAiOptions> options, ILogger<HttpVisionProvider> logger)
+    private readonly IAiCallLogService _callLogService;
+    public HttpVisionProvider(IHttpClientFactory httpClientFactory, IOptionsMonitor<AionAiOptions> options, ILogger<HttpVisionProvider> logger, IAiCallLogService callLogService)
     {
         _httpClientFactory = httpClientFactory;
         _options = options;
         _logger = logger;
+        _callLogService = callLogService;
     }
     public async Task<S_VisionAnalysis> AnalyzeAsync(VisionAnalysisRequest request, CancellationToken cancellationToken = default)
     {
@@ -276,15 +316,19 @@ public sealed class HttpVisionProvider : IVisionModel
         var opts = _options.CurrentValue;
         var client = _httpClientFactory.CreateClient(HttpClientNames.Vision);
         HttpTextGenerationProvider.EnsureClientConfigured(client, opts.VisionEndpoint ?? opts.BaseEndpoint, opts);
-        if (client.BaseAddress is null)
-        {
-            _logger.LogWarning("Vision endpoint not configured; returning stub analysis");
-            AiMetrics.RecordError(operation, providerName, request.Model ?? opts.VisionModel);
-            return BuildStub(request.FileId, request.AnalysisType, "Unconfigured vision endpoint");
-        }
+        var status = AiCallStatus.Success;
+        long? tokens = null;
+        double? cost = null;
         var payload = new { fileId = request.FileId, analysisType = request.AnalysisType.ToString(), model = request.Model ?? opts.VisionModel ?? "vision-generic" };
         try
         {
+            if (client.BaseAddress is null)
+            {
+                _logger.LogWarning("Vision endpoint not configured; returning stub analysis");
+                AiMetrics.RecordError(operation, providerName, request.Model ?? opts.VisionModel);
+                status = AiCallStatus.Inactive;
+                return BuildStub(request.FileId, request.AnalysisType, "Unconfigured vision endpoint");
+            }
             using var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "vision/analyze")
@@ -299,10 +343,12 @@ public sealed class HttpVisionProvider : IVisionModel
             {
                 _logger.LogWarning("Vision call failed with status {Status}; returning stub", response.StatusCode);
                 AiMetrics.RecordError(operation, providerName, request.Model ?? opts.VisionModel);
+                status = AiCallStatus.Fallback;
                 return BuildStub(request.FileId, request.AnalysisType, "Vision call failed");
             }
             var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             AiMetrics.RecordUsageFromJson(json, operation, providerName, request.Model ?? opts.VisionModel);
+            (tokens, cost) = Observability.AiUsageParser.Extract(json);
             return new S_VisionAnalysis
             {
                 FileId = request.FileId,
@@ -312,6 +358,7 @@ public sealed class HttpVisionProvider : IVisionModel
         }
         catch (Exception)
         {
+            status = AiCallStatus.Error;
             AiMetrics.RecordError(operation, providerName, request.Model ?? opts.VisionModel);
             throw;
         }
@@ -319,6 +366,9 @@ public sealed class HttpVisionProvider : IVisionModel
         {
             stopwatch.Stop();
             AiMetrics.RecordLatency(operation, providerName, request.Model ?? opts.VisionModel, stopwatch.Elapsed);
+            await _callLogService.LogAsync(
+                new AiCallLogEntry(providerName, request.Model ?? opts.VisionModel, operation, tokens, cost, stopwatch.Elapsed.TotalMilliseconds, status),
+                cancellationToken).ConfigureAwait(false);
         }
     }
     private static S_VisionAnalysis BuildStub(Guid fileId, VisionAnalysisType analysisType, string message)

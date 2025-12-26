@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text.Json;
+using Aion.AI.Observability;
 using Aion.AI;
 using Aion.Domain;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,7 @@ public static class AiAdapterServiceCollectionExtensions
     {
         services.AddOptions<AionAiOptions>();
         services.TryAddSingleton<IOperationScopeFactory, NoopOperationScopeFactory>();
+        services.TryAddSingleton<IAiCallLogService, NoopAiCallLogService>();
         services.TryAddSingleton<EchoLlmProvider>();
         services.TryAddSingleton<DeterministicEmbeddingProvider>();
         services.TryAddScoped<StubAudioTranscriptionProvider>();
@@ -44,30 +46,99 @@ public static class AiAdapterServiceCollectionExtensions
 
 public sealed class EchoLlmProvider : IChatModel
 {
+    private readonly IAiCallLogService _callLogService;
+
+    public EchoLlmProvider()
+        : this(NoopAiCallLogService.Instance)
+    {
+    }
+
+    public EchoLlmProvider(IAiCallLogService callLogService)
+    {
+        _callLogService = callLogService;
+    }
+
     public Task<LlmResponse> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
     {
+        var stopwatch = Stopwatch.StartNew();
         var content = $"[stub] {prompt}";
-        return Task.FromResult(new LlmResponse(content, content));
+        var response = new LlmResponse(content, content);
+        stopwatch.Stop();
+        return LogAsync("chat", "Local", "echo", response, stopwatch, cancellationToken);
+    }
+
+    private async Task<LlmResponse> LogAsync(string operation, string provider, string model, LlmResponse response, Stopwatch stopwatch, CancellationToken cancellationToken)
+    {
+        await _callLogService.LogAsync(
+            new AiCallLogEntry(provider, model, operation, null, null, stopwatch.Elapsed.TotalMilliseconds, AiCallStatus.Success),
+            cancellationToken).ConfigureAwait(false);
+        return response;
     }
 }
 
 public sealed class DeterministicEmbeddingProvider : IEmbeddingsModel
 {
+    private readonly IAiCallLogService _callLogService;
+
+    public DeterministicEmbeddingProvider()
+        : this(NoopAiCallLogService.Instance)
+    {
+    }
+
+    public DeterministicEmbeddingProvider(IAiCallLogService callLogService)
+    {
+        _callLogService = callLogService;
+    }
+
     public Task<EmbeddingResult> EmbedAsync(string text, CancellationToken cancellationToken = default)
     {
+        var stopwatch = Stopwatch.StartNew();
         var seed = Math.Abs(text.GetHashCode());
         var vector = Enumerable.Range(0, 8)
             .Select(i => (float)((seed + i) % 100) / 10f)
             .ToArray();
-        return Task.FromResult(new EmbeddingResult(vector, "stub-embedding"));
+        var response = new EmbeddingResult(vector, "stub-embedding");
+        stopwatch.Stop();
+        return LogAsync("embeddings", "Local", "stub-embedding", response, stopwatch, cancellationToken);
+    }
+
+    private async Task<EmbeddingResult> LogAsync(string operation, string provider, string model, EmbeddingResult response, Stopwatch stopwatch, CancellationToken cancellationToken)
+    {
+        await _callLogService.LogAsync(
+            new AiCallLogEntry(provider, model, operation, null, null, stopwatch.Elapsed.TotalMilliseconds, AiCallStatus.Success),
+            cancellationToken).ConfigureAwait(false);
+        return response;
     }
 }
 
 public sealed class StubAudioTranscriptionProvider : ITranscriptionModel
 {
+    private readonly IAiCallLogService _callLogService;
+
+    public StubAudioTranscriptionProvider()
+        : this(NoopAiCallLogService.Instance)
+    {
+    }
+
+    public StubAudioTranscriptionProvider(IAiCallLogService callLogService)
+    {
+        _callLogService = callLogService;
+    }
+
     public Task<TranscriptionResult> TranscribeAsync(Stream audioStream, string fileName, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(new TranscriptionResult($"Transcription simulée pour {fileName}", TimeSpan.Zero, "stub-transcription"));
+        var stopwatch = Stopwatch.StartNew();
+        var response = new TranscriptionResult($"Transcription simulée pour {fileName}", TimeSpan.Zero, "stub-transcription");
+        stopwatch.Stop();
+        return LogAsync("transcription", "Local", "stub-transcription", response, stopwatch, cancellationToken);
+    }
+
+    private async Task<TranscriptionResult> LogAsync(string operation, string provider, string model, TranscriptionResult response, Stopwatch stopwatch, CancellationToken cancellationToken)
+    {
+        await _callLogService.LogAsync(
+            new AiCallLogEntry(provider, model, operation, null, null, stopwatch.Elapsed.TotalMilliseconds, AiCallStatus.Success),
+            cancellationToken).ConfigureAwait(false);
+        return response;
     }
 }
 
