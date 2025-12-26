@@ -36,6 +36,7 @@ public sealed class AionAiOptionsValidator : IValidateOptions<AionAiOptions>
         }
         else if (provider != AiProviderNames.Mock
                  && provider != AiProviderNames.Local
+                 && provider != AiProviderNames.Offline
                  && provider != AiProviderNames.OpenAi
                  && provider != AiProviderNames.Mistral
                  && !hasEndpoint)

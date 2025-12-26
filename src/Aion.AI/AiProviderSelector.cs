@@ -28,7 +28,7 @@ public sealed class AiProviderSelector
         }
 
         var provider = Normalize(options.Provider);
-        if (provider is AiProviderNames.Mock or AiProviderNames.Local)
+        if (provider is AiProviderNames.Mock or AiProviderNames.Local or AiProviderNames.Offline)
         {
             return new AiConfigurationStatus(true, provider, null);
         }
@@ -63,6 +63,7 @@ public sealed class AiProviderSelector
             AiProviderNames.Http => AiProviderNames.Http,
             AiProviderNames.Mock => AiProviderNames.Mock,
             AiProviderNames.Local => AiProviderNames.Local,
+            AiProviderNames.Offline => AiProviderNames.Offline,
             _ => LogAndFallback(normalized)
         };
     }
