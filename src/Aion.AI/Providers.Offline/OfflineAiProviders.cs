@@ -124,12 +124,7 @@ public sealed class OfflineVisionModel : IVisionModel
     public Task<S_VisionAnalysis> AnalyzeAsync(VisionAnalysisRequest request, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
-        var payload = JsonSerializer.Serialize(new
-        {
-            request.FileId,
-            request.AnalysisType,
-            summary = "(Mode hors-ligne) Analyse indisponible."
-        });
+        var payload = JsonSerializer.Serialize(BuildPayload(request));
 
         var response = new S_VisionAnalysis
         {
@@ -139,6 +134,38 @@ public sealed class OfflineVisionModel : IVisionModel
         };
         stopwatch.Stop();
         return LogAsync("vision", "Offline", request.Model ?? "offline-vision", response, stopwatch, cancellationToken);
+    }
+
+    private static object BuildPayload(VisionAnalysisRequest request)
+    {
+        return request.AnalysisType switch
+        {
+            VisionAnalysisType.Classification => new
+            {
+                request.FileId,
+                request.AnalysisType,
+                summary = "(Mode hors-ligne) Classification simplifiée.",
+                labels = new[]
+                {
+                    new { label = "document", score = 0.42 },
+                    new { label = "invoice", score = 0.31 }
+                }
+            },
+            VisionAnalysisType.Tagging => new
+            {
+                request.FileId,
+                request.AnalysisType,
+                summary = "(Mode hors-ligne) Tags simplifiés.",
+                tags = new[] { "offline", "document" }
+            },
+            _ => new
+            {
+                request.FileId,
+                request.AnalysisType,
+                summary = "(Mode hors-ligne) Analyse indisponible.",
+                ocrText = "OCR indisponible."
+            }
+        };
     }
 
     private async Task<S_VisionAnalysis> LogAsync(string operation, string provider, string model, S_VisionAnalysis response, Stopwatch stopwatch, CancellationToken cancellationToken)
