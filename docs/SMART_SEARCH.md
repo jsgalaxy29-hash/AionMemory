@@ -8,6 +8,7 @@ Combiner la recherche plein texte FTS5 existante et une couche sémantique optio
 
 - **FTS5** reste la base : les requêtes sont évaluées sur la vue `RecordSearch` avec `bm25` et snippets générés côté SQLite.
 - **Embeddings** : une nouvelle table `Embeddings` stocke, par enregistrement, un vecteur sérialisé (`EntityTypeId`, `RecordId`, `Vector`). Les vecteurs sont générés via `IEmbeddingProvider` lorsque ce provider est disponible.
+- **Lecture paginée** : la récupération des embeddings pour la requête sémantique se fait par pages afin de limiter l’usage mémoire lorsque la table grossit.
 - **Indexation** : à chaque `Insert`/`Update`, `AionDataEngine` recalculle les indexes structurés et, si possible, l’embedding correspondant. Suppression hard = cascade sur la ligne d’embedding.
 
 ## Algorithme `SearchSmartAsync`
