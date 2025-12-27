@@ -81,6 +81,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 {
     private const double FullTextWeight = 0.65;
     private const double SemanticWeight = 0.35;
+    private const int SemanticPageSize = 250;
     private static readonly JsonSerializerOptions EmbeddingSerializerOptions = new(JsonSerializerDefaults.Web);
 
     private readonly AionDbContext _db;
@@ -901,25 +902,39 @@ LIMIT $take OFFSET $skip;
             return new Dictionary<Guid, double>();
         }
 
-        var entries = await _db.Embeddings.AsNoTracking()
-            .Where(e => e.TableId == tableId)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
         var scores = new Dictionary<Guid, double>();
-        foreach (var entry in entries)
+        var pageIndex = 0;
+        while (true)
         {
-            var vector = ParseEmbedding(entry.Vector);
-            if (vector is null)
+            var entries = await _db.Embeddings.AsNoTracking()
+                .Where(e => e.TableId == tableId)
+                .OrderBy(e => e.RecordId)
+                .Skip(pageIndex * SemanticPageSize)
+                .Take(SemanticPageSize)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (entries.Count == 0)
             {
-                continue;
+                break;
             }
 
-            var similarity = ComputeCosineSimilarity(queryEmbedding, vector);
-            if (similarity > 0)
+            foreach (var entry in entries)
             {
-                scores[entry.RecordId] = similarity;
+                var vector = ParseEmbedding(entry.Vector);
+                if (vector is null)
+                {
+                    continue;
+                }
+
+                var similarity = ComputeCosineSimilarity(queryEmbedding, vector);
+                if (similarity > 0)
+                {
+                    scores[entry.RecordId] = similarity;
+                }
             }
+
+            pageIndex++;
         }
 
         return scores;
