@@ -65,6 +65,13 @@
     {
         <div class="validation-message" style="margin-top:8px;">@SubmissionError</div>
     }
+    @if (IsPending)
+    {
+        <div class="text-muted small" style="margin-top:8px;">
+            <span class="badge" style="background-color:#f39c12; color:#fff;">Pending</span>
+            Synchronisation en attente.
+        </div>
+    }
 </EditForm>
 
 @code {
@@ -72,6 +79,7 @@
     [Inject] public IModuleViewService? InjectedViewService { get; set; }
     [Inject] public IAuthorizationService? AuthorizationService { get; set; }
     [Inject] public ICurrentUserService? CurrentUserService { get; set; }
+    [Inject] public IOfflineActionQueue? OfflineActionQueue { get; set; }
 
     [Parameter] public STable? Table { get; set; }
     [Parameter] public Guid? TableId { get; set; }
@@ -97,6 +105,7 @@
     private IModuleViewService? ActiveViewService => ViewService ?? InjectedViewService;
     private bool CanWrite { get; set; } = true;
     private bool CanDelete { get; set; } = true;
+    private bool IsPending { get; set; }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -113,6 +122,7 @@
             _lastRecordId = ActiveRecordId;
             _lastTableId = ResolvedTable?.Id;
             await UpdatePermissionsAsync();
+            await UpdatePendingStatusAsync();
         }
     }
 
@@ -243,6 +253,7 @@
             _lastRecordId = record.Id;
             await OnSaved.InvokeAsync(record);
             await LoadExistingRecord();
+            await UpdatePendingStatusAsync();
         }
         catch (InvalidOperationException ex)
         {
@@ -331,6 +342,18 @@
 
         var deleteResult = await AuthorizationService.AuthorizeAsync(userId, PermissionAction.Delete, deleteScope);
         CanDelete = deleteResult.IsAllowed;
+    }
+
+    private async Task UpdatePendingStatusAsync()
+    {
+        if (ResolvedTable is null || !ActiveRecordId.HasValue || OfflineActionQueue is null)
+        {
+            IsPending = false;
+            return;
+        }
+
+        IsPending = await OfflineActionQueue.HasPendingAsync(ResolvedTable.Id, ActiveRecordId.Value)
+            .ConfigureAwait(false);
     }
 
     private async Task EnsureTableMetadataAsync()

@@ -34,7 +34,7 @@ public sealed class SyncOutboxReplayTests : IDisposable
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
         await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
-        var outbox = new SyncOutboxService(context);
+        var outbox = new SyncOutboxService(context, new NullLifeService());
         var outboxItem = await outbox.EnqueueAsync(localItem, SyncAction.Upload);
 
         var engine = new SyncEngine(new NullLogger<SyncEngine>());
@@ -77,7 +77,7 @@ public sealed class SyncOutboxReplayTests : IDisposable
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
         await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
-        var outbox = new SyncOutboxService(context);
+        var outbox = new SyncOutboxService(context, new NullLifeService());
         var outboxItem = await outbox.EnqueueAsync(localItem, SyncAction.Upload);
 
         var engine = new SyncEngine(new NullLogger<SyncEngine>());
@@ -118,5 +118,17 @@ public sealed class SyncOutboxReplayTests : IDisposable
     private sealed class TestWorkspaceContext : IWorkspaceContext
     {
         public Guid WorkspaceId { get; } = TenancyDefaults.DefaultWorkspaceId;
+    }
+
+    private sealed class NullLifeService : ILifeService
+    {
+        public Task<S_HistoryEvent> AddHistoryAsync(S_HistoryEvent evt, CancellationToken cancellationToken = default)
+            => Task.FromResult(evt);
+
+        public Task<TimelinePage> GetTimelinePageAsync(TimelineQuery query, CancellationToken cancellationToken = default)
+            => Task.FromResult(new TimelinePage(Array.Empty<S_HistoryEvent>(), false, 0));
+
+        public Task<IEnumerable<S_HistoryEvent>> GetTimelineAsync(DateTimeOffset? from = null, DateTimeOffset? to = null, CancellationToken cancellationToken = default)
+            => Task.FromResult<IEnumerable<S_HistoryEvent>>(Array.Empty<S_HistoryEvent>());
     }
 }
