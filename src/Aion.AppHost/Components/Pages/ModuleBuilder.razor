@@ -3,9 +3,16 @@
 @inject NavigationManager Navigation
 @inject AiProviderSelector AiSelector
 
-<h3>Module Builder IA</h3>
+<h3>Module Builder</h3>
 
 <div class="card" style="display:flex; flex-direction:column; gap:8px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <strong>Création IA</strong>
+        @if (!_aiStatus.IsConfigured)
+        {
+            <span class="badge" style="background-color:#c0392b; color:#fff;">IA inactive</span>
+        }
+    </div>
     <label for="prompt" style="font-weight:600;">Décrivez votre module</label>
     <textarea id="prompt" class="input" rows="6" placeholder="Ex: Crée-moi un module pour gérer ma cave à vin"
               @bind="Prompt" disabled="@(!_aiStatus.IsConfigured || IsLoading)"></textarea>
@@ -14,11 +21,29 @@
     </button>
     @if (!_aiStatus.IsConfigured)
     {
-        <p class="text-muted">IA inactive : @_aiStatus.Reason. La génération automatique est désactivée. Voir <code>docs/OFFLINE_MODE.md</code> pour les alternatives hors-ligne.</p>
+        <p class="text-muted">IA inactive : @_aiStatus.Reason. Vous pouvez utiliser le JSON manuel ci-dessous.</p>
     }
     @if (!string.IsNullOrWhiteSpace(Status))
     {
         <p class="text-muted">@Status</p>
+    }
+</div>
+
+<div class="card" style="display:flex; flex-direction:column; gap:8px; margin-top:12px;">
+    <strong>Création manuelle (JSON)</strong>
+    <label for="manual-json" style="font-weight:600;">Collez un JSON ModuleDesign</label>
+    <textarea id="manual-json" class="input" rows="10"
+              placeholder="{&quot;module&quot;:{&quot;name&quot;:&quot;Cave à vin&quot;,&quot;description&quot;:&quot;Gestion des bouteilles&quot;},&quot;entities&quot;:[{&quot;name&quot;:&quot;Bouteille&quot;,&quot;fields&quot;:[{&quot;name&quot;:&quot;Nom&quot;,&quot;type&quot;:&quot;text&quot;},{&quot;name&quot;:&quot;Millésime&quot;,&quot;type&quot;:&quot;number&quot;}]}]}"
+              @bind="ManualJson" disabled="@IsManualLoading"></textarea>
+    <div style="display:flex; gap:8px; align-items:center;">
+        <button class="button" @onclick="ApplyManualJson" disabled="@IsManualLoading">
+            @(IsManualLoading ? "Application en cours..." : "Créer le module depuis le JSON")
+        </button>
+        <a class="button ghost" href="docs/OFFLINE_MODE.md" target="_blank">Guide hors-ligne</a>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(ManualStatus))
+    {
+        <p class="text-muted">@ManualStatus</p>
     }
 </div>
 
@@ -74,9 +99,12 @@
 
 @code {
     private string Prompt { get; set; } = string.Empty;
+    private string ManualJson { get; set; } = string.Empty;
     private string? RawJson { get; set; }
     private string? Status { get; set; }
+    private string? ManualStatus { get; set; }
     private bool IsLoading { get; set; }
+    private bool IsManualLoading { get; set; }
     private S_Module? Module { get; set; }
     private AiConfigurationStatus _aiStatus = AiConfigurationStatus.Inactive();
 
@@ -129,5 +157,41 @@
         }
     }
 
-    private void OpenModules() => Navigation.NavigateTo("/modules");
+    private async Task ApplyManualJson()
+    {
+        if (IsManualLoading)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(ManualJson))
+        {
+            ManualStatus = "Veuillez fournir un JSON de module.";
+            return;
+        }
+
+        IsManualLoading = true;
+        ManualStatus = "Création du module depuis JSON...";
+        Status = null;
+        Module = null;
+        RawJson = null;
+
+        try
+        {
+            var module = await Designer.CreateModuleFromJsonAsync(ManualJson);
+            Module = module;
+            RawJson = ManualJson;
+            ManualStatus = "Module créé et enregistré.";
+        }
+        catch (Exception ex)
+        {
+            ManualStatus = $"Erreur lors de l'import JSON: {ex.Message}";
+        }
+        finally
+        {
+            IsManualLoading = false;
+        }
+    }
+
+    private void OpenModules() => Navigation.NavigateTo("/modules/home");
 }

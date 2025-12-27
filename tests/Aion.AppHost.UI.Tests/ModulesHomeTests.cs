@@ -1,6 +1,9 @@
+using System;
 using Aion.Domain;
 using Aion.AppHost.Components.Pages;
 using Bunit;
+using Bunit.TestDoubles;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Aion.AppHost.UI.Tests;
@@ -37,6 +40,19 @@ public class ModulesHomeTests : TestContext
             Assert.Equal(2, cut.FindAll(".module-card").Count);
             Assert.Contains("2 entités", cut.Markup);
         });
+    }
+
+    [Fact]
+    public void Plus_button_navigates_to_module_builder()
+    {
+        Services.AddSingleton<IMetadataService>(new FakeMetadataService());
+        var navManager = Services.GetRequiredService<NavigationManager>() as TestNavigationManager;
+        Assert.NotNull(navManager);
+
+        var cut = RenderComponent<ModulesHome>();
+        cut.Find("button[title=\"Créer un module\"]").Click();
+
+        Assert.EndsWith("/module-builder", navManager!.Uri, StringComparison.Ordinal);
     }
 
     private static S_Module BuildModule(string name, params string[] entityNames)
