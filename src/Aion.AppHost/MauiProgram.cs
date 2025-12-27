@@ -55,6 +55,7 @@ public static class MauiProgram
         ConfigureServices(builder.Services, builder.Configuration);
 
         var app = builder.Build();
+        _ = app.Services.GetRequiredService<OfflineActionReplayCoordinator>();
         var firstRunState = app.Services.GetRequiredService<FirstRunState>();
         if (firstRunState.IsCompleted)
         {
@@ -123,6 +124,8 @@ public static class MauiProgram
         services.AddScoped<IWorkspaceContextAccessor, WorkspaceContext>();
         services.AddScoped<IWorkspaceContext>(sp => sp.GetRequiredService<IWorkspaceContextAccessor>());
         services.AddScoped<WorkspaceSelectionState>();
+        services.AddSingleton<IConnectivityService, MauiConnectivityService>();
+        services.AddSingleton<OfflineActionReplayCoordinator>();
         services.AddSingleton<IExtensionState, PreferencesExtensionState>();
         services.AddSingleton<FirstRunState>();
         services.AddSingleton<INotificationService, NotificationService>();

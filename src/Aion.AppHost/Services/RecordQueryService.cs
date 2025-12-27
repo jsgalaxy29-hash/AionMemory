@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Aion.Domain;
@@ -11,12 +12,24 @@ public sealed class RecordQueryService : IRecordQueryService
 {
     private readonly IDataEngine _dataEngine;
     private readonly IAppInitializationService _initializationService;
+    private readonly IConnectivityService _connectivityService;
+    private readonly IOfflineActionQueue _offlineQueue;
+    private readonly IOfflineActionReplayService _offlineReplay;
     private readonly ILogger<RecordQueryService> _logger;
 
-    public RecordQueryService(IDataEngine dataEngine, IAppInitializationService initializationService, ILogger<RecordQueryService> logger)
+    public RecordQueryService(
+        IDataEngine dataEngine,
+        IAppInitializationService initializationService,
+        IConnectivityService connectivityService,
+        IOfflineActionQueue offlineQueue,
+        IOfflineActionReplayService offlineReplay,
+        ILogger<RecordQueryService> logger)
     {
         _dataEngine = dataEngine;
         _initializationService = initializationService;
+        _connectivityService = connectivityService;
+        _offlineQueue = offlineQueue;
+        _offlineReplay = offlineReplay;
         _logger = logger;
     }
 
@@ -56,17 +69,80 @@ public sealed class RecordQueryService : IRecordQueryService
 
         if (recordId.HasValue)
         {
-            return await _dataEngine.UpdateAsync(tableId, recordId.Value, data, cancellationToken).ConfigureAwait(false);
+            var record = await _dataEngine.UpdateAsync(tableId, recordId.Value, data, cancellationToken).ConfigureAwait(false);
+            if (!IsOnline())
+            {
+                await EnqueueOfflineActionAsync(tableId, record.Id, OfflineActionType.Update, record.DataJson, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await _offlineReplay.ReplayPendingAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return record;
         }
 
-        return await _dataEngine.InsertAsync(tableId, data, cancellationToken).ConfigureAwait(false);
+        var created = await _dataEngine.InsertAsync(tableId, data, cancellationToken).ConfigureAwait(false);
+        if (!IsOnline())
+        {
+            await EnqueueOfflineActionAsync(tableId, created.Id, OfflineActionType.Create, created.DataJson, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await _offlineReplay.ReplayPendingAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return created;
     }
 
     public async Task DeleteAsync(Guid tableId, Guid recordId, CancellationToken cancellationToken = default)
     {
         await _initializationService.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = string.Empty;
+        if (!IsOnline())
+        {
+            var existing = await _dataEngine.GetAsync(tableId, recordId, cancellationToken).ConfigureAwait(false);
+            snapshot = existing?.DataJson ?? "{}";
+        }
+
         await _dataEngine.DeleteAsync(tableId, recordId, cancellationToken).ConfigureAwait(false);
+        if (!IsOnline())
+        {
+            await EnqueueOfflineActionAsync(tableId, recordId, OfflineActionType.Delete, snapshot, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await _offlineReplay.ReplayPendingAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         _logger.LogInformation("Record {RecordId} deleted from table {TableId}", recordId, tableId);
+    }
+
+    private bool IsOnline() => _connectivityService.IsOnline;
+
+    private async Task EnqueueOfflineActionAsync(
+        Guid tableId,
+        Guid recordId,
+        OfflineActionType actionType,
+        string payloadJson,
+        CancellationToken cancellationToken)
+    {
+        var payload = string.IsNullOrWhiteSpace(payloadJson)
+            ? JsonSerializer.Serialize(new Dictionary<string, object?>())
+            : payloadJson;
+
+        var action = new OfflineRecordAction(
+            Guid.NewGuid(),
+            tableId,
+            recordId,
+            actionType,
+            payload,
+            DateTimeOffset.UtcNow,
+            OfflineActionStatus.Pending,
+            null,
+            null);
+
+        await _offlineQueue.EnqueueAsync(action, cancellationToken).ConfigureAwait(false);
     }
 
     private static QuerySpec NormalizeQuery(QuerySpec? query, bool ignorePaging = false)

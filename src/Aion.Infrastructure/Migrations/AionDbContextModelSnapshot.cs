@@ -884,6 +884,55 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("KnowledgeNodes");
                 });
 
+            modelBuilder.Entity("Aion.Infrastructure.OfflineRecordActionEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("AppliedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("EnqueuedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FailureReason")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RecordId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TableId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status", "EnqueuedAt");
+
+                    b.HasIndex("TableId", "RecordId");
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.ToTable("OfflineActions");
+                });
+
             modelBuilder.Entity("Aion.Infrastructure.SyncOutboxItem", b =>
                 {
                     b.Property<Guid>("Id")

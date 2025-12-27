@@ -62,6 +62,7 @@
         <thead>
             <tr>
                 <th style="width:220px;">Identifiant</th>
+                <th>Statut</th>
                 @if (ResolvedTable is not null)
                 {
                     @foreach (var field in ResolvedTable.Fields.Where(f => f.IsListVisible).Take(3))
@@ -79,8 +80,15 @@
                     @if (item is not null)
                     {
                         var payload = DynamicListLogic.DeserializePayload(item.DataJson);
+                        var isPending = PendingRecordIds.Contains(item.Id);
                         <tr @onclick="() => OnSelect.InvokeAsync(item)" style="cursor:pointer;">
                             <td>@item.Id</td>
+                            <td>
+                                @if (isPending)
+                                {
+                                    <span class="badge" style="background-color:#f39c12; color:#fff;">Pending</span>
+                                }
+                            </td>
                             @if (ResolvedTable is not null)
                             {
                                 @foreach (var field in ResolvedTable.Fields.Where(f => f.IsListVisible).Take(3))
@@ -96,7 +104,7 @@
                     }
                 </ItemContent>
                 <Placeholder>
-                    <tr><td colspan="4">Chargement…</td></tr>
+                    <tr><td colspan="7">Chargement…</td></tr>
                 </Placeholder>
             </Virtualize>
         </tbody>
@@ -111,6 +119,7 @@
     [Inject] public IModuleViewService? InjectedViewService { get; set; }
     [Inject] public IAuthorizationService? AuthorizationService { get; set; }
     [Inject] public ICurrentUserService? CurrentUserService { get; set; }
+    [Inject] public IOfflineActionQueue? OfflineActionQueue { get; set; }
 
     [Parameter] public STable? Table { get; set; }
     [Parameter] public Guid? TableId { get; set; }
@@ -145,6 +154,7 @@
     private bool _lastSortDescending;
     private int _lastPageSize;
     private bool CanDelete { get; set; } = true;
+    private HashSet<Guid> PendingRecordIds { get; } = new();
 
     private IEnumerable<SFieldDefinition> SortableFields
         => ResolvedTable?.Fields.Where(f => f.IsSortable) ?? Enumerable.Empty<SFieldDefinition>();
@@ -200,6 +210,7 @@
         _refreshCts?.Cancel();
         _refreshCts = new CancellationTokenSource();
         TotalCount = 0;
+        await LoadPendingActionsAsync();
 
         if (VirtualizedRecords is not null)
         {
@@ -258,6 +269,22 @@
         else if (!string.IsNullOrWhiteSpace(TableName))
         {
             LoadedTable = await viewService.GetTableByNameAsync(TableName).ConfigureAwait(false);
+        }
+    }
+
+    private async Task LoadPendingActionsAsync()
+    {
+        PendingRecordIds.Clear();
+        if (ResolvedTable is null || OfflineActionQueue is null)
+        {
+            return;
+        }
+
+        var pending = await OfflineActionQueue.GetPendingAsync(ResolvedTable.Id, _refreshCts?.Token ?? CancellationToken.None)
+            .ConfigureAwait(false);
+        foreach (var action in pending)
+        {
+            PendingRecordIds.Add(action.RecordId);
         }
     }
 

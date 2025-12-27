@@ -71,6 +71,7 @@ public class AionDbContext : DbContext
     public DbSet<KnowledgeNode> KnowledgeNodes => Set<KnowledgeNode>();
     public DbSet<KnowledgeEdge> KnowledgeEdges => Set<KnowledgeEdge>();
     public DbSet<SyncOutboxItem> SyncOutbox => Set<SyncOutboxItem>();
+    public DbSet<OfflineRecordActionEntry> OfflineRecordActions => Set<OfflineRecordActionEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -497,6 +498,17 @@ public class AionDbContext : DbContext
             builder.HasOne<KnowledgeNode>().WithMany().HasForeignKey(e => e.ToNodeId).OnDelete(DeleteBehavior.Cascade);
             builder.HasIndex(e => new { e.FromNodeId, e.ToNodeId, e.RelationType }).IsUnique();
             builder.HasIndex(e => e.RelationType);
+        });
+
+        modelBuilder.Entity<OfflineRecordActionEntry>(builder =>
+        {
+            builder.Property(o => o.Action).HasConversion<string>().HasMaxLength(16);
+            builder.Property(o => o.PayloadJson).IsRequired();
+            builder.Property(o => o.EnqueuedAt).IsRequired();
+            builder.Property(o => o.Status).HasConversion<string>().HasMaxLength(16);
+            builder.HasIndex(o => new { o.Status, o.EnqueuedAt });
+            builder.HasIndex(o => new { o.TableId, o.RecordId });
+            builder.ToTable("OfflineActions");
         });
 
         modelBuilder.Entity<SyncOutboxItem>(builder =>
