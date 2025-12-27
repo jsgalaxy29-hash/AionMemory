@@ -127,6 +127,7 @@ public static class MauiProgram
         services.AddSingleton<IConnectivityService, MauiConnectivityService>();
         services.AddSingleton<OfflineActionReplayCoordinator>();
         services.AddSingleton<IExtensionState, PreferencesExtensionState>();
+        services.AddSingleton<AccessibilityState>();
         services.AddSingleton<FirstRunState>();
         services.AddSingleton<INotificationService, NotificationService>();
 #if ANDROID

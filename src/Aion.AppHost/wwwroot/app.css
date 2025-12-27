@@ -9,6 +9,49 @@
     --accent: #38bdf8;
     --accent-strong: #22d3ee;
     --shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+    --font-scale: 1;
+    color-scheme: dark;
+}
+
+:root[data-theme="dark"] {
+    --bg-surface: #0f172a;
+    --bg-surface-alt: #111827;
+    --panel: #111827;
+    --panel-muted: #0b1220;
+    --border: #1f2937;
+    --text: #e5e7eb;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --accent-strong: #22d3ee;
+    --shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+    --bg-surface: #f7f9fc;
+    --bg-surface-alt: #eef2ff;
+    --panel: #ffffff;
+    --panel-muted: #f4f6fb;
+    --border: #e2e8f0;
+    --text: #0f172a;
+    --muted: #475569;
+    --accent: #2563eb;
+    --accent-strong: #1d4ed8;
+    --shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+    color-scheme: light;
+}
+
+:root[data-theme="high-contrast"] {
+    --bg-surface: #000000;
+    --bg-surface-alt: #000000;
+    --panel: #000000;
+    --panel-muted: #000000;
+    --border: #ffffff;
+    --text: #ffffff;
+    --muted: #e5e7eb;
+    --accent: #ffea00;
+    --accent-strong: #ffd000;
+    --shadow: none;
     color-scheme: dark;
 }
 
@@ -26,6 +69,10 @@
         --shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
         color-scheme: light;
     }
+}
+
+html {
+    font-size: calc(16px * var(--font-scale));
 }
 
 body {
@@ -75,6 +122,7 @@ h1:focus {
     padding: 10px 14px;
     border-radius: 12px;
     font-weight: 600;
+    font-size: 1rem;
     cursor: pointer;
     transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
     box-shadow: 0 10px 24px rgba(34, 211, 238, 0.25);
@@ -97,6 +145,7 @@ h1:focus {
     color: var(--text);
     padding: 10px 12px;
     border-radius: 12px;
+    font-size: 1rem;
 }
 
 .badge {
@@ -105,7 +154,7 @@ h1:focus {
     background: rgba(34, 211, 238, 0.12);
     color: var(--accent);
     border-radius: 999px;
-    font-size: 12px;
+    font-size: calc(12px * var(--font-scale));
     font-weight: 700;
 }
 
@@ -269,7 +318,12 @@ h1:focus {
 }
 
 .small {
-    font-size: 12px;
+    font-size: calc(12px * var(--font-scale));
+}
+
+:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
 }
 
 .quick-actions {

@@ -8,6 +8,9 @@
 @inject AiProviderSelector AiSelector
 @inject WorkspaceSelectionState WorkspaceState
 @inject FirstRunState FirstRunState
+@inject AccessibilityState Accessibility
+@inject IJSRuntime JsRuntime
+@using System.Globalization
 
 <div class="app-shell">
     <aside class="app-shell__nav">
@@ -20,37 +23,64 @@
             <button class="button secondary full-width" @onclick="NavigateHome">Accueil</button>
             <button class="button secondary full-width" @onclick="NavigateDashboard">Dashboard</button>
             <button class="button secondary full-width" @onclick="NavigateTimeline">Timeline</button>
-            <button class="button secondary full-width" @onclick="NavigateAutomations">Automatisations</button>
-            <button class="button secondary full-width" @onclick="NavigateLinks">Graphe</button>
-            <button class="button secondary full-width" @onclick="NavigateBackups">Backups</button>
-            <button class="button secondary full-width" @onclick="NavigateAiDiagnostics">Diagnostics IA</button>
+            @if (!Accessibility.SimplifiedNavigation)
+            {
+                <button class="button secondary full-width" @onclick="NavigateAutomations">Automatisations</button>
+                <button class="button secondary full-width" @onclick="NavigateLinks">Graphe</button>
+                <button class="button secondary full-width" @onclick="NavigateBackups">Backups</button>
+                <button class="button secondary full-width" @onclick="NavigateAiDiagnostics">Diagnostics IA</button>
+            }
         </div>
-        <div class="app-shell__nav-section">
-            <div class="app-shell__nav-title">
-                Modules
-                <button class="button ghost" title="Actualiser" @onclick="LoadModules">↻</button>
+        @if (!Accessibility.SimplifiedNavigation)
+        {
+            <div class="app-shell__nav-section">
+                <div class="app-shell__nav-title">
+                    Modules
+                    <button class="button ghost" title="Actualiser" @onclick="LoadModules">↻</button>
+                </div>
+                @if (IsLoadingModules)
+                {
+                    <p class="text-muted">Chargement…</p>
+                }
+                else if (Modules.Count == 0)
+                {
+                    <p class="text-muted">Aucun module disponible.</p>
+                }
+                else
+                {
+                    <ul class="app-shell__nav-list">
+                        @foreach (var module in Modules)
+                        {
+                            var isActive = State.CurrentModule?.Id == module.Id;
+                            <li class="@(isActive ? "active" : string.Empty)" @onclick="() => NavigateToModule(module)">
+                                <div>@module.Name</div>
+                                <small class="text-muted">@module.EntityTypes.Count() entité(s)</small>
+                            </li>
+                        }
+                    </ul>
+                }
             </div>
-            @if (IsLoadingModules)
-            {
-                <p class="text-muted">Chargement…</p>
-            }
-            else if (Modules.Count == 0)
-            {
-                <p class="text-muted">Aucun module disponible.</p>
-            }
-            else
-            {
-                <ul class="app-shell__nav-list">
-                    @foreach (var module in Modules)
-                    {
-                        var isActive = State.CurrentModule?.Id == module.Id;
-                        <li class="@(isActive ? "active" : string.Empty)" @onclick="() => NavigateToModule(module)">
-                            <div>@module.Name</div>
-                            <small class="text-muted">@module.EntityTypes.Count() entité(s)</small>
-                        </li>
-                    }
-                </ul>
-            }
+        }
+        <div class="app-shell__nav-section">
+            <div class="app-shell__nav-title">Accessibilité</div>
+            <label class="text-muted" for="accessibility-theme">Thème</label>
+            <select id="accessibility-theme" class="input" @bind="SelectedTheme">
+                @foreach (var option in ThemeOptions)
+                {
+                    <option value="@option.Value">@option.Label</option>
+                }
+            </select>
+            <label class="text-muted" for="accessibility-font-scale">Taille du texte</label>
+            <select id="accessibility-font-scale" class="input" value="@Accessibility.FontScale.ToString(CultureInfo.InvariantCulture)" @onchange="OnFontScaleChanged">
+                @foreach (var option in FontScaleOptions)
+                {
+                    <option value="@option.Value.ToString(CultureInfo.InvariantCulture)">@option.Label</option>
+                }
+            </select>
+            <label class="app-shell__toggle">
+                <input type="checkbox" @bind="IsSimplifiedNavigation" />
+                <span>Navigation simplifiée</span>
+            </label>
         </div>
     </aside>
     <section class="app-shell__content">
@@ -94,9 +124,12 @@
                 {
                     <div class="badge" style="background-color:#c0392b; color:#fff;" title="@_aiStatus.Reason">IA inactive</div>
                 }
-                <button class="button secondary" @onclick="NavigateTrust">Pourquoi ?</button>
+                @if (!Accessibility.SimplifiedNavigation)
+                {
+                    <button class="button secondary" @onclick="NavigateTrust">Pourquoi ?</button>
+                    <button class="button secondary" @onclick="NavigateExtensions">Extensions</button>
+                }
                 <button class="button secondary" @onclick="NavigateModules">Modules</button>
-                <button class="button secondary" @onclick="NavigateExtensions">Extensions</button>
                 <button class="button" @onclick="NavigateMarketplace">Marketplace</button>
             </div>
         </header>
@@ -112,6 +145,36 @@
     private bool IsLoadingModules { get; set; }
     private AiConfigurationStatus _aiStatus = AiConfigurationStatus.Inactive();
 
+    private AccessibilityTheme SelectedTheme
+    {
+        get => Accessibility.Theme;
+        set => Accessibility.SetTheme(value);
+    }
+
+    private bool IsSimplifiedNavigation
+    {
+        get => Accessibility.SimplifiedNavigation;
+        set => Accessibility.SetSimplifiedNavigation(value);
+    }
+
+    private static IReadOnlyList<(AccessibilityTheme Value, string Label)> ThemeOptions { get; } =
+        new List<(AccessibilityTheme, string)>
+        {
+            (AccessibilityTheme.System, "Système"),
+            (AccessibilityTheme.Light, "Clair"),
+            (AccessibilityTheme.Dark, "Sombre"),
+            (AccessibilityTheme.HighContrast, "Contraste élevé")
+        };
+
+    private static IReadOnlyList<(double Value, string Label)> FontScaleOptions { get; } =
+        new List<(double, string)>
+        {
+            (1.0, "100%"),
+            (1.15, "115%"),
+            (1.3, "130%"),
+            (1.5, "150%")
+        };
+
     protected override async Task OnInitializedAsync()
     {
         if (!FirstRunState.IsCompleted)
@@ -122,8 +185,17 @@
 
         State.OnChange += StateHasChanged;
         WorkspaceState.OnChange += HandleWorkspaceStateChanged;
+        Accessibility.OnChange += HandleAccessibilityChanged;
         _aiStatus = AiSelector.GetStatus();
         await WorkspaceState.InitializeAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ApplyAccessibilityAsync();
+        }
     }
 
     private async Task LoadModules()
@@ -174,6 +246,7 @@
         _loadCts?.Dispose();
         State.OnChange -= StateHasChanged;
         WorkspaceState.OnChange -= HandleWorkspaceStateChanged;
+        Accessibility.OnChange -= HandleAccessibilityChanged;
     }
 
     private async void HandleWorkspaceStateChanged()
@@ -198,4 +271,37 @@
             await WorkspaceState.SelectProfileAsync(profileId);
         }
     }
+
+    private void OnFontScaleChanged(ChangeEventArgs args)
+    {
+        if (double.TryParse(args.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var scale))
+        {
+            Accessibility.SetFontScale(scale);
+        }
+    }
+
+    private async void HandleAccessibilityChanged()
+    {
+        await ApplyAccessibilityAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ApplyAccessibilityAsync()
+    {
+        await JsRuntime.InvokeVoidAsync("aionUi.applyAccessibility", new
+        {
+            theme = GetThemeToken(Accessibility.Theme),
+            fontScale = Accessibility.FontScale,
+            simplifiedNav = Accessibility.SimplifiedNavigation
+        });
+    }
+
+    private static string GetThemeToken(AccessibilityTheme theme)
+        => theme switch
+        {
+            AccessibilityTheme.Light => "light",
+            AccessibilityTheme.Dark => "dark",
+            AccessibilityTheme.HighContrast => "high-contrast",
+            _ => "system"
+        };
 }
