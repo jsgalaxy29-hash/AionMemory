@@ -24,3 +24,25 @@ window.aionTimeline = {
         sentinel._aionTimelineObserver = null;
     }
 };
+
+window.aionUi = {
+    applyAccessibility: function (options) {
+        if (!options) {
+            return;
+        }
+
+        const root = document.documentElement;
+        const theme = options.theme || 'system';
+        if (theme === 'system') {
+            root.removeAttribute('data-theme');
+        } else {
+            root.setAttribute('data-theme', theme);
+        }
+
+        if (typeof options.fontScale === 'number') {
+            root.style.setProperty('--font-scale', options.fontScale.toString());
+        }
+
+        root.classList.toggle('nav-simplified', Boolean(options.simplifiedNav));
+    }
+};
