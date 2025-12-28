@@ -23,7 +23,7 @@ public class ModuleBuilderTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
@@ -58,7 +58,7 @@ public class ModuleBuilderTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
@@ -110,7 +110,7 @@ public class ModuleBuilderTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
@@ -144,7 +144,7 @@ public class ModuleBuilderTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
@@ -184,7 +184,7 @@ public class ModuleBuilderTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
@@ -224,7 +224,7 @@ public class ModuleBuilderTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
@@ -282,7 +282,7 @@ public class ModuleBuilderTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);

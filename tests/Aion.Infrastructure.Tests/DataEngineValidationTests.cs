@@ -25,7 +25,7 @@ public class DataEngineValidationTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var table = new STable
@@ -57,7 +57,7 @@ public class DataEngineValidationTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var table = new STable
@@ -109,7 +109,7 @@ public class DataEngineValidationTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var peopleTable = new STable
@@ -184,7 +184,7 @@ public class DataEngineValidationTests
             .AddInterceptors(interceptor)
             .Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var peopleTable = new STable
@@ -258,7 +258,7 @@ public class DataEngineValidationTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var table = new STable

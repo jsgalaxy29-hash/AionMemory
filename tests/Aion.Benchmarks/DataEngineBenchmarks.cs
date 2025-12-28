@@ -34,7 +34,7 @@ public class DataEngineBenchmarks : IAsyncDisposable
             .UseLoggerFactory(NullLoggerFactory.Instance)
             .Options;
 
-        _context = new AionDbContext(options);
+        _context = new AionDbContext(options, new BenchmarkWorkspaceContext());
         await _context.Database.MigrateAsync().ConfigureAwait(false);
 
         _engine = new AionDataEngine(
@@ -227,4 +227,9 @@ public class DataEngineBenchmarks : IAsyncDisposable
         public Task<IReadOnlyCollection<AutomationExecution>> ExecuteAsync(AutomationEvent automationEvent, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<AutomationExecution>>(Array.Empty<AutomationExecution>());
     }
+}
+
+internal sealed class BenchmarkWorkspaceContext : IWorkspaceContext
+{
+    public Guid WorkspaceId { get; } = TenancyDefaults.DefaultWorkspaceId;
 }

@@ -145,7 +145,7 @@ public sealed class ImportExportTests : IAsyncLifetime
     {
         var builder = new DbContextOptionsBuilder<AionDbContext>()
             .UseSqlite($"DataSource={path}");
-        return new AionDbContext(builder.Options);
+        return new AionDbContext(builder.Options, new TestWorkspaceContext());
     }
 
     public ValueTask DisposeAsync()

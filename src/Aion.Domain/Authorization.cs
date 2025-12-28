@@ -20,7 +20,8 @@ public enum PermissionAction
 public enum PermissionScopeKind
 {
     Table,
-    Record
+    Record,
+    Field
 }
 
 public static class AuthorizationDefaults
@@ -36,29 +37,50 @@ public sealed class PermissionScope
     {
     }
 
-    private PermissionScope(Guid tableId, Guid? recordId)
+    private PermissionScope(Guid tableId, Guid? recordId, string? fieldName)
     {
         TableId = tableId;
         RecordId = recordId;
+        FieldName = fieldName;
     }
 
     public Guid TableId { get; private set; }
 
     public Guid? RecordId { get; private set; }
 
+    public string? FieldName { get; private set; }
+
     [NotMapped]
-    public PermissionScopeKind Kind => RecordId.HasValue ? PermissionScopeKind.Record : PermissionScopeKind.Table;
+    public PermissionScopeKind Kind => RecordId.HasValue
+        ? PermissionScopeKind.Record
+        : string.IsNullOrWhiteSpace(FieldName)
+            ? PermissionScopeKind.Table
+            : PermissionScopeKind.Field;
 
     public static PermissionScope ForTable(Guid tableId)
     {
-        var scope = new PermissionScope(tableId, null);
+        var scope = new PermissionScope(tableId, null, null);
         scope.Validate();
         return scope;
     }
 
     public static PermissionScope ForRecord(Guid tableId, Guid recordId)
     {
-        var scope = new PermissionScope(tableId, recordId);
+        var scope = new PermissionScope(tableId, recordId, null);
+        scope.Validate();
+        return scope;
+    }
+
+    public static PermissionScope ForField(Guid tableId, string fieldName)
+    {
+        var scope = new PermissionScope(tableId, null, fieldName);
+        scope.Validate();
+        return scope;
+    }
+
+    public static PermissionScope ForRecordField(Guid tableId, Guid recordId, string fieldName)
+    {
+        var scope = new PermissionScope(tableId, recordId, fieldName);
         scope.Validate();
         return scope;
     }
@@ -73,6 +95,11 @@ public sealed class PermissionScope
         if (RecordId.HasValue && RecordId.Value == Guid.Empty)
         {
             throw new InvalidOperationException("RecordId cannot be empty when provided.");
+        }
+
+        if (FieldName is not null && string.IsNullOrWhiteSpace(FieldName))
+        {
+            throw new InvalidOperationException("FieldName cannot be empty when provided.");
         }
     }
 }
@@ -116,6 +143,10 @@ public sealed class Permission
 
     public PermissionScope Scope { get; set; } = null!;
 
+    public Guid? GrantedByUserId { get; set; }
+
+    public DateTimeOffset? GrantedAt { get; set; }
+
     public void Validate()
     {
         if (UserId == Guid.Empty)
@@ -128,17 +159,24 @@ public sealed class Permission
             throw new InvalidOperationException("An invalid permission action was provided.");
         }
 
+        if (GrantedByUserId.HasValue && GrantedByUserId.Value == Guid.Empty)
+        {
+            throw new InvalidOperationException("GrantedByUserId cannot be empty when provided.");
+        }
+
         ArgumentNullException.ThrowIfNull(Scope);
         Scope.Validate();
     }
 
-    public static Permission Grant(Guid userId, PermissionAction action, PermissionScope scope)
+    public static Permission Grant(Guid userId, PermissionAction action, PermissionScope scope, Guid? grantedByUserId = null)
     {
         var permission = new Permission
         {
             UserId = userId,
             Action = action,
-            Scope = scope
+            Scope = scope,
+            GrantedByUserId = grantedByUserId,
+            GrantedAt = grantedByUserId.HasValue ? DateTimeOffset.UtcNow : null
         };
 
         permission.Validate();

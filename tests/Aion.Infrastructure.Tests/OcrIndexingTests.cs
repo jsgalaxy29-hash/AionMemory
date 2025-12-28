@@ -21,7 +21,7 @@ public sealed class OcrIndexingTests
         var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.EnsureCreatedAsync();
 
         var table = STable.Create("Invoices", "Invoices", new[]

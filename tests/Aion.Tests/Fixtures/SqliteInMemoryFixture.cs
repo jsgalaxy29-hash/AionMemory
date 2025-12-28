@@ -15,6 +15,7 @@ public sealed class SqliteInMemoryFixture : IAsyncLifetime
     private readonly SqliteConnection _connection;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IWorkspaceContext _workspaceContext;
     private readonly Guid _currentUserId = Guid.NewGuid();
 
     public SqliteInMemoryFixture()
@@ -22,6 +23,7 @@ public sealed class SqliteInMemoryFixture : IAsyncLifetime
         _connection = new SqliteConnection("DataSource=:memory:");
         _loggerFactory = NullLoggerFactory.Instance;
         _currentUserService = new FixedCurrentUserService(_currentUserId);
+        _workspaceContext = new TestWorkspaceContext();
         Options = new DbContextOptionsBuilder<AionDbContext>()
             .UseSqlite(_connection)
             .UseLoggerFactory(_loggerFactory)
@@ -34,7 +36,7 @@ public sealed class SqliteInMemoryFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _connection.OpenAsync();
-        await using var context = new AionDbContext(Options);
+        await using var context = new AionDbContext(Options, _workspaceContext);
         await context.Database.MigrateAsync();
     }
 
@@ -43,7 +45,7 @@ public sealed class SqliteInMemoryFixture : IAsyncLifetime
         await _connection.DisposeAsync();
     }
 
-    public AionDbContext CreateContext() => new(Options);
+    public AionDbContext CreateContext() => new(Options, _workspaceContext);
 
     public AionDataEngine CreateDataEngine(ISearchService? search = null, IEmbeddingProvider? embeddingProvider = null, ICurrentUserService? currentUserService = null)
     {
@@ -77,6 +79,11 @@ file sealed class NullAutomationRuleEngine : IAutomationRuleEngine
 {
     public Task<IReadOnlyCollection<AutomationExecution>> ExecuteAsync(AutomationEvent automationEvent, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyCollection<AutomationExecution>>(Array.Empty<AutomationExecution>());
+}
+
+file sealed class TestWorkspaceContext : IWorkspaceContext
+{
+    public Guid WorkspaceId { get; } = TenancyDefaults.DefaultWorkspaceId;
 }
 
 file sealed class FixedCurrentUserService : ICurrentUserService

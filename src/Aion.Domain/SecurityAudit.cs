@@ -13,7 +13,8 @@ public enum SecurityAuditCategory
     Backup,
     Restore,
     ModuleExport,
-    ModuleImport
+    ModuleImport,
+    Authorization
 }
 
 public sealed record SecurityAuditEvent(

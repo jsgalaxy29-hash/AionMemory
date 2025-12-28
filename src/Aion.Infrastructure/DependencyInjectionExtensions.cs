@@ -141,6 +141,7 @@ public static class DependencyInjectionExtensions
             sp.GetRequiredService<ILogger<AutomationRuleEngine>>()));
         services.AddScoped<IAuthorizationService, AuthorizationService>();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
+        services.AddScoped<IAccessGrantService, AccessGrantService>();
         services.TryAddScoped<INoteTaggingService, NoopNoteTaggingService>();
         services.TryAddScoped<INotificationService, NullNotificationService>();
         services.AddScoped<ISecurityAuditService, SecurityAuditService>();
