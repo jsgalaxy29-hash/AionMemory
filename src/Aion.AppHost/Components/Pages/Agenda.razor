@@ -136,7 +136,7 @@
                     <tr><th>Titre</th><th>Date</th><th>Récurrence</th><th></th></tr>
                 </thead>
                 <tbody>
-                    @foreach (var evt in SourceEvents)
+                    @foreach (var evt in PagedSourceEvents)
                     {
                         <tr>
                             <td>@evt.Title</td>
@@ -149,6 +149,11 @@
                     }
                 </tbody>
             </table>
+            <div class="list-pagination">
+                <button class="button secondary" @onclick="PreviousSourcePage" disabled="@(!CanGoPreviousSource)">◀</button>
+                <span class="text-muted">Page @(SourcePageIndex + 1) / @TotalSourcePages</span>
+                <button class="button secondary" @onclick="NextSourcePage" disabled="@(!CanGoNextSource)">▶</button>
+            </div>
         }
     </div>
 </div>
@@ -156,11 +161,19 @@
 @code {
     [Parameter] public string? Entity { get; set; }
 
+    private const int SourcePageSize = 10;
     private IList<S_Event> SourceEvents { get; set; } = new List<S_Event>();
     private IList<S_Event> Occurrences { get; set; } = new List<S_Event>();
     private AgendaEditorModel Editor { get; set; } = AgendaEditorModel.Create();
     private AgendaView SelectedView { get; set; } = AgendaView.Month;
     private DateTimeOffset FocusDate { get; set; } = DateTimeOffset.Now;
+    private int SourcePageIndex { get; set; }
+
+    private int TotalSourcePages => Math.Max(1, (int)Math.Ceiling((double)Math.Max(SourceEvents.Count, 1) / SourcePageSize));
+    private bool CanGoPreviousSource => SourcePageIndex > 0;
+    private bool CanGoNextSource => SourcePageIndex < TotalSourcePages - 1;
+    private IEnumerable<S_Event> PagedSourceEvents
+        => SourceEvents.Skip(SourcePageIndex * SourcePageSize).Take(SourcePageSize);
 
     protected override async Task OnInitializedAsync()
     {
@@ -202,8 +215,9 @@
         var (from, to) = GetRange();
         var events = await AgendaService.GetEventsAsync(from, to);
         var occurrences = await AgendaService.GetOccurrencesAsync(from, to);
-        SourceEvents = events.Where(MatchesEntity).ToList();
+        SourceEvents = events.Where(MatchesEntity).OrderBy(e => e.Start).ToList();
         Occurrences = occurrences.Where(MatchesEntity).ToList();
+        SourcePageIndex = Math.Min(SourcePageIndex, TotalSourcePages - 1);
     }
 
     private IEnumerable<S_Event> EventsForDay(DateTimeOffset day)
@@ -213,6 +227,26 @@
         return Occurrences
             .Where(e => e.Start.ToLocalTime() >= dayStart && e.Start.ToLocalTime() < dayEnd)
             .OrderBy(e => e.Start);
+    }
+
+    private Task PreviousSourcePage()
+    {
+        if (CanGoPreviousSource)
+        {
+            SourcePageIndex--;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task NextSourcePage()
+    {
+        if (CanGoNextSource)
+        {
+            SourcePageIndex++;
+        }
+
+        return Task.CompletedTask;
     }
 
     private (DateTimeOffset Start, DateTimeOffset End) GetRange()

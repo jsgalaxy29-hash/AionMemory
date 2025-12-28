@@ -52,11 +52,16 @@
         <p>Créez vos rappels ou actions planifiées.</p>
         <button class="button" @onclick="Schedule">Planifier un rappel</button>
         <ul>
-            @foreach (var evt in Events)
+            @foreach (var evt in PagedEvents)
             {
                 <li>@evt.Start.ToLocalTime().ToString("g") - @evt.Title</li>
             }
         </ul>
+        <div class="list-pagination">
+            <button class="button secondary" @onclick="PreviousEventPage" disabled="@(!CanGoPreviousEvents)">◀</button>
+            <span class="text-muted">Page @(EventPageIndex + 1) / @TotalEventPages</span>
+            <button class="button secondary" @onclick="NextEventPage" disabled="@(!CanGoNextEvents)">▶</button>
+        </div>
     </div>
 </div>
 
@@ -65,6 +70,7 @@
     [Parameter] public string? RecordId { get; set; }
     [Parameter] public string? TableId { get; set; }
 
+    private const int EventPageSize = 6;
     private IList<S_Event> Events { get; set; } = new List<S_Event>();
     private S_EntityType? EntityType { get; set; }
     private STable? Table { get; set; }
@@ -75,6 +81,13 @@
     private Guid? ParsedTableId => Guid.TryParse(TableId, out var guid) ? guid : null;
     private string? ContextEntityName => EntityType?.Name ?? Entity;
     private CancellationTokenSource? _loadCts;
+    private int EventPageIndex { get; set; }
+
+    private int TotalEventPages => Math.Max(1, (int)Math.Ceiling((double)Math.Max(Events.Count, 1) / EventPageSize));
+    private bool CanGoPreviousEvents => EventPageIndex > 0;
+    private bool CanGoNextEvents => EventPageIndex < TotalEventPages - 1;
+    private IEnumerable<S_Event> PagedEvents
+        => Events.Skip(EventPageIndex * EventPageSize).Take(EventPageSize);
 
     protected override async Task OnInitializedAsync()
     {
@@ -165,6 +178,7 @@
         var now = DateTimeOffset.Now;
         var events = await AgendaService.GetOccurrencesAsync(now.AddDays(-2), now.AddDays(10), _loadCts.Token);
         Events = events.Where(MatchesContext).ToList();
+        EventPageIndex = Math.Min(EventPageIndex, TotalEventPages - 1);
     }
 
     private IEnumerable<J_Event_Link> BuildLinks()
@@ -211,6 +225,26 @@
         return evt.Links.Any(l =>
             string.Equals(l.TargetType, ContextEntityName, StringComparison.OrdinalIgnoreCase) &&
             l.TargetId == ParsedRecordId.Value);
+    }
+
+    private Task PreviousEventPage()
+    {
+        if (CanGoPreviousEvents)
+        {
+            EventPageIndex--;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task NextEventPage()
+    {
+        if (CanGoNextEvents)
+        {
+            EventPageIndex++;
+        }
+
+        return Task.CompletedTask;
     }
 
     public void Dispose()
