@@ -180,6 +180,7 @@ public static class DependencyInjectionExtensions
         services.AddScoped<ICloudBackupService, AionCloudBackupService>();
         services.AddScoped<IBackupService, BackupService>();
         services.AddScoped<IRestoreService, RestoreService>();
+        services.AddScoped<IKeyRotationService, DatabaseKeyRotationService>();
         services.AddScoped<ILogService, LogService>();
         services.AddScoped<IAiCallLogService, AiCallLogService>();
         services.AddScoped<IDashboardService, DashboardService>();

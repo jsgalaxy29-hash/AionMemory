@@ -127,6 +127,11 @@ public interface IRestoreService
     Task RestoreLatestAsync(string? destinationPath = null, CancellationToken cancellationToken = default);
 }
 
+public interface IKeyRotationService
+{
+    Task<KeyRotationResult> RotateAsync(string newKey, CancellationToken cancellationToken = default);
+}
+
 public interface ILogService
 {
     void LogInformation(string message, IDictionary<string, object?>? properties = null);
