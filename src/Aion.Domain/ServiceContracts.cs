@@ -22,6 +22,14 @@ public interface ICurrentUserService
     Guid GetCurrentUserId();
 }
 
+public interface IAccessGrantService
+{
+    Task<Permission> GrantTableAsync(Guid targetUserId, PermissionAction action, Guid tableId, CancellationToken cancellationToken = default);
+    Task<Permission> GrantRecordAsync(Guid targetUserId, PermissionAction action, Guid tableId, Guid recordId, CancellationToken cancellationToken = default);
+    Task<Permission> GrantFieldAsync(Guid targetUserId, PermissionAction action, Guid tableId, string fieldName, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Permission>> GrantModuleAsync(Guid targetUserId, PermissionAction action, Guid moduleId, CancellationToken cancellationToken = default);
+}
+
 public interface IMetadataService
 {
     Task<IEnumerable<S_Module>> GetModulesAsync(CancellationToken cancellationToken = default);

@@ -21,7 +21,7 @@ public class AutomationRuleEngineTests
         await connection.OpenAsync();
 
         var options = new DbContextOptionsBuilder<AionDbContext>().UseSqlite(connection).Options;
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var module = new S_Module { Name = "Automation" };

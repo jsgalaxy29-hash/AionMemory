@@ -19,26 +19,26 @@
                         case FieldDataType.Lookup:
                         case FieldDataType.Tags:
                         case FieldDataType.File:
-                            <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field, v)" />
+                            <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
                             break;
                         case FieldDataType.Note:
-                            <InputTextArea class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field, v)" />
+                            <InputTextArea class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
                             break;
                         case FieldDataType.Number:
-                            <InputNumber TValue="long?" class="input" Value="@GetLong(field.Name)" ValueChanged="v => SetValue(field, v)" />
+                            <InputNumber TValue="long?" class="input" Value="@GetLong(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
                             break;
                         case FieldDataType.Decimal:
-                            <InputNumber TValue="decimal?" class="input" Value="@GetDecimal(field.Name)" ValueChanged="v => SetValue(field, v)" />
+                            <InputNumber TValue="decimal?" class="input" Value="@GetDecimal(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
                             break;
                         case FieldDataType.Boolean:
-                            <InputCheckbox class="input" Value="@GetBool(field.Name)" ValueChanged="v => SetValue(field, v)" />
+                            <InputCheckbox class="input" Value="@GetBool(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
                             break;
                         case FieldDataType.Date:
                         case FieldDataType.DateTime:
-                            <InputDate TValue="DateTime?" class="input" Value="@GetDateTime(field.Name)" ValueChanged="v => SetValue(field, v)" />
+                            <InputDate TValue="DateTime?" class="input" Value="@GetDateTime(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
                             break;
                         default:
-                            <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field, v)" />
+                            <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
                             break;
                     }
 
@@ -105,6 +105,7 @@
     private IModuleViewService? ActiveViewService => ViewService ?? InjectedViewService;
     private bool CanWrite { get; set; } = true;
     private bool CanDelete { get; set; } = true;
+    private Dictionary<string, bool> FieldWriteAccess { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     private bool IsPending { get; set; }
 
     protected override async Task OnParametersSetAsync()
@@ -328,13 +329,25 @@
         {
             CanWrite = true;
             CanDelete = true;
+            FieldWriteAccess = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             return;
         }
 
         var userId = CurrentUserService.GetCurrentUserId();
         var tableScope = PermissionScope.ForTable(ResolvedTable.Id);
         var writeResult = await AuthorizationService.AuthorizeAsync(userId, PermissionAction.Write, tableScope);
-        CanWrite = writeResult.IsAllowed;
+        var fieldWriteAccess = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var field in ResolvedTable.Fields)
+        {
+            var fieldScope = ActiveRecordId.HasValue
+                ? PermissionScope.ForRecordField(ResolvedTable.Id, ActiveRecordId.Value, field.Name)
+                : PermissionScope.ForField(ResolvedTable.Id, field.Name);
+            var fieldResult = await AuthorizationService.AuthorizeAsync(userId, PermissionAction.Write, fieldScope);
+            fieldWriteAccess[field.Name] = fieldResult.IsAllowed;
+        }
+
+        FieldWriteAccess = fieldWriteAccess;
+        CanWrite = writeResult.IsAllowed || FieldWriteAccess.Values.Any(allowed => allowed);
 
         var deleteScope = ActiveRecordId.HasValue
             ? PermissionScope.ForRecord(ResolvedTable.Id, ActiveRecordId.Value)
@@ -342,6 +355,21 @@
 
         var deleteResult = await AuthorizationService.AuthorizeAsync(userId, PermissionAction.Delete, deleteScope);
         CanDelete = deleteResult.IsAllowed;
+    }
+
+    private bool IsFieldDisabled(SFieldDefinition field)
+    {
+        if (field.IsReadOnly)
+        {
+            return true;
+        }
+
+        if (FieldWriteAccess.TryGetValue(field.Name, out var allowed))
+        {
+            return !allowed;
+        }
+
+        return !CanWrite;
     }
 
     private async Task UpdatePendingStatusAsync()

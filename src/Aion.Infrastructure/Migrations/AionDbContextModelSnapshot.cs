@@ -1783,6 +1783,12 @@ namespace Aion.Infrastructure.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset?>("GrantedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("GrantedByUserId")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("TEXT");
 
@@ -2181,6 +2187,10 @@ namespace Aion.Infrastructure.Migrations
                             b1.Property<Guid>("PermissionId")
                                 .HasColumnType("TEXT");
 
+                            b1.Property<string>("FieldName")
+                                .HasMaxLength(128)
+                                .HasColumnType("TEXT");
+
                             b1.Property<Guid?>("RecordId")
                                 .HasColumnType("TEXT");
 
@@ -2189,7 +2199,7 @@ namespace Aion.Infrastructure.Migrations
 
                             b1.HasKey("PermissionId");
 
-                            b1.HasIndex("TableId", "RecordId");
+                            b1.HasIndex("TableId", "RecordId", "FieldName");
 
                     b.HasIndex("WorkspaceId");
 

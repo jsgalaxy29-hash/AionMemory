@@ -56,7 +56,7 @@ public class DatabaseLifecycleTests
         var builder = new DbContextOptionsBuilder<AionDbContext>();
         SqliteConnectionFactory.ConfigureBuilder(builder, options);
 
-        await using var context = new AionDbContext(builder.Options);
+        await using var context = new AionDbContext(builder.Options, new TestWorkspaceContext());
         await Assert.ThrowsAsync<InvalidOperationException>(() => context.Database.OpenConnectionAsync());
     }
 

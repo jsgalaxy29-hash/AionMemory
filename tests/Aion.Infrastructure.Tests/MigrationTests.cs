@@ -20,7 +20,7 @@ public class MigrationTests
             .UseSqlite(connection)
             .Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var module = new S_Module { Name = "Test" };
@@ -67,7 +67,7 @@ public class MigrationTests
             .UseSqlite(connection)
             .Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var module = new S_Module { Name = "Schema check" };

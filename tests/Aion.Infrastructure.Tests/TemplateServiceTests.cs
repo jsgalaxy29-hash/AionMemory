@@ -131,7 +131,7 @@ public sealed class TemplateServiceTests : IAsyncLifetime
     {
         var builder = new DbContextOptionsBuilder<AionDbContext>()
             .UseSqlite($"DataSource={path}");
-        return new AionDbContext(builder.Options);
+        return new AionDbContext(builder.Options, new TestWorkspaceContext());
     }
 
     private static TemplateService CreateTemplateService(AionDbContext context, string marketplaceFolder)

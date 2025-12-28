@@ -470,13 +470,16 @@ public class AionDbContext : DbContext
         {
             builder.Property(p => p.UserId).IsRequired();
             builder.Property(p => p.Action).HasConversion<string>().HasMaxLength(32);
+            builder.Property(p => p.GrantedByUserId);
+            builder.Property(p => p.GrantedAt);
             builder.HasIndex(p => p.UserId);
             builder.HasIndex(p => new { p.UserId, p.Action });
             builder.OwnsOne(p => p.Scope, owned =>
             {
                 owned.Property(s => s.TableId).HasColumnName("TableId").IsRequired();
                 owned.Property(s => s.RecordId).HasColumnName("RecordId");
-                owned.HasIndex(s => new { s.TableId, s.RecordId });
+                owned.Property(s => s.FieldName).HasColumnName("FieldName").HasMaxLength(128);
+                owned.HasIndex(s => new { s.TableId, s.RecordId, s.FieldName });
             });
         });
 

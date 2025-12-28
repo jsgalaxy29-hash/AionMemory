@@ -1,4 +1,5 @@
 using System.Globalization;
+using Aion.Domain;
 using Aion.Infrastructure;
 using Aion.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
@@ -119,7 +120,7 @@ static async Task<int> RunRebuildSearchAsync(string connectionString, string enc
     var builder = new DbContextOptionsBuilder<AionDbContext>();
     SqliteConnectionFactory.ConfigureBuilder(builder, options);
 
-    await using var context = new AionDbContext(builder.Options);
+    await using var context = new AionDbContext(builder.Options, new RecoveryWorkspaceContext());
     await context.Database.MigrateAsync();
 
     var indexService = new RecordSearchIndexService(context, NullLogger<RecordSearchIndexService>.Instance);
@@ -140,6 +141,11 @@ static SqliteConnection CreateSourceConnection(string connectionString)
     builder.Remove("Pwd");
 
     return new SqliteConnection(builder.ToString());
+}
+
+sealed class RecoveryWorkspaceContext : IWorkspaceContext
+{
+    public Guid WorkspaceId { get; } = TenancyDefaults.DefaultWorkspaceId;
 }
 
 static SqliteConnection CreateDestinationConnection(string destinationPath)

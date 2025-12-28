@@ -19,7 +19,7 @@ public class MemoryIntelligenceServiceTests
             .UseSqlite(connection)
             .Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var service = new MemoryIntelligenceService(context, new TestMemoryAnalyzer(), NullLogger<MemoryIntelligenceService>.Instance);
@@ -47,7 +47,7 @@ public class MemoryIntelligenceServiceTests
             .UseSqlite(connection)
             .Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
 
         var analyzer = new TestMemoryAnalyzer();

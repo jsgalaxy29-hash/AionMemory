@@ -19,7 +19,7 @@ public class SemanticSearchServiceTests
             .UseSqlite(connection)
             .Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
         await context.Database.MigrateAsync();
         await context.Database.ExecuteSqlRawAsync(@"DROP TABLE IF EXISTS NoteSearch; DROP TABLE IF EXISTS RecordSearch; DROP TABLE IF EXISTS FileSearch;");
 
@@ -42,7 +42,7 @@ public class SemanticSearchServiceTests
             .UseSqlite(connection)
             .Options;
 
-        await using var context = new AionDbContext(options);
+        await using var context = new AionDbContext(options, new TestWorkspaceContext());
 
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
         var indexService = new RecordSearchIndexService(context, NullLogger<RecordSearchIndexService>.Instance);
