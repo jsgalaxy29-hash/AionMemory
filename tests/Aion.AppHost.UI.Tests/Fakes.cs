@@ -12,11 +12,41 @@ namespace Aion.AppHost.UI.Tests;
 
 internal sealed class FakeDashboardService : IDashboardService
 {
+    private readonly List<DashboardWidget> _widgets;
+    private DashboardLayout? _layout;
+
+    public FakeDashboardService(IEnumerable<DashboardWidget>? widgets = null, DashboardLayout? layout = null)
+    {
+        _widgets = widgets?.ToList() ?? new List<DashboardWidget>();
+        _layout = layout;
+    }
+
     public Task<IEnumerable<DashboardWidget>> GetWidgetsAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult<IEnumerable<DashboardWidget>>(Array.Empty<DashboardWidget>());
+        => Task.FromResult<IEnumerable<DashboardWidget>>(_widgets);
 
     public Task<DashboardWidget> SaveWidgetAsync(DashboardWidget widget, CancellationToken cancellationToken = default)
-        => Task.FromResult(widget);
+    {
+        var index = _widgets.FindIndex(w => w.Id == widget.Id);
+        if (index >= 0)
+        {
+            _widgets[index] = widget;
+        }
+        else
+        {
+            _widgets.Add(widget);
+        }
+
+        return Task.FromResult(widget);
+    }
+
+    public Task<DashboardLayout?> GetLayoutAsync(string dashboardKey, CancellationToken cancellationToken = default)
+        => Task.FromResult(_layout is not null && _layout.DashboardKey == dashboardKey ? _layout : null);
+
+    public Task<DashboardLayout> SaveLayoutAsync(DashboardLayout layout, CancellationToken cancellationToken = default)
+    {
+        _layout = layout;
+        return Task.FromResult(layout);
+    }
 }
 
 internal sealed class FakeAgendaService : IAgendaService
@@ -111,6 +141,33 @@ internal sealed class FakeNoteService : INoteService
 
     public Task<IEnumerable<S_Note>> GetChronologicalAsync(int take = 50, CancellationToken cancellationToken = default)
         => Task.FromResult<IEnumerable<S_Note>>(Notes.OrderByDescending(n => n.CreatedAt).Take(take).ToList());
+}
+
+internal sealed class FakeLifeService : ILifeService
+{
+    private readonly List<S_HistoryEvent> _events = new();
+
+    public FakeLifeService(IEnumerable<S_HistoryEvent>? events = null)
+    {
+        if (events is not null)
+        {
+            _events.AddRange(events);
+        }
+    }
+
+    public Task<S_HistoryEvent> AddHistoryAsync(S_HistoryEvent evt, CancellationToken cancellationToken = default)
+    {
+        _events.Add(evt);
+        return Task.FromResult(evt);
+    }
+
+    public Task<TimelinePage> GetTimelinePageAsync(TimelineQuery query, CancellationToken cancellationToken = default)
+        => Task.FromResult(new TimelinePage(Array.Empty<S_HistoryEvent>(), 0, 0));
+
+    public Task<IEnumerable<S_HistoryEvent>> GetTimelineAsync(DateTimeOffset? from = null, DateTimeOffset? to = null, CancellationToken cancellationToken = default)
+        => Task.FromResult<IEnumerable<S_HistoryEvent>>(_events.Where(e =>
+            (!from.HasValue || e.OccurredAt >= from.Value) &&
+            (!to.HasValue || e.OccurredAt <= to.Value)).ToList());
 }
 
 internal sealed class FakeRecordQueryService : IRecordQueryService

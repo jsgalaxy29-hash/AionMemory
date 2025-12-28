@@ -61,6 +61,7 @@ public class AionDbContext : DbContext
     public DbSet<S_HistoryEvent> HistoryEvents => Set<S_HistoryEvent>();
     public DbSet<S_Link> Links => Set<S_Link>();
     public DbSet<DashboardWidget> Widgets => Set<DashboardWidget>();
+    public DbSet<DashboardLayout> DashboardLayouts => Set<DashboardLayout>();
     public DbSet<TemplatePackage> Templates => Set<TemplatePackage>();
     public DbSet<MarketplaceItem> Marketplace => Set<MarketplaceItem>();
     public DbSet<PredictionInsight> Predictions => Set<PredictionInsight>();
@@ -345,6 +346,14 @@ public class AionDbContext : DbContext
             builder.Property(w => w.Title).IsRequired().HasMaxLength(128);
             builder.Property(w => w.WidgetType).IsRequired().HasMaxLength(64);
             builder.Property(w => w.ConfigurationJson).IsRequired().HasMaxLength(4000);
+        });
+
+        modelBuilder.Entity<DashboardLayout>(builder =>
+        {
+            builder.Property(l => l.DashboardKey).IsRequired().HasMaxLength(128);
+            builder.Property(l => l.LayoutJson).IsRequired().HasMaxLength(4000);
+            builder.Property(l => l.UpdatedAt).IsRequired().HasDefaultValueSql("CURRENT_TIMESTAMP");
+            builder.HasIndex(l => l.DashboardKey);
         });
 
         modelBuilder.Entity<TemplatePackage>(builder =>

@@ -1,5 +1,4 @@
 @page "/potager/dashboard"
-@inject IDashboardService DashboardService
 @inject IAgendaService AgendaService
 @inject NavigationManager Navigation
 
@@ -23,7 +22,7 @@
     </div>
     <div class="card">
         <h4>Widgets</h4>
-        <Dashboard DashboardService="DashboardService" />
+        <Dashboard DashboardKey="potager" />
     </div>
 </div>
 

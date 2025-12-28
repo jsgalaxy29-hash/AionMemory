@@ -159,6 +159,8 @@ public interface IDashboardService
 {
     Task<IEnumerable<DashboardWidget>> GetWidgetsAsync(CancellationToken cancellationToken = default);
     Task<DashboardWidget> SaveWidgetAsync(DashboardWidget widget, CancellationToken cancellationToken = default);
+    Task<DashboardLayout?> GetLayoutAsync(string dashboardKey, CancellationToken cancellationToken = default);
+    Task<DashboardLayout> SaveLayoutAsync(DashboardLayout layout, CancellationToken cancellationToken = default);
 }
 
 public interface ITemplateService

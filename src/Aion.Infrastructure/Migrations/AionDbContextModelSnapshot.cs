@@ -255,6 +255,39 @@ namespace Aion.Infrastructure.Migrations
                     b.ToTable("Widgets");
                 });
 
+            modelBuilder.Entity("Aion.Domain.DashboardLayout", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DashboardKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LayoutJson")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DashboardKey");
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.ToTable("DashboardLayouts");
+                });
+
             modelBuilder.Entity("Aion.Domain.F_File", b =>
                 {
                     b.Property<Guid>("Id")

@@ -11,20 +11,12 @@ public class DashboardPageTests : TestContext
     [Fact]
     public void Dashboard_sections_render_and_paginate()
     {
-        var tables = Enumerable.Range(1, 7)
-            .Select(index => new STable
-            {
-                Id = Guid.NewGuid(),
-                Name = $"table-{index}",
-                DisplayName = $"Table {index}"
-            })
-            .ToList();
-        var counts = tables.ToDictionary(t => t.Id, _ => 3);
         var events = Enumerable.Range(1, 8)
             .Select(index => new S_Event
             {
                 Title = $"Événement {index}",
-                Start = DateTimeOffset.Now.AddDays(index)
+                Start = DateTimeOffset.Now.AddDays(index),
+                ReminderAt = DateTimeOffset.Now.AddDays(index).AddHours(-1)
             })
             .ToList();
         var notes = Enumerable.Range(1, 12)
@@ -35,21 +27,53 @@ public class DashboardPageTests : TestContext
                 CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-index)
             })
             .ToList();
+        var activity = Enumerable.Range(1, 6)
+            .Select(index => new S_HistoryEvent
+            {
+                Title = $"Activité {index}",
+                OccurredAt = DateTimeOffset.UtcNow.AddHours(-index)
+            })
+            .ToList();
+        var widgets = new[]
+        {
+            new DashboardWidget
+            {
+                Title = "Rappels agenda",
+                WidgetType = DashboardWidgetTypes.AgendaReminders,
+                ConfigurationJson = "{\"maxItems\":4}",
+                Order = 0
+            },
+            new DashboardWidget
+            {
+                Title = "Dernières notes",
+                WidgetType = DashboardWidgetTypes.LatestNotes,
+                ConfigurationJson = "{\"maxItems\":4}",
+                Order = 1
+            },
+            new DashboardWidget
+            {
+                Title = "Activité récente",
+                WidgetType = DashboardWidgetTypes.RecentActivity,
+                ConfigurationJson = "{\"maxItems\":4,\"rangeDays\":7}",
+                Order = 2
+            }
+        };
 
-        Services.AddSingleton<IModuleViewService>(new FakeModuleViewService(tables));
-        Services.AddSingleton<IRecordQueryService>(new FakeRecordQueryService(counts));
         Services.AddSingleton<IAgendaService>(new FakeAgendaService(events));
         Services.AddSingleton<INoteService>(new FakeNoteService(notes));
-        Services.AddSingleton<IDashboardService>(new FakeDashboardService());
+        Services.AddSingleton<ILifeService>(new FakeLifeService(activity));
+        Services.AddSingleton<IDashboardService>(new FakeDashboardService(widgets));
 
         var cut = RenderComponent<DashboardPage>(parameters => parameters.Add(p => p.Entity, "global"));
 
         cut.WaitForAssertion(() =>
         {
-            Assert.Contains("Table 1", cut.Markup);
             Assert.Contains("Événement 1", cut.Markup);
             Assert.Contains("Note 1", cut.Markup);
-            Assert.Contains("Page 1 / 2", cut.Markup);
+            Assert.Contains("Activité 1", cut.Markup);
+            Assert.Contains("Rappels agenda", cut.Markup);
+            Assert.Contains("Dernières notes", cut.Markup);
+            Assert.Contains("Activité récente", cut.Markup);
         });
     }
 }

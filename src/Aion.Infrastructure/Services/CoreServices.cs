@@ -2851,13 +2851,50 @@ public sealed class DashboardService : IDashboardService
 {
     private readonly AionDbContext _db;
 
+    private static readonly JsonSerializerOptions LayoutSerializerOptions = new(JsonSerializerDefaults.Web);
+
     public DashboardService(AionDbContext db)
     {
         _db = db;
     }
 
     public async Task<IEnumerable<DashboardWidget>> GetWidgetsAsync(CancellationToken cancellationToken = default)
-        => await _db.Widgets.OrderBy(w => w.Order).ToListAsync(cancellationToken).ConfigureAwait(false);
+    {
+        var widgets = await _db.Widgets.OrderBy(w => w.Order).ToListAsync(cancellationToken).ConfigureAwait(false);
+        if (widgets.Count != 0)
+        {
+            return widgets;
+        }
+
+        var defaults = new[]
+        {
+            new DashboardWidget
+            {
+                Title = "Rappels agenda",
+                WidgetType = DashboardWidgetTypes.AgendaReminders,
+                ConfigurationJson = JsonSerializer.Serialize(new DashboardWidgetConfig { MaxItems = 6 }, LayoutSerializerOptions),
+                Order = 0
+            },
+            new DashboardWidget
+            {
+                Title = "Dernières notes",
+                WidgetType = DashboardWidgetTypes.LatestNotes,
+                ConfigurationJson = JsonSerializer.Serialize(new DashboardWidgetConfig { MaxItems = 6 }, LayoutSerializerOptions),
+                Order = 1
+            },
+            new DashboardWidget
+            {
+                Title = "Activité récente",
+                WidgetType = DashboardWidgetTypes.RecentActivity,
+                ConfigurationJson = JsonSerializer.Serialize(new DashboardWidgetConfig { MaxItems = 6, RangeDays = 7 }, LayoutSerializerOptions),
+                Order = 2
+            }
+        };
+
+        await _db.Widgets.AddRangeAsync(defaults, cancellationToken).ConfigureAwait(false);
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return defaults;
+    }
 
     public async Task<DashboardWidget> SaveWidgetAsync(DashboardWidget widget, CancellationToken cancellationToken = default)
     {
@@ -2872,6 +2909,26 @@ public sealed class DashboardService : IDashboardService
 
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return widget;
+    }
+
+    public async Task<DashboardLayout?> GetLayoutAsync(string dashboardKey, CancellationToken cancellationToken = default)
+        => await _db.DashboardLayouts.FirstOrDefaultAsync(l => l.DashboardKey == dashboardKey, cancellationToken).ConfigureAwait(false);
+
+    public async Task<DashboardLayout> SaveLayoutAsync(DashboardLayout layout, CancellationToken cancellationToken = default)
+    {
+        layout.UpdatedAt = DateTimeOffset.UtcNow;
+
+        if (await _db.DashboardLayouts.AnyAsync(l => l.Id == layout.Id, cancellationToken).ConfigureAwait(false))
+        {
+            _db.DashboardLayouts.Update(layout);
+        }
+        else
+        {
+            await _db.DashboardLayouts.AddAsync(layout, cancellationToken).ConfigureAwait(false);
+        }
+
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return layout;
     }
 }
 
