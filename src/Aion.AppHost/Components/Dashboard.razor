@@ -1,18 +1,83 @@
+@using System.Text.Json
 @using Aion.Domain
+@inject IDashboardService DashboardService
+@inject IAgendaService AgendaService
+@inject INoteService NoteService
+@inject ILifeService LifeService
+
 <div class="row">
-    @if (Widgets is null)
+    @if (IsLoading)
     {
         <p>Loading dashboard…</p>
     }
     else
     {
-        @foreach (var widget in Widgets.OrderBy(w => w.Order))
+        @foreach (var widget in OrderedWidgets)
         {
             <div class="col-6 mb-3">
                 <div class="card">
-                    <div class="card-header">@widget.Title</div>
+                    <div class="card-header d-flex justify-between align-center">
+                        <span>@widget.Title</span>
+                        <span class="inline-actions">
+                            <button class="button secondary" disabled="@IsFirst(widget.Id)" @onclick="() => MoveWidgetAsync(widget.Id, -1)">▲</button>
+                            <button class="button secondary" disabled="@IsLast(widget.Id)" @onclick="() => MoveWidgetAsync(widget.Id, 1)">▼</button>
+                        </span>
+                    </div>
                     <div class="card-body">
-                        <pre>@widget.ConfigurationJson</pre>
+                        @switch (widget.WidgetType)
+                        {
+                            case DashboardWidgetTypes.AgendaReminders:
+                                <h5>Rappels à venir</h5>
+                                @if (!AgendaReminders.Any())
+                                {
+                                    <p class="text-muted">Aucun rappel pour le moment.</p>
+                                }
+                                else
+                                {
+                                    <ul>
+                                        @foreach (var reminder in AgendaReminders)
+                                        {
+                                            <li>@reminder.Start.ToLocalTime().ToString("g") - @reminder.Title</li>
+                                        }
+                                    </ul>
+                                }
+                                break;
+                            case DashboardWidgetTypes.LatestNotes:
+                                <h5>Dernières notes</h5>
+                                @if (!LatestNotes.Any())
+                                {
+                                    <p class="text-muted">Aucune note récente.</p>
+                                }
+                                else
+                                {
+                                    <ul>
+                                        @foreach (var note in LatestNotes)
+                                        {
+                                            <li><strong>@note.Title</strong> - @note.CreatedAt.ToLocalTime().ToString("g")</li>
+                                        }
+                                    </ul>
+                                }
+                                break;
+                            case DashboardWidgetTypes.RecentActivity:
+                                <h5>Activité récente</h5>
+                                @if (!RecentActivity.Any())
+                                {
+                                    <p class="text-muted">Aucune activité enregistrée.</p>
+                                }
+                                else
+                                {
+                                    <ul>
+                                        @foreach (var activity in RecentActivity)
+                                        {
+                                            <li>@activity.OccurredAt.ToLocalTime().ToString("g") - @activity.Title</li>
+                                        }
+                                    </ul>
+                                }
+                                break;
+                            default:
+                                <p class="text-muted">Widget non pris en charge.</p>
+                                break;
+                        }
                     </div>
                 </div>
             </div>
@@ -21,14 +86,151 @@
 </div>
 
 @code {
-    [Parameter] public IDashboardService? DashboardService { get; set; }
-    protected IEnumerable<DashboardWidget>? Widgets { get; set; }
+    private static readonly JsonSerializerOptions LayoutSerializerOptions = new(JsonSerializerDefaults.Web);
+
+    [Parameter] public string DashboardKey { get; set; } = "global";
+
+    private IReadOnlyList<DashboardWidget> Widgets { get; set; } = Array.Empty<DashboardWidget>();
+    private List<Guid> WidgetOrder { get; set; } = new();
+    private DashboardLayout? Layout { get; set; }
+    private IReadOnlyList<S_Event> AgendaReminders { get; set; } = Array.Empty<S_Event>();
+    private IReadOnlyList<S_Note> LatestNotes { get; set; } = Array.Empty<S_Note>();
+    private IReadOnlyList<S_HistoryEvent> RecentActivity { get; set; } = Array.Empty<S_HistoryEvent>();
+    private bool IsLoading { get; set; } = true;
+
+    private IEnumerable<DashboardWidget> OrderedWidgets
+        => WidgetOrder
+            .Select(id => Widgets.FirstOrDefault(w => w.Id == id))
+            .Where(widget => widget is not null)!;
 
     protected override async Task OnInitializedAsync()
     {
-        if (DashboardService is not null)
+        Widgets = (await DashboardService.GetWidgetsAsync()).ToList();
+        Layout = await DashboardService.GetLayoutAsync(DashboardKey);
+        WidgetOrder = ResolveWidgetOrder(Layout, Widgets);
+        await LoadWidgetDataAsync();
+        IsLoading = false;
+    }
+
+    private static List<Guid> ResolveWidgetOrder(DashboardLayout? layout, IReadOnlyList<DashboardWidget> widgets)
+    {
+        List<Guid> order;
+        if (layout is not null)
         {
-            Widgets = await DashboardService.GetWidgetsAsync();
+            try
+            {
+                var definition = JsonSerializer.Deserialize<DashboardLayoutDefinition>(layout.LayoutJson, LayoutSerializerOptions);
+                order = definition?.WidgetOrder?.ToList() ?? new List<Guid>();
+            }
+            catch (JsonException)
+            {
+                order = new List<Guid>();
+            }
         }
+        else
+        {
+            order = new List<Guid>();
+        }
+
+        if (order.Count == 0)
+        {
+            order = widgets.OrderBy(w => w.Order).Select(w => w.Id).ToList();
+        }
+
+        var knownIds = new HashSet<Guid>(order);
+        foreach (var widget in widgets.OrderBy(w => w.Order))
+        {
+            if (knownIds.Add(widget.Id))
+            {
+                order.Add(widget.Id);
+            }
+        }
+
+        return order;
+    }
+
+    private async Task LoadWidgetDataAsync()
+    {
+        var reminderConfig = GetWidgetConfig(DashboardWidgetTypes.AgendaReminders);
+        var notesConfig = GetWidgetConfig(DashboardWidgetTypes.LatestNotes);
+        var activityConfig = GetWidgetConfig(DashboardWidgetTypes.RecentActivity);
+
+        if (reminderConfig is not null)
+        {
+            var reminders = await AgendaService.GetPendingRemindersAsync(DateTimeOffset.Now);
+            AgendaReminders = reminders
+                .OrderBy(e => e.ReminderAt ?? e.Start)
+                .Take(reminderConfig.MaxItems)
+                .ToList();
+        }
+
+        if (notesConfig is not null)
+        {
+            LatestNotes = (await NoteService.GetChronologicalAsync(notesConfig.MaxItems))
+                .Take(notesConfig.MaxItems)
+                .ToList();
+        }
+
+        if (activityConfig is not null)
+        {
+            var from = DateTimeOffset.Now.AddDays(-activityConfig.RangeDays);
+            var events = await LifeService.GetTimelineAsync(from);
+            RecentActivity = events
+                .OrderByDescending(e => e.OccurredAt)
+                .Take(activityConfig.MaxItems)
+                .ToList();
+        }
+    }
+
+    private DashboardWidgetConfig? GetWidgetConfig(string widgetType)
+    {
+        var widget = Widgets.FirstOrDefault(w => w.WidgetType == widgetType);
+        if (widget is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<DashboardWidgetConfig>(widget.ConfigurationJson, LayoutSerializerOptions)
+                ?? new DashboardWidgetConfig();
+        }
+        catch (JsonException)
+        {
+            return new DashboardWidgetConfig();
+        }
+    }
+
+    private bool IsFirst(Guid widgetId) => WidgetOrder.IndexOf(widgetId) <= 0;
+
+    private bool IsLast(Guid widgetId) => WidgetOrder.IndexOf(widgetId) >= WidgetOrder.Count - 1;
+
+    private async Task MoveWidgetAsync(Guid widgetId, int direction)
+    {
+        var index = WidgetOrder.IndexOf(widgetId);
+        if (index < 0)
+        {
+            return;
+        }
+
+        var newIndex = index + direction;
+        if (newIndex < 0 || newIndex >= WidgetOrder.Count)
+        {
+            return;
+        }
+
+        WidgetOrder.RemoveAt(index);
+        WidgetOrder.Insert(newIndex, widgetId);
+
+        var definition = new DashboardLayoutDefinition { WidgetOrder = WidgetOrder.ToList() };
+        var payload = JsonSerializer.Serialize(definition, LayoutSerializerOptions);
+        Layout ??= new DashboardLayout
+        {
+            DashboardKey = DashboardKey,
+            LayoutJson = payload
+        };
+
+        Layout.LayoutJson = payload;
+        Layout = await DashboardService.SaveLayoutAsync(Layout);
     }
 }

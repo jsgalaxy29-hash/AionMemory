@@ -434,6 +434,34 @@ public class DashboardWidget
     public int Order { get; set; }
 }
 
+public class DashboardLayout
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    [Required, StringLength(128)]
+    public string DashboardKey { get; set; } = string.Empty;
+    [Required, StringLength(4000)]
+    public string LayoutJson { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed record DashboardLayoutDefinition
+{
+    public IReadOnlyList<Guid> WidgetOrder { get; init; } = Array.Empty<Guid>();
+}
+
+public static class DashboardWidgetTypes
+{
+    public const string AgendaReminders = "agenda-reminders";
+    public const string LatestNotes = "latest-notes";
+    public const string RecentActivity = "recent-activity";
+}
+
+public sealed record DashboardWidgetConfig
+{
+    public int MaxItems { get; init; } = 6;
+    public int RangeDays { get; init; } = 7;
+}
+
 public class TemplatePackage
 {
     public Guid Id { get; set; } = Guid.NewGuid();
