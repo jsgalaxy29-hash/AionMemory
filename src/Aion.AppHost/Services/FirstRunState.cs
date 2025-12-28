@@ -40,5 +40,8 @@ public sealed class FirstRunState
         await SecureStorage.Default.SetAsync(StorageKeyStorageKey, encryptionKey).ConfigureAwait(false);
     }
 
+    public Task UpdateDatabaseKeyAsync(string encryptionKey)
+        => SecureStorage.Default.SetAsync(DatabaseKeyStorageKey, encryptionKey);
+
     public void MarkCompleted() => Preferences.Default.Set(CompletedKey, true);
 }

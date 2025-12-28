@@ -1,9 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 using System.IO;
 using Aion.Domain;
 using Aion.Infrastructure;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -167,6 +169,39 @@ public class DatabaseLifecycleTests
         }
     }
 
+    [Fact]
+    public async Task DatabaseKeyRotationService_rekeys_database_and_opens_with_new_key()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+
+        var databasePath = Path.Combine(root, "aion_rotate.db");
+        var originalKey = new string('k', 48);
+        var provider = BuildProvider(root, databasePath, originalKey);
+
+        try
+        {
+            await provider.EnsureAionDatabaseAsync();
+
+            await using var scope = provider.CreateAsyncScope();
+            var rotationService = scope.ServiceProvider.GetRequiredService<IKeyRotationService>();
+            var options = scope.ServiceProvider.GetRequiredService<IOptions<AionDatabaseOptions>>().Value;
+
+            var newKey = new string('n', 48);
+            await rotationService.RotateAsync(newKey);
+
+            var tableCount = await ReadTableCountAsync(options.ConnectionString, newKey);
+            Assert.True(tableCount > 0);
+
+            await Assert.ThrowsAsync<SqliteException>(() => ReadTableCountAsync(options.ConnectionString, originalKey));
+        }
+        finally
+        {
+            await provider.DisposeAsync();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static async Task<bool> TableExistsAsync(DbConnection connection, string tableName)
     {
         await using var command = connection.CreateCommand();
@@ -190,5 +225,33 @@ public class DatabaseLifecycleTests
         }
 
         return result is string;
+    }
+
+    private static async Task<long> ReadTableCountAsync(string connectionString, string key)
+    {
+        var builder = new SqliteConnectionStringBuilder(connectionString);
+        await using var connection = new SqliteConnection(builder.ToString());
+        await connection.OpenAsync();
+
+        await using (var pragma = connection.CreateCommand())
+        {
+            pragma.CommandText = "PRAGMA key = $key;";
+            var parameter = pragma.CreateParameter();
+            parameter.ParameterName = "$key";
+            parameter.Value = key;
+            pragma.Parameters.Add(parameter);
+            await pragma.ExecuteNonQueryAsync();
+        }
+
+        await using (var secureMemory = connection.CreateCommand())
+        {
+            secureMemory.CommandText = "PRAGMA cipher_memory_security = ON;";
+            await secureMemory.ExecuteNonQueryAsync();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master;";
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(result);
     }
 }
