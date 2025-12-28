@@ -6,6 +6,8 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '0 2 * * *'
 
 jobs:
   build-and-test:
@@ -42,11 +44,17 @@ jobs:
       - name: Restore
         run: dotnet restore AionMemory.slnx
 
+      - name: Restore dotnet tools
+        run: dotnet tool restore
+
+      - name: Verify formatting
+        run: dotnet format --verify-no-changes --no-restore
+
       - name: Build
         run: dotnet build AionMemory.slnx --configuration Release --no-restore /p:ContinuousIntegrationBuild=true
 
       - name: Test
-        run: dotnet test AionMemory.slnx --configuration Release --no-build --logger "trx;LogFileName=test-results.trx"
+        run: dotnet test AionMemory.slnx --configuration Release --no-build --collect:"XPlat Code Coverage" --results-directory TestResults --logger "trx;LogFileName=test-results.trx"
 
       - name: Validate
         run: pwsh ./tools/validate.ps1
@@ -57,6 +65,13 @@ jobs:
         with:
           name: test-results-${{ runner.os }}
           path: "**/*.trx"
+
+      - name: Publish coverage results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ runner.os }}
+          path: "**/TestResults/**/coverage.cobertura.xml"
 
   publish-apphost:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -105,3 +120,35 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         with:
           args: detect --source . --no-banner
+
+  nightly-maui-build:
+    if: github.event_name == 'schedule'
+    runs-on: windows-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.100-preview.6.24452.5'
+          global-json-file: global.json
+          include-prerelease: true
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            **/*.props
+            **/*.targets
+            **/packages.lock.json
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui
+
+      - name: Restore
+        run: dotnet restore AionMemory.slnx
+
+      - name: Build AppHost (Release)
+        run: dotnet build src/Aion.AppHost/Aion.AppHost.csproj --configuration Release --no-restore /p:ContinuousIntegrationBuild=true

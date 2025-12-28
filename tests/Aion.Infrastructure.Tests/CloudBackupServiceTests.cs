@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Aion.Domain;
 using Aion.Infrastructure.Services;
@@ -14,6 +15,80 @@ namespace Aion.Infrastructure.Tests;
 
 public class CloudBackupServiceTests
 {
+    [Fact]
+    public async Task ListBackups_returns_latest_entries_first()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var storageRoot = Path.Combine(tempRoot, "storage");
+        var backupFolder = Path.Combine(tempRoot, "backups");
+        Directory.CreateDirectory(storageRoot);
+        Directory.CreateDirectory(backupFolder);
+
+        var dbOptions = Options.Create(new AionDatabaseOptions
+        {
+            ConnectionString = "Data Source=:memory:",
+            EncryptionKey = new string('k', 32)
+        });
+        var storageOptions = Options.Create(new StorageOptions
+        {
+            RootPath = storageRoot,
+            EncryptPayloads = false
+        });
+        var backupOptions = Options.Create(new BackupOptions
+        {
+            BackupFolder = backupFolder,
+            RequireIntegrityCheck = true
+        });
+        var cloudOptions = Options.Create(new CloudBackupOptions
+        {
+            Enabled = true,
+            Bucket = "bucket",
+            Endpoint = "https://example.com",
+            AccessKeyId = "access",
+            SecretAccessKey = "secret",
+            Prefix = "tests"
+        });
+
+        var store = new InMemoryCloudObjectStore();
+        var cloudService = new AionCloudBackupService(
+            backupOptions,
+            cloudOptions,
+            dbOptions,
+            storageOptions,
+            new StubBackupService(),
+            store,
+            NullLogger<AionCloudBackupService>.Instance,
+            new NullSecurityAuditService());
+
+        var older = new CloudBackupEntry
+        {
+            Id = "backup-old",
+            FileName = "backup-old.zip.enc",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-2),
+            Size = 120,
+            Sha256 = new string('a', 64)
+        };
+        var newer = new CloudBackupEntry
+        {
+            Id = "backup-new",
+            FileName = "backup-new.zip.enc",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            Size = 180,
+            Sha256 = new string('b', 64)
+        };
+
+        await SeedManifestAsync(store, cloudOptions.Value.Prefix ?? "tests", older);
+        await SeedManifestAsync(store, cloudOptions.Value.Prefix ?? "tests", newer);
+
+        var backups = await cloudService.ListBackupsAsync();
+
+        Assert.Equal(new[] { "backup-new", "backup-old" }, backups.Select(b => b.Id));
+
+        Directory.Delete(tempRoot, recursive: true);
+    }
+
     [Fact]
     public async Task Backup_and_restore_empty_database()
     {
@@ -200,5 +275,20 @@ public class CloudBackupServiceTests
                 _objects[key] = (data, DateTimeOffset.UtcNow);
             }
         }
+    }
+
+    private sealed class StubBackupService : IBackupService
+    {
+        public Task<BackupManifest> CreateBackupAsync(bool encrypt = false, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Stub backup service should not be used in list tests.");
+    }
+
+    private static async Task SeedManifestAsync(ICloudObjectStore store, string prefix, CloudBackupEntry entry)
+    {
+        var manifestKey = $"{prefix.TrimEnd('/')}/{entry.Id}.manifest.json";
+        await using var stream = new MemoryStream();
+        await JsonSerializer.SerializeAsync(stream, entry, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        stream.Position = 0;
+        await store.UploadObjectAsync(manifestKey, stream, "application/json", CancellationToken.None);
     }
 }
