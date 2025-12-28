@@ -7,6 +7,7 @@
     <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
     <PackageVersion Include="bunit" Version="1.26.65" />
     <PackageVersion Include="CommunityToolkit.Maui" Version="13.0.0" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.2" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="10.0.11" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
