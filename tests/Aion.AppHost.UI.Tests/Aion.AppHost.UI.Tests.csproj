@@ -22,6 +22,10 @@
   </ItemGroup>
   <ItemGroup>
     <RazorComponent Include="..\..\src\Aion.AppHost\Components\Pages\ModulesHome.razor" Link="Components/Pages/ModulesHome.razor" />
+    <RazorComponent Include="..\..\src\Aion.AppHost\Components\Pages\DashboardPage.razor" Link="Components/Pages/DashboardPage.razor" />
+    <RazorComponent Include="..\..\src\Aion.AppHost\Components\Pages\Agenda.razor" Link="Components/Pages/Agenda.razor" />
+    <RazorComponent Include="..\..\src\Aion.AppHost\Components\Pages\Notes.razor" Link="Components/Pages/Notes.razor" />
+    <RazorComponent Include="..\..\src\Aion.AppHost\Components\Pages\RecordDetail.razor" Link="Components/Pages/RecordDetail.razor" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="_Imports.razor" />

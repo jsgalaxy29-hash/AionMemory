@@ -24,7 +24,7 @@ else if (Modules.Count == 0)
 else
 {
     <div class="grid columns-3">
-        @foreach (var module in Modules)
+        @foreach (var module in PagedModules)
         {
             <div class="card module-card" @onclick="() => OpenModule(module.Id)" style="cursor:pointer;">
                 <div class="module-header">
@@ -50,17 +50,53 @@ else
             </div>
         }
     </div>
+    <div class="list-pagination" style="margin-top:12px;">
+        <button class="button secondary" @onclick="PreviousPage" disabled="@(!CanGoPrevious)">◀</button>
+        <span class="text-muted">Page @(PageIndex + 1) / @TotalPages</span>
+        <button class="button secondary" @onclick="NextPage" disabled="@(!CanGoNext)">▶</button>
+    </div>
 }
 
 @code {
+    private const int PageSize = 6;
     private List<S_Module>? Modules { get; set; }
+    private int PageIndex { get; set; }
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)Math.Max(Modules?.Count ?? 0, 1) / PageSize));
+    private bool CanGoPrevious => PageIndex > 0;
+    private bool CanGoNext => PageIndex < TotalPages - 1;
+    private IEnumerable<S_Module> PagedModules
+        => Modules is null
+            ? Array.Empty<S_Module>()
+            : Modules.Skip(PageIndex * PageSize).Take(PageSize);
 
     protected override async Task OnInitializedAsync()
     {
         Modules = (await Metadata.GetModulesAsync()).ToList();
+        PageIndex = Math.Min(PageIndex, TotalPages - 1);
     }
 
     private void OpenModule(Guid moduleId) => Navigation.NavigateTo($"/module/{moduleId}");
 
     private void OpenBuilder() => Navigation.NavigateTo("/module-builder");
+
+    private Task PreviousPage()
+    {
+        if (CanGoPrevious)
+        {
+            PageIndex--;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task NextPage()
+    {
+        if (CanGoNext)
+        {
+            PageIndex++;
+        }
+
+        return Task.CompletedTask;
+    }
 }
