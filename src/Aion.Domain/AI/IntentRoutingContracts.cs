@@ -1,3 +1,5 @@
+using Aion.Domain;
+
 namespace Aion.AI;
 
 public sealed record IntentRouteRequest
