@@ -1,5 +1,7 @@
 using System;
+using System.Collections.ObjectModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Aion.Domain;
 
@@ -28,7 +30,7 @@ public sealed class Tenant
     public string Name { get; set; } = string.Empty;
     public TenantKind Kind { get; set; } = TenantKind.Solo;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-    public ICollection<Workspace> Workspaces { get; set; } = new List<Workspace>();
+    public ICollection<Workspace> Workspaces { get; } = new Collection<Workspace>();
 }
 
 public sealed class Workspace
@@ -41,9 +43,10 @@ public sealed class Workspace
     public string? Description { get; set; }
     public bool IsDefault { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-    public ICollection<Profile> Profiles { get; set; } = new List<Profile>();
+    public ICollection<Profile> Profiles { get; } = new Collection<Profile>();
 }
 
+[SuppressMessage("Naming", "CA1724:Type names should not match namespaces", Justification = "Domain terminology aligned with UI/UX naming.")]
 public sealed class Profile
 {
     public Guid Id { get; set; } = Guid.NewGuid();

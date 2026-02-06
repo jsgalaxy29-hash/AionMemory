@@ -6,6 +6,10 @@ using System.Linq;
 
 namespace Aion.Domain;
 
+#pragma warning disable CA1707 // Legacy schema naming uses underscores to match stored identifiers.
+#pragma warning disable CA1720 // Field data type identifiers align with persisted schema values.
+#pragma warning disable CA2227 // Collections are settable for EF Core and serialization.
+
 public enum FieldDataType
 {
     String,
@@ -258,6 +262,7 @@ public class S_Event
 
 public enum EventRecurrenceFrequency
 {
+    None = 0,
     Daily = 1,
     Weekly = 2,
     Monthly = 3
@@ -672,3 +677,7 @@ public class F_FileLink
     [StringLength(64)]
     public string? Relation { get; set; }
 }
+
+#pragma warning restore CA2227
+#pragma warning restore CA1720
+#pragma warning restore CA1707

@@ -1,3 +1,4 @@
+using System;
 using System.Net.Mail;
 
 namespace Aion.Domain.ValueObjects;
@@ -6,12 +7,12 @@ public sealed class Email : IEquatable<Email>
 {
     public string Value { get; }
 
-    protected Email()
+    private Email()
     {
         Value = string.Empty;
     }
 
-    protected Email(string value)
+    private Email(string value)
     {
         Value = value;
     }
@@ -25,13 +26,19 @@ public sealed class Email : IEquatable<Email>
 
         var trimmed = value.Trim();
         var address = Parse(trimmed);
-        var normalized = address.Address.ToLowerInvariant();
+        var normalized = address.Address.ToUpperInvariant();
         return new Email(normalized);
     }
 
+    public static Email FromString(string value) => Create(value);
+
     public static implicit operator Email(string value) => Create(value);
 
-    public static implicit operator string(Email email) => email.Value;
+    public static implicit operator string(Email email)
+    {
+        ArgumentNullException.ThrowIfNull(email);
+        return email.Value;
+    }
 
     public override string ToString() => Value;
 
