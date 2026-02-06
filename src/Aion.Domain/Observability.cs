@@ -16,24 +16,26 @@ public readonly record struct OperationContext(string CorrelationId, string Oper
 
     public static OperationContext FromActivity(Activity? activity)
     {
-        var created = false;
+        Activity? createdActivity = null;
         if (activity is null)
         {
-            activity = new Activity("operation");
-            created = true;
-        }
-        if (activity.Id is null)
-        {
-            activity.Start();
+            createdActivity = new Activity("operation");
+            activity = createdActivity;
         }
 
-        var context = new OperationContext(activity.TraceId.ToString(), activity.SpanId.ToString());
-        if (created)
+        try
         {
-            activity.Dispose();
-        }
+            if (activity.Id is null)
+            {
+                activity.Start();
+            }
 
-        return context;
+            return new OperationContext(activity.TraceId.ToString(), activity.SpanId.ToString());
+        }
+        finally
+        {
+            createdActivity?.Dispose();
+        }
     }
 }
 
