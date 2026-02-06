@@ -12,6 +12,9 @@ public static class ModuleSpecVersions
     public const string V1 = "1.0";
 }
 
+#pragma warning disable CA1002 // Lists are required for serialization and ordering semantics in module specs.
+#pragma warning disable CA1720 // Module field identifiers align with serialized schema values.
+#pragma warning disable CA2227 // DTO collections are settable for deserialization.
 public static class ModuleFieldDataTypes
 {
     public const string Text = "Text";
@@ -220,3 +223,7 @@ public sealed class ViewSpec
 
     public bool IsDefault { get; set; }
 }
+
+#pragma warning restore CA2227
+#pragma warning restore CA1720
+#pragma warning restore CA1002

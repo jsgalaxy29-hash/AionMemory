@@ -10,7 +10,7 @@ public sealed record ModuleDesignAnswer(string QuestionId, string Answer);
 
 public sealed record ModuleDesignQuestion(string Id, string Question, bool IsRequired = true, string? Hint = null);
 
-public sealed record ModuleDesignSource(string Title, string? Url = null, string? Type = null);
+public sealed record ModuleDesignSource(string Title, Uri? Url = null, string? Type = null);
 
 public sealed record ModuleDesignRequest
 {

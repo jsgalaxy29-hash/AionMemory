@@ -23,7 +23,7 @@ public static class IntentCatalog
     public const string Module = "module";
     public const string Unknown = "unknown";
 
-    private static readonly IReadOnlyDictionary<string, IntentClass> Classes =
+    private static readonly Dictionary<string, IntentClass> Classes =
         new Dictionary<string, IntentClass>(StringComparer.OrdinalIgnoreCase)
         {
             [Chat] = new IntentClass(Chat, IntentTarget.Chat),
@@ -35,7 +35,7 @@ public static class IntentCatalog
             [Unknown] = new IntentClass(Unknown, IntentTarget.Unknown)
         };
 
-    private static readonly IReadOnlyDictionary<string, string> Aliases =
+    private static readonly Dictionary<string, string> Aliases =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             [Chat] = Chat,

@@ -1,8 +1,10 @@
 using System;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Aion.Domain;
 
+[SuppressMessage("Naming", "CA1707:Identifiers should not contain underscores", Justification = "Matches persisted schema naming.")]
 public sealed class S_SecurityAuditLog
 {
     public Guid Id { get; set; } = Guid.NewGuid();

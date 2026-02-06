@@ -5,12 +5,12 @@ public sealed class Money : IEquatable<Money>
     public decimal Amount { get; }
     public string Currency { get; }
 
-    protected Money()
+    private Money()
     {
         Currency = string.Empty;
     }
 
-    protected Money(decimal amount, string currency)
+    private Money(decimal amount, string currency)
     {
         Amount = amount;
         Currency = currency;
@@ -31,6 +31,8 @@ public sealed class Money : IEquatable<Money>
 
         return new Money(amount, normalizedCurrency);
     }
+
+    public static Money FromValueTuple((decimal Amount, string Currency) value) => Create(value.Amount, value.Currency);
 
     public static implicit operator Money((decimal Amount, string Currency) value) => Create(value.Amount, value.Currency);
 

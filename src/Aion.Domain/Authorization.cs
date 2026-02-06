@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Aion.Domain;
 
@@ -119,7 +120,7 @@ public sealed class Role
             throw new InvalidOperationException("UserId is required for a role assignment.");
         }
 
-        if (!Enum.IsDefined(typeof(RoleKind), Kind))
+        if (!Enum.IsDefined<RoleKind>(Kind))
         {
             throw new InvalidOperationException("An invalid role kind was provided.");
         }
@@ -133,6 +134,7 @@ public sealed class Role
     }
 }
 
+[SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "Permission is a core domain term.")]
 public sealed class Permission
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -154,7 +156,7 @@ public sealed class Permission
             throw new InvalidOperationException("UserId is required for a permission.");
         }
 
-        if (!Enum.IsDefined(typeof(PermissionAction), Action))
+        if (!Enum.IsDefined<PermissionAction>(Action))
         {
             throw new InvalidOperationException("An invalid permission action was provided.");
         }

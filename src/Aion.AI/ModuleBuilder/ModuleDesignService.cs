@@ -244,9 +244,12 @@ Ne réponds que par du JSON valide sans texte additionnel.
     private static IReadOnlyList<ModuleDesignSource> MapSources(IReadOnlyList<ModuleDesignSourcePayload>? sources)
         => sources?
             .Where(s => !string.IsNullOrWhiteSpace(s.Title))
-            .Select(s => new ModuleDesignSource(s.Title ?? string.Empty, s.Url, s.Type))
+            .Select(s => new ModuleDesignSource(s.Title ?? string.Empty, ParseUrl(s.Url), s.Type))
             .ToList()
             ?? Array.Empty<ModuleDesignSource>();
+
+    private static Uri? ParseUrl(string? url)
+        => Uri.TryCreate(url, UriKind.Absolute, out var parsed) ? parsed : null;
 
     private sealed class ModuleDesignResponse
     {

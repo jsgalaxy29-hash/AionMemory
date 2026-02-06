@@ -1,12 +1,12 @@
 using System;
-using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 namespace Aion.Domain;
 
 public sealed class TemplateAssetsManifest
 {
     public DateTimeOffset ExportedAt { get; set; } = DateTimeOffset.UtcNow;
-    public List<TemplateAsset> Assets { get; set; } = new();
+    public Collection<TemplateAsset> Assets { get; } = new();
 }
 
 public sealed class TemplateAsset

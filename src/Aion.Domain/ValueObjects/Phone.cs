@@ -1,3 +1,4 @@
+using System;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -9,12 +10,12 @@ public sealed class Phone : IEquatable<Phone>
 
     public string Number { get; }
 
-    protected Phone()
+    private Phone()
     {
         Number = string.Empty;
     }
 
-    protected Phone(string number)
+    private Phone(string number)
     {
         Number = number;
     }
@@ -35,9 +36,15 @@ public sealed class Phone : IEquatable<Phone>
         return new Phone(normalized);
     }
 
+    public static Phone FromString(string value) => Create(value);
+
     public static implicit operator Phone(string value) => Create(value);
 
-    public static implicit operator string(Phone phone) => phone.Number;
+    public static implicit operator string(Phone phone)
+    {
+        ArgumentNullException.ThrowIfNull(phone);
+        return phone.Number;
+    }
 
     public override string ToString() => Number;
 

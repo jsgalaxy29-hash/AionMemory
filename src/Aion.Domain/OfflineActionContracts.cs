@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Aion.Domain;
 
 public enum OfflineActionType
@@ -25,6 +27,7 @@ public sealed record OfflineRecordAction(
     DateTimeOffset? AppliedAt,
     string? FailureReason);
 
+[SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "Queue aligns with domain terminology for offline actions.")]
 public interface IOfflineActionQueue
 {
     Task<OfflineRecordAction> EnqueueAsync(OfflineRecordAction action, CancellationToken cancellationToken = default);

@@ -4,6 +4,9 @@ using System.Text.Json.Serialization;
 
 namespace Aion.Domain;
 
+#pragma warning disable CA1002 // Lists are used for serialization-friendly payloads.
+#pragma warning disable CA2227 // DTO collections are settable for deserialization.
+
 public static class ImportExportVersions
 {
     public const string V1 = "1.0";
@@ -83,6 +86,9 @@ public sealed record DataExportManifest
     [JsonPropertyName("tables")]
     public Dictionary<string, Guid> Tables { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
+
+#pragma warning restore CA2227
+#pragma warning restore CA1002
 
 public sealed record DataExportResult(DataExportManifest Manifest, string PackagePath);
 

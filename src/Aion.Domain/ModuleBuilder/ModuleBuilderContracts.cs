@@ -13,6 +13,23 @@ public sealed record ModuleValidationResult(bool IsValid, IReadOnlyList<string> 
 
 public sealed class ModuleValidationException : InvalidOperationException
 {
+    public ModuleValidationException()
+        : this(Array.Empty<string>())
+    {
+    }
+
+    public ModuleValidationException(string message)
+        : base(message)
+    {
+        Errors = Array.Empty<string>();
+    }
+
+    public ModuleValidationException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+        Errors = Array.Empty<string>();
+    }
+
     public ModuleValidationException(IEnumerable<string> errors)
         : base($"ModuleSpec validation failed: {string.Join("; ", errors)}")
     {
