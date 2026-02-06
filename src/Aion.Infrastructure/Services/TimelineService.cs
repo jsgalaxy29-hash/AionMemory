@@ -75,7 +75,7 @@ public sealed class TimelineService : IAionLifeLogService, ILifeService
         return new TimelinePage(results, hasMore, nextSkip);
     }
 
-    public async Task<IEnumerable<S_HistoryEvent>> GetTimelineAsync(DateTimeOffset? from = null, DateTimeOffset? end = null, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<S_HistoryEvent>> GetTimelineAsync(DateTimeOffset? from = null, DateTimeOffset? to = null, CancellationToken cancellationToken = default)
     {
         var query = _db.HistoryEvents
             .Include(h => h.Links)
@@ -86,9 +86,9 @@ public sealed class TimelineService : IAionLifeLogService, ILifeService
             query = query.Where(h => h.OccurredAt >= from.Value);
         }
 
-        if (end.HasValue)
+        if (to.HasValue)
         {
-            query = query.Where(h => h.OccurredAt <= end.Value);
+            query = query.Where(h => h.OccurredAt <= to.Value);
         }
 
         var results = await query

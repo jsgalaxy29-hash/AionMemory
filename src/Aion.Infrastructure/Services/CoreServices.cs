@@ -2477,19 +2477,19 @@ public sealed class AionAgendaService : IAionAgendaService, IAgendaService
         await _notifications.CancelAsync(eventId, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<IEnumerable<S_Event>> GetEventsAsync(DateTimeOffset from, DateTimeOffset end, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<S_Event>> GetEventsAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default)
         => (await _db.Events
-            .Where(e => e.Start <= end && (e.Start >= from || (e.RecurrenceFrequency.HasValue && (e.RecurrenceUntil == null || e.RecurrenceUntil >= from))))
+            .Where(e => e.Start <= to && (e.Start >= from || (e.RecurrenceFrequency.HasValue && (e.RecurrenceUntil == null || e.RecurrenceUntil >= from))))
             .Include(e => e.Links)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false))
             .OrderBy(e => e.Start)
             .ToList();
 
-    public async Task<IEnumerable<S_Event>> GetOccurrencesAsync(DateTimeOffset from, DateTimeOffset end, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<S_Event>> GetOccurrencesAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default)
     {
-        var events = await GetEventsAsync(from, end, cancellationToken).ConfigureAwait(false);
-        return ExpandOccurrences(events, from, end)
+        var events = await GetEventsAsync(from, to, cancellationToken).ConfigureAwait(false);
+        return ExpandOccurrences(events, from, to)
             .OrderBy(e => e.Start)
             .ToList();
     }
@@ -2498,13 +2498,13 @@ public sealed class AionAgendaService : IAionAgendaService, IAgendaService
         => await _db.Events.Where(e => !e.IsCompleted && e.ReminderAt.HasValue && e.ReminderAt <= asOf)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
-    private static IEnumerable<S_Event> ExpandOccurrences(IEnumerable<S_Event> events, DateTimeOffset from, DateTimeOffset end)
+    private static IEnumerable<S_Event> ExpandOccurrences(IEnumerable<S_Event> events, DateTimeOffset from, DateTimeOffset to)
     {
         foreach (var evt in events)
         {
             if (!evt.RecurrenceFrequency.HasValue)
             {
-                if (evt.Start >= from && evt.Start <= end)
+                if (evt.Start >= from && evt.Start <= to)
                 {
                     yield return evt;
                 }
@@ -2524,7 +2524,7 @@ public sealed class AionAgendaService : IAionAgendaService, IAgendaService
             var occurrenceStart = aligned.Start;
             var index = aligned.Skipped;
 
-            while (occurrenceStart <= end && index < maxCount)
+            while (occurrenceStart <= to && index < maxCount)
             {
                 if (!evt.RecurrenceUntil.HasValue || occurrenceStart <= evt.RecurrenceUntil.Value)
                 {
@@ -3612,7 +3612,7 @@ public sealed class LifeService : IAionLifeLogService, ILifeService
         return new TimelinePage(results, hasMore, nextSkip);
     }
 
-    public async Task<IEnumerable<S_HistoryEvent>> GetTimelineAsync(DateTimeOffset? from = null, DateTimeOffset? end = null, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<S_HistoryEvent>> GetTimelineAsync(DateTimeOffset? from = null, DateTimeOffset? to = null, CancellationToken cancellationToken = default)
     {
         var query = _db.HistoryEvents.Include(h => h.Links).AsQueryable();
         if (from.HasValue)
@@ -3620,9 +3620,9 @@ public sealed class LifeService : IAionLifeLogService, ILifeService
             query = query.Where(h => h.OccurredAt >= from.Value);
         }
 
-        if (end.HasValue)
+        if (to.HasValue)
         {
-            query = query.Where(h => h.OccurredAt <= end.Value);
+            query = query.Where(h => h.OccurredAt <= to.Value);
         }
 
         var results = await query
