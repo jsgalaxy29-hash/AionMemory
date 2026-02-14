@@ -52,6 +52,10 @@ La configuration est lue depuis les fichiers `appsettings.*` (non versionnés), 
 
 Voir [docs/SECURITY.md](./docs/SECURITY.md) pour les instructions détaillées (user-secrets en dev, variables d’environnement en CI/production) et les modèles `*.example.json`.
 
+### Configuration IA
+- Des exemples prêts à l’emploi sont fournis dans `appsettings.Mistral.json` et `appsettings.OpenAI.json` (à dupliquer en `appsettings.Development.json` ou en variables d’environnement).
+- Pour les fournisseurs HTTP génériques (Mistral, etc.), veille à conserver un `/` final dans `BaseEndpoint` (`https://api.mistral.ai/v1/`), sinon l’URL générée serait tronquée (`https://api.mistral.ai/chat/completions` au lieu de `https://api.mistral.ai/v1/chat/completions`).
+
 ## Structure des projets
 - `/src/Aion.Domain` : entités, contrats et invariants.
 - `/src/Aion.Infrastructure` : EF Core + SQLite chiffré, services métiers (stockage, backup, marketplace, recherche…).
