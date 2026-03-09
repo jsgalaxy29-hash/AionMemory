@@ -149,7 +149,7 @@ public sealed class OpenAiEmbeddingProvider : IEmbeddingsModel
                 return new EmbeddingResult(vector1, opts.EmbeddingModel ?? opts.LlmModel);
             }
 
-            var payload = new { model = opts.EmbeddingModel ?? "text-embedding-3-small", input = text };
+            var payload = new { model = opts.EmbeddingModel ?? "text-embedding-3-small", input = EmbeddingPayload.NormalizeInput(text) };
             var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "embeddings")
@@ -173,8 +173,14 @@ public sealed class OpenAiEmbeddingProvider : IEmbeddingsModel
             var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             AiMetrics.RecordUsageFromJson(json, operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
             (tokens, cost) = Observability.AiUsageParser.Extract(json);
-            using var doc = JsonDocument.Parse(json);
-            var vector = doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(e => e.GetSingle()).ToArray();
+            if (!EmbeddingPayload.TryReadVector(json, out var vector))
+            {
+                _logger.LogWarning("OpenAI embedding payload is invalid or empty; returning stub");
+                AiMetrics.RecordError(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
+                status = AiCallStatus.Fallback;
+                vector = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            }
+
             return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel, json);
         }
         catch (Exception)

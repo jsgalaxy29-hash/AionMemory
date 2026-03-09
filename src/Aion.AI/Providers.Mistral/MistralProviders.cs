@@ -153,7 +153,7 @@ public sealed class MistralEmbeddingProvider : IEmbeddingsModel
                 return new EmbeddingResult(vector, opts.EmbeddingModel ?? opts.LlmModel);
             }
 
-            var payload = new { model = opts.EmbeddingModel ?? "mistral-embed", input = text };
+            var payload = new { model = opts.EmbeddingModel ?? "mistral-embed", input = EmbeddingPayload.NormalizeInput(text) };
             var response = await AiHttpRetryPolicy.SendWithRetryAsync(
                 client,
                 () => new HttpRequestMessage(HttpMethod.Post, "embeddings")
@@ -177,8 +177,14 @@ public sealed class MistralEmbeddingProvider : IEmbeddingsModel
             var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             AiMetrics.RecordUsageFromJson(json, operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
             (tokens, cost) = Observability.AiUsageParser.Extract(json);
-            using var doc = JsonDocument.Parse(json);
-            var values = doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(e => e.GetSingle()).ToArray();
+            if (!EmbeddingPayload.TryReadVector(json, out var values))
+            {
+                _logger.LogWarning("Embedding response payload is invalid or empty; returning stub");
+                AiMetrics.RecordError(operation, providerName, opts.EmbeddingModel ?? opts.LlmModel);
+                status = AiCallStatus.Fallback;
+                values = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+            }
+
             return new EmbeddingResult(values, opts.EmbeddingModel ?? opts.LlmModel, json);
         }
         catch (Exception)
