@@ -97,7 +97,7 @@ public sealed class DefaultAionAiProvider : ILLMProvider, IEmbeddingProvider, IA
 
         var client = CreateClient(endpoint, includeOrganizationHeader: true);
 
-        var payload = new { model = _options.EmbeddingModel ?? _options.LlmModel ?? "generic-embedding", input = text };
+        var payload = new { model = _options.EmbeddingModel ?? _options.LlmModel ?? "generic-embedding", input = EmbeddingPayload.NormalizeInput(text) };
         var response = await AiHttpRetryPolicy.SendWithRetryAsync(
             client,
             () => new HttpRequestMessage(HttpMethod.Post, BuildUri(client, "embeddings"))
@@ -112,10 +112,15 @@ public sealed class DefaultAionAiProvider : ILLMProvider, IEmbeddingProvider, IA
         response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         var usage = AiUsageParser.Extract(json);
+        if (!EmbeddingPayload.TryReadVector(json, out var values))
+        {
+            _logger.LogWarning("Default provider embedding payload is invalid or empty; returning deterministic stub vector.");
+            status = AiCallStatus.Fallback;
+            values = Enumerable.Range(0, 8).Select(i => (float)(text.Length + i)).ToArray();
+        }
+
         stopwatch.Stop();
         await _callLogService.LogAsync(new AiCallLogEntry("Default", _options.EmbeddingModel ?? _options.LlmModel, "embeddings", usage.tokens, usage.cost, stopwatch.Elapsed.TotalMilliseconds, status), cancellationToken).ConfigureAwait(false);
-        using var doc = JsonDocument.Parse(json);
-        var values = doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(e => e.GetSingle()).ToArray();
         return new EmbeddingResult(values, _options.EmbeddingModel ?? _options.LlmModel, json);
     }
 
