@@ -34,10 +34,16 @@ public class STable
     public ICollection<SViewDefinition> Views { get; set; } = new List<SViewDefinition>();
 
     public static STable Create(string name, string displayName, IEnumerable<SFieldDefinition> fields)
-        => new()
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
+        ArgumentNullException.ThrowIfNull(fields);
+
+        return new STable
         {
             Name = name,
             DisplayName = displayName,
             Fields = fields.ToList()
         };
+    }
 }
