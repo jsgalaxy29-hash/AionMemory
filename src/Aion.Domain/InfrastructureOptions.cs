@@ -32,7 +32,7 @@ public sealed record BackupOptions
     public bool AutoRestoreLatest { get; set; }
     public bool RequireIntegrityCheck { get; set; } = true;
     public int BackupIntervalMinutes { get; set; } = 24 * 60;
-    public bool EnableBackgroundServices { get; set; } = !(OperatingSystem.IsAndroid() || OperatingSystem.IsIOS());
+    public bool EnableBackgroundServices { get; set; } = true;
 }
 
 public sealed record CloudBackupOptions
@@ -53,6 +53,6 @@ public sealed record CloudBackupOptions
 
 public sealed record AutomationSchedulerOptions
 {
-    public bool EnableBackgroundServices { get; set; } = !(OperatingSystem.IsAndroid() || OperatingSystem.IsIOS());
+    public bool EnableBackgroundServices { get; set; } = true;
     public int PollingIntervalSeconds { get; set; } = 60;
 }

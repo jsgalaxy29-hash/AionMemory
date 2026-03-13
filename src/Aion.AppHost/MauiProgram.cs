@@ -110,8 +110,7 @@ public static class MauiProgram
 
     private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
-        services.AddAionInfrastructure(configuration);
-        services.AddAionAi(configuration);
+        services.AddAionCore(configuration);
 
         services.AddAiAdapters();
         services.AddAionOpenAi();
