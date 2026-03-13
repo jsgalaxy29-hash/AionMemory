@@ -46,7 +46,7 @@ Voir [docs/AION_MANIFEST.md](./docs/AION_MANIFEST.md) pour le manifeste produit.
 ## Configuration
 La configuration est lue depuis les fichiers `appsettings.*` (non versionnés), `dotnet user-secrets` et/ou les variables d’environnement (`Aion:*`, `ConnectionStrings:Aion`). L’application démarre en mode offline lorsque rien n’est configuré : les providers IA retournent des stubs et les dossiers par défaut (`data/storage`, `data/marketplace`, `data/storage/backup`) sont créés automatiquement sous le répertoire d’exécution.
 
-- **Base de données** : SQLite + SQLCipher ; en développement/tests, une clé est générée à l'exécution si aucune configuration n'est fournie (pas de clé statique versionnée par défaut). Fournir `AION_DB_KEY`/`Aion:Database:EncryptionKey` en production.
+- **Base de données** : SQLite + SQLCipher ; en développement/tests, si `AION_DB_KEY`/`Aion:Database:EncryptionKey` est absent, une clé éphémère est générée à l’exécution pour l’instance en cours (clé non versionnée et non fournie par défaut dans le dépôt). En production, configurez explicitement une clé stable via la configuration (`AION_DB_KEY` ou `Aion:Database:EncryptionKey`).
 - **Stockage / Marketplace / Backups** : chemins configurables ; valeurs de secours générées si aucune configuration n’est fournie.
 - **IA** : OpenAI/Mistral configurables via `Aion:Ai:*`. Sans clé ou endpoint, l’app reste offline et ne tente aucun appel réseau.
 

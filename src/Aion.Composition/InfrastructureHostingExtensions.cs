@@ -16,7 +16,6 @@ public static class InfrastructureHostingExtensions
     public static IServiceCollection AddAionInfrastructure(this IServiceCollection services, IConfiguration configuration)
         => Aion.Infrastructure.DependencyInjectionExtensions.AddAionInfrastructure(services, configuration);
 
-
     public static IServiceCollection AddAionCore(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddAionInfrastructure(configuration);
@@ -30,12 +29,14 @@ public static class InfrastructureHostingExtensions
 
     public static IServiceCollection ApplyAionPlatformDefaults(this IServiceCollection services, bool enableBackgroundServices)
     {
-        if (services.Any(descriptor => descriptor.ServiceType == typeof(AionPlatformDefaultsMarker)))
+        var markerType = typeof(AionPlatformDefaultsMarker);
+        if (services.Any(descriptor => descriptor.ServiceType == markerType))
         {
             return services;
         }
 
         services.TryAddSingleton<AionPlatformDefaultsMarker>();
+        // Keep explicit, separate post-configurations for each options type.
         services.PostConfigure<BackupOptions>(options => options.EnableBackgroundServices = enableBackgroundServices);
         services.PostConfigure<AutomationSchedulerOptions>(options => options.EnableBackgroundServices = enableBackgroundServices);
         return services;
