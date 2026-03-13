@@ -1,4 +1,5 @@
 using System.IO;
+using System.Security.Cryptography;
 using Aion.Domain;
 using Microsoft.Data.Sqlite;
 
@@ -6,15 +7,12 @@ namespace Aion.Infrastructure;
 
 /// <summary>
 /// Helper that centralizes a ready-to-use SQLCipher connection for local development and tests.
-/// The key is a deterministic, non-sensitive value so that developers and CI can share
-/// the same encrypted database without secret management overhead.
+/// The key is generated per process for development and tests when no secure configuration
+/// is provided, avoiding any hardcoded encryption placeholder in source control.
 /// </summary>
 public static class SqliteCipherDevelopmentDefaults
 {
-    /// <summary>
-    /// Deterministic 32+ chars key suitable for dev/test only. Replace in production.
-    /// </summary>
-    public const string DevelopmentKey = "aion-dev-sqlcipher-key-change-me-32chars";
+    private static readonly Lazy<string> DevelopmentKey = new(GenerateNewKey);
 
     /// <summary>
     /// Ensures the provided <see cref="AionDatabaseOptions"/> instance is populated with
@@ -31,7 +29,7 @@ public static class SqliteCipherDevelopmentDefaults
 
         if (string.IsNullOrWhiteSpace(options.EncryptionKey))
         {
-            options.EncryptionKey = DevelopmentKey;
+            options.EncryptionKey = GetOrCreateDevelopmentKey();
         }
     }
 
@@ -69,4 +67,8 @@ public static class SqliteCipherDevelopmentDefaults
 
         return builder.ToString();
     }
+
+    public static string GetOrCreateDevelopmentKey() => DevelopmentKey.Value;
+
+    public static string GenerateNewKey() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 }

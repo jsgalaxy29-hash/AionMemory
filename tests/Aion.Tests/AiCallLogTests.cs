@@ -34,7 +34,7 @@ public sealed class AiCallLogTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Aion:Database:ConnectionString"] = $"Data Source={databasePath}",
-                ["Aion:Database:EncryptionKey"] = SqliteCipherDevelopmentDefaults.DevelopmentKey,
+                ["Aion:Database:EncryptionKey"] = SqliteCipherDevelopmentDefaults.GenerateNewKey(),
                 ["Aion:Storage:RootPath"] = storagePath,
                 ["Aion:Backup:Folder"] = backupPath,
                 ["Aion:Marketplace:Folder"] = marketplacePath,

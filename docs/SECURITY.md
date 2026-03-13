@@ -48,7 +48,7 @@ Ces variables sont lues automatiquement par l’hôte (MAUI, CLI ou services) sa
 
 ## Mode offline et valeurs par défaut
 - Si aucune configuration AI n’est fournie, les validateurs laissent l’application démarrer avec des providers factices (pas d’appel réseau).
-- L’infrastructure applique des valeurs de secours sûres : dossiers `data/storage`, `data/marketplace`, `data/storage/backup` sous le répertoire d’exécution, clé SQLCipher de développement (à remplacer en prod) et création automatique des dossiers.
+- L’infrastructure applique des valeurs de secours sûres : dossiers `data/storage`, `data/marketplace`, `data/storage/backup` sous le répertoire d’exécution, clé SQLCipher éphémère en développement (à remplacer via configuration en prod) et création automatique des dossiers.
 
 ## Vérifications anti-fuite
 - Un scan `gitleaks` est exécuté en CI. Pour vérifier en local :

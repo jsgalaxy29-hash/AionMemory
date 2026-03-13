@@ -45,9 +45,6 @@ public static class DependencyInjectionExtensions
         databaseOptions.Validate(o => IsDataSourceConfigured(o.ConnectionString), "The SQLite data source path must be configured in the connection string.");
         databaseOptions.Validate(o => DatabaseDirectoryExists(o.ConnectionString), "The SQLite data source directory must exist.");
         databaseOptions.Validate(o => o.EncryptionKey?.Length >= 32, "The database encryption key must contain at least 32 characters.");
-        databaseOptions.Validate(
-            o => allowDevKey || !string.Equals(o.EncryptionKey, SqliteCipherDevelopmentDefaults.DevelopmentKey, StringComparison.Ordinal),
-            "The development SQLCipher key must not be used outside development/test environments.");
         databaseOptions.ValidateOnStart();
 
         var storageOptions = services.AddOptions<StorageOptions>();
@@ -55,16 +52,13 @@ public static class DependencyInjectionExtensions
         {
             options.RootPath = EnsureDirectoryPath(ChooseValue(options.RootPath, configuration["Aion:Storage:RootPath"], defaultStorageRoot));
             options.EncryptionKey = allowDevKey
-                ? ChooseValue(options.EncryptionKey, configuration["Aion:Storage:EncryptionKey"], configuration["Aion:Database:EncryptionKey"], configuration["AION_DB_KEY"], SqliteCipherDevelopmentDefaults.DevelopmentKey)
+                ? ChooseValue(options.EncryptionKey, configuration["Aion:Storage:EncryptionKey"], configuration["Aion:Database:EncryptionKey"], configuration["AION_DB_KEY"], SqliteCipherDevelopmentDefaults.GetOrCreateDevelopmentKey())
                 : ChooseValue(options.EncryptionKey, configuration["Aion:Storage:EncryptionKey"], configuration["Aion:Database:EncryptionKey"], configuration["AION_DB_KEY"]);
         });
         storageOptions.Validate(o => !string.IsNullOrWhiteSpace(o.RootPath), "A storage root path is required.");
         storageOptions.Validate(o => Directory.Exists(o.RootPath), "The configured storage root path must exist.");
         storageOptions.Validate(o => !o.EncryptPayloads || !string.IsNullOrWhiteSpace(o.EncryptionKey), "The file storage encryption key cannot be empty when encryption is enabled.");
         storageOptions.Validate(o => !o.EncryptPayloads || o.EncryptionKey?.Length >= 32, "The file storage encryption key must contain at least 32 characters when encryption is enabled.");
-        storageOptions.Validate(
-            o => allowDevKey || !string.Equals(o.EncryptionKey, SqliteCipherDevelopmentDefaults.DevelopmentKey, StringComparison.Ordinal),
-            "The development storage key must not be used outside development/test environments.");
         storageOptions.Validate(o => o.MaxFileSizeBytes > 0, "The maximum file size must be greater than zero.");
         storageOptions.Validate(o => o.MaxTotalBytes > 0, "The storage quota must be greater than zero.");
         storageOptions.ValidateOnStart();

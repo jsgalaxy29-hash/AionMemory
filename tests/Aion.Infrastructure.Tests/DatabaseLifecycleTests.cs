@@ -72,7 +72,7 @@ public class DatabaseLifecycleTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Aion:Database:ConnectionString"] = $"Data Source={Path.Combine(root, "missing", "aion.db")}",
-                ["Aion:Database:EncryptionKey"] = SqliteCipherDevelopmentDefaults.DevelopmentKey,
+                ["Aion:Database:EncryptionKey"] = SqliteCipherDevelopmentDefaults.GenerateNewKey(),
                 ["Aion:Storage:RootPath"] = Path.Combine(root, "storage"),
                 ["Aion:Backup:Folder"] = Path.Combine(root, "backup"),
                 ["Aion:Marketplace:Folder"] = Path.Combine(root, "marketplace")
@@ -95,7 +95,7 @@ public class DatabaseLifecycleTests
 
     private static ServiceProvider BuildProvider(string root, string databasePath, string? encryptionKey = null)
     {
-        var key = string.IsNullOrWhiteSpace(encryptionKey) ? SqliteCipherDevelopmentDefaults.DevelopmentKey : encryptionKey;
+        var key = string.IsNullOrWhiteSpace(encryptionKey) ? SqliteCipherDevelopmentDefaults.GenerateNewKey() : encryptionKey;
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
