@@ -1,7 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 
-namespace Aion.Domain.Metamodel;
+namespace Aion.Domain;
 
 public class SRelation
 {
