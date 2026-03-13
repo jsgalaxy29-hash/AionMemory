@@ -61,7 +61,11 @@ public class SFieldDefinition
     public int Order { get; set; }
 
     public static SFieldDefinition Text(string name, string label, bool required = false, string? defaultValue = null)
-        => new()
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(label);
+
+        return new SFieldDefinition
         {
             Name = name,
             Label = label,
@@ -71,4 +75,5 @@ public class SFieldDefinition
             IsSearchable = true,
             IsListVisible = true
         };
+    }
 }
