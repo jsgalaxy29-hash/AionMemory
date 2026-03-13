@@ -29,16 +29,15 @@ public static class InfrastructureHostingExtensions
 
     public static IServiceCollection ApplyAionPlatformDefaults(this IServiceCollection services, bool enableBackgroundServices)
     {
-        var markerType = typeof(AionPlatformDefaultsMarker);
-        if (services.Any(descriptor => descriptor.ServiceType == markerType))
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(AionPlatformDefaultsMarker)))
         {
             return services;
         }
 
         services.TryAddSingleton<AionPlatformDefaultsMarker>();
-        // Keep explicit, separate post-configurations for each options type.
         services.PostConfigure<BackupOptions>(options => options.EnableBackgroundServices = enableBackgroundServices);
         services.PostConfigure<AutomationSchedulerOptions>(options => options.EnableBackgroundServices = enableBackgroundServices);
+
         return services;
     }
 
