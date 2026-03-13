@@ -46,19 +46,21 @@ Voir [docs/AION_MANIFEST.md](./docs/AION_MANIFEST.md) pour le manifeste produit.
 ## Configuration
 La configuration est lue depuis les fichiers `appsettings.*` (non versionnés), `dotnet user-secrets` et/ou les variables d’environnement (`Aion:*`, `ConnectionStrings:Aion`). L’application démarre en mode offline lorsque rien n’est configuré : les providers IA retournent des stubs et les dossiers par défaut (`data/storage`, `data/marketplace`, `data/storage/backup`) sont créés automatiquement sous le répertoire d’exécution.
 
-- **Base de données** : SQLite + SQLCipher ; une clé éphémère est générée en développement si aucune configuration n'est fournie. Fournir `AION_DB_KEY`/`Aion:Database:EncryptionKey` en production.
+- **Base de données** : SQLite + SQLCipher ; en développement/tests, une clé est générée à l'exécution si aucune configuration n'est fournie (pas de clé statique versionnée par défaut). Fournir `AION_DB_KEY`/`Aion:Database:EncryptionKey` en production.
 - **Stockage / Marketplace / Backups** : chemins configurables ; valeurs de secours générées si aucune configuration n’est fournie.
 - **IA** : OpenAI/Mistral configurables via `Aion:Ai:*`. Sans clé ou endpoint, l’app reste offline et ne tente aucun appel réseau.
 
 Voir [docs/SECURITY.md](./docs/SECURITY.md) pour les instructions détaillées (user-secrets en dev, variables d’environnement en CI/production) et les modèles `*.example.json`.
 
 ## Structure des projets
-- `/src/Aion.Domain` : entités, contrats et invariants.
-- `/src/Aion.Infrastructure` : EF Core + SQLite chiffré, services métiers (stockage, backup, marketplace, recherche…).
-- `/src/Aion.AI` : moteur IA générique (contrats, implémentations HTTP par défaut) et adaptateurs factices.
-- `/src/Aion.AI/Providers.OpenAI` & `/src/Aion.AI/Providers.Mistral` : fournisseurs IA interchangeables.
-- `/src/Aion.AppHost` : hôte MAUI Blazor Hybrid, uniquement pour l’UI/DI/navigation.
-- `/tests` : batteries de tests unitaires par couche.
+- `/src/Aion.Domain` : contrats, invariants et modèles métier, sans dépendance sortante.
+- `/src/Aion.Infrastructure` : implémentations EF Core + SQLite/SQLCipher, persistance et services métiers.
+- `/src/Aion.AI` : orchestration IA (sélecteur de provider, modèles HTTP/offline/mock, interpréteurs).
+- `/src/Aion.AI/Providers.OpenAI` & `/src/Aion.AI/Providers.Mistral` : fournisseurs IA spécifiques enregistrés en complément.
+- `/src/Aion.Composition` : composition racine DI (`AddAionCore`) et politiques runtime de plateforme.
+- `/src/Aion.AppHost` : hôte MAUI Blazor Hybrid (UI, navigation, options locales et services d’application).
+- `/src/Aion.RecoveryTool` : outil CLI de récupération/export pour bases chiffrées.
+- `/tests` : suites de tests par couche (Domain, Infrastructure, AI, AppHost, Composition).
 
 ## Configuration & sécurité
 - **Ne pas versionner de secrets** : les exemples `appsettings.OpenAI.example.json`, `appsettings.Mistral.example.json` et `appsettings.Development.example.json` servent de modèles. Les vrais fichiers sont ignorés par Git.
