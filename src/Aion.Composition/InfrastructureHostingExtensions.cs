@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Aion.AI;
@@ -6,6 +7,7 @@ using Aion.Domain;
 using Aion.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Aion.Composition;
 
@@ -19,17 +21,30 @@ public static class InfrastructureHostingExtensions
     {
         services.AddAionInfrastructure(configuration);
         services.AddAionAi(configuration);
-        services.ApplyAionPlatformDefaults();
+        services.ApplyAionPlatformDefaults(enableBackgroundServices: IsBackgroundServicesEnabledByPlatform());
         return services;
     }
 
     public static IServiceCollection ApplyAionPlatformDefaults(this IServiceCollection services)
+        => services.ApplyAionPlatformDefaults(enableBackgroundServices: IsBackgroundServicesEnabledByPlatform());
+
+    public static IServiceCollection ApplyAionPlatformDefaults(this IServiceCollection services, bool enableBackgroundServices)
     {
-        var enableBackground = !(OperatingSystem.IsAndroid() || OperatingSystem.IsIOS());
-        services.Configure<BackupOptions>(options => options.EnableBackgroundServices = enableBackground);
-        services.Configure<AutomationSchedulerOptions>(options => options.EnableBackgroundServices = enableBackground);
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(AionPlatformDefaultsMarker)))
+        {
+            return services;
+        }
+
+        services.TryAddSingleton<AionPlatformDefaultsMarker>();
+        services.PostConfigure<BackupOptions>(options => options.EnableBackgroundServices = enableBackgroundServices);
+        services.PostConfigure<AutomationSchedulerOptions>(options => options.EnableBackgroundServices = enableBackgroundServices);
         return services;
     }
+
+    private static bool IsBackgroundServicesEnabledByPlatform() =>
+        !(OperatingSystem.IsAndroid() || OperatingSystem.IsIOS());
+
+    private sealed class AionPlatformDefaultsMarker;
 
     public static Task EnsureAionDatabaseAsync(this IServiceProvider serviceProvider, CancellationToken cancellationToken = default)
         => Aion.Infrastructure.DependencyInjectionExtensions.EnsureAionDatabaseAsync(serviceProvider, cancellationToken);

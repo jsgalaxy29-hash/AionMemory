@@ -2,10 +2,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
-using Aion.AI;
-using Aion.AI.Adapters;
-using Aion.AI.Providers.Mistral;
-using Aion.AI.Providers.OpenAI;
 using Aion.Composition;
 using Aion.AppHost.Services;
 using Aion.Domain;
@@ -112,9 +108,6 @@ public static class MauiProgram
     {
         services.AddAionCore(configuration);
 
-        services.AddAiAdapters();
-        services.AddAionOpenAi();
-        services.AddAionMistral();
         services.AddScoped<ITableDefinitionService, TableDefinitionService>();
         services.AddSingleton<IAppInitializationService, AppInitializationService>();
         services.AddScoped<IRecordQueryService, RecordQueryService>();
