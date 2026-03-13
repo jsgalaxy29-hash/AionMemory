@@ -123,6 +123,8 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IStorageService, StorageService>();
         services.AddScoped<IFileStorageService, FileStorageService>();
         services.AddScoped<IMetadataService, MetadataService>();
+        services.AddScoped<ITableMetadataService, TableMetadataService>();
+        services.AddScoped<IFieldMetadataService, FieldMetadataService>();
         services.AddScoped<ITenancyService, TenancyService>();
         services.AddSingleton<IOperationScopeFactory, OperationScopeFactory>();
         services.AddScoped<IAionDataEngine, AionDataEngine>();
