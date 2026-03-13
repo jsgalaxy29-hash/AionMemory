@@ -91,7 +91,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IModuleDesigner, ModuleDesigner>();
         services.AddScoped<IModuleSpecDesigner, ModuleSpecDesigner>();
         services.AddScoped<IModuleDesignService, ModuleDesignService>();
-        services.AddScoped<ModuleDesignerService>();
+        services.AddScoped<IModuleDesignerService, ModuleDesignerService>();
         services.AddScoped<ICrudInterpreter, CrudInterpreter>();
         services.AddScoped<IAgendaInterpreter, AgendaInterpreter>();
         services.AddScoped<INoteInterpreter, NoteInterpreter>();
