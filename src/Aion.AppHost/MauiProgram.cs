@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Aion.Composition;
 using Aion.AppHost.Services;
+using Aion.AppHost.Services.Rendering;
 using Aion.Domain;
 using CommunityToolkit.Maui;
 using Microsoft.AspNetCore.Components.WebView.Maui;
@@ -112,6 +113,8 @@ public static class MauiProgram
         services.AddSingleton<IAppInitializationService, AppInitializationService>();
         services.AddScoped<IRecordQueryService, RecordQueryService>();
         services.AddScoped<IModuleViewService, ModuleViewService>();
+        services.AddScoped<IDynamicFormRenderer, DynamicFormRenderer>();
+        services.AddScoped<IDynamicListRenderer, DynamicListRenderer>();
         services.AddScoped<UiState>();
         services.AddScoped<IWorkspaceContextAccessor, WorkspaceContext>();
         services.AddScoped<IWorkspaceContext>(sp => sp.GetRequiredService<IWorkspaceContextAccessor>());
