@@ -116,6 +116,7 @@ public static class MauiProgram
         services.AddScoped<IDynamicFormRenderer, DynamicFormRenderer>();
         services.AddScoped<IDynamicFieldComponentRegistry, DynamicFieldComponentRegistry>();
         services.AddScoped<IDynamicListRenderer, DynamicListRenderer>();
+        services.AddScoped<IDynamicListCellComponentRegistry, DynamicListCellComponentRegistry>();
         services.AddScoped<UiState>();
         services.AddScoped<IWorkspaceContextAccessor, WorkspaceContext>();
         services.AddScoped<IWorkspaceContext>(sp => sp.GetRequiredService<IWorkspaceContextAccessor>());
