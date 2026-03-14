@@ -2,6 +2,7 @@
 @using Aion.Domain
 @using Aion.Domain.Logic
 @using Aion.AppHost.Services.Rendering
+@using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @inherits OwningComponentBase
 @implements IDisposable
@@ -66,7 +67,7 @@
                 <th>Statut</th>
                 @if (ResolvedTable is not null)
                 {
-                    @foreach (var column in ResolveListModel().Columns.Take(3))
+                    @foreach (var column in VisibleColumns)
                     {
                         <th>@column.Label</th>
                     }
@@ -92,9 +93,11 @@
                             </td>
                             @if (ResolvedTable is not null)
                             {
-                                @foreach (var column in ResolveListModel().Columns.Take(3))
+                                @foreach (var column in VisibleColumns)
                                 {
-                                    <td>@(payload.TryGetValue(column.FieldName, out var value) ? value : null)</td>
+                                    <td>
+                                        <DynamicComponent Type="@ResolveCellComponent(column.ComponentKind)" Parameters="@BuildCellParameters(column, payload)" />
+                                    </td>
                                 }
                             }
                             <td>@item.CreatedAt.ToLocalTime().ToString("g")</td>
@@ -122,6 +125,7 @@
     [Inject] public ICurrentUserService? CurrentUserService { get; set; }
     [Inject] public IOfflineActionQueue? OfflineActionQueue { get; set; }
     [Inject] public IDynamicListRenderer? ListRenderer { get; set; }
+    [Inject] public IDynamicListCellComponentRegistry? ListCellComponentRegistry { get; set; }
 
     [Parameter] public STable? Table { get; set; }
     [Parameter] public Guid? TableId { get; set; }
@@ -158,6 +162,7 @@
     private bool CanDelete { get; set; } = true;
     private HashSet<Guid> PendingRecordIds { get; } = new();
     private ListRenderModel? ListModel { get; set; }
+    private IReadOnlyList<ListColumnRenderModel> VisibleColumns => ResolveListModel().Columns.Take(3).ToList();
 
     private IEnumerable<SFieldDefinition> SortableFields
         => ResolvedTable?.Fields.Where(f => f.IsSortable) ?? Enumerable.Empty<SFieldDefinition>();
@@ -404,6 +409,27 @@
         ListModel = renderer.Render(ResolvedTable);
         return ListModel;
     }
+
+    private Type ResolveCellComponent(ListColumnComponentKind componentKind)
+    {
+        if (ListCellComponentRegistry is null)
+        {
+            throw new InvalidOperationException($"{nameof(IDynamicListCellComponentRegistry)} must be registered in the DI container.");
+        }
+
+        return ListCellComponentRegistry.Resolve(componentKind);
+    }
+
+    private IReadOnlyDictionary<string, object?> BuildCellParameters(ListColumnRenderModel column, IReadOnlyDictionary<string, object?> payload)
+    {
+        payload.TryGetValue(column.FieldName, out var value);
+        return new Dictionary<string, object?>
+        {
+            ["Column"] = column,
+            ["Value"] = value
+        };
+    }
+
     public void Dispose()
     {
         _refreshCts?.Cancel();
