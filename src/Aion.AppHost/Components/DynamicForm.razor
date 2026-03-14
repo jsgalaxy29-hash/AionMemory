@@ -2,6 +2,7 @@
 @using System.Text.RegularExpressions
 @using Aion.Domain
 @using Aion.Domain.Logic
+@using Aion.AppHost.Services.Rendering
 @using Microsoft.AspNetCore.Components.Forms
 @inherits OwningComponentBase
 @implements IDisposable
@@ -9,40 +10,49 @@
     <div class="form-row">
         @if (ResolvedTable is not null)
         {
-            @foreach (var field in ResolvedTable.Fields)
+            @foreach (var field in ResolveFormModel().Fields)
             {
                 <div>
                     <label>@field.Label @if (field.IsRequired) { <span class="text-muted">*</span> }</label>
-                    @switch (field.DataType)
+                    @switch (field.ComponentKind)
                     {
-                        case FieldDataType.Text:
-                        case FieldDataType.Lookup:
-                        case FieldDataType.Tags:
-                        case FieldDataType.File:
-                            <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
+                        case FormFieldComponentKind.Text:
+                            <InputText class="input" Value="@GetString(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
                             break;
-                        case FieldDataType.Note:
-                            <InputTextArea class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
+                        case FormFieldComponentKind.TextArea:
+                        case FormFieldComponentKind.JsonTextArea:
+                            <InputTextArea class="input" Value="@GetString(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
                             break;
-                        case FieldDataType.Number:
-                            <InputNumber TValue="long?" class="input" Value="@GetLong(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
+                        case FormFieldComponentKind.Number:
+                            <InputNumber TValue="long?" class="input" Value="@GetLong(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
                             break;
-                        case FieldDataType.Decimal:
-                            <InputNumber TValue="decimal?" class="input" Value="@GetDecimal(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
+                        case FormFieldComponentKind.Decimal:
+                            <InputNumber TValue="decimal?" class="input" Value="@GetDecimal(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
                             break;
-                        case FieldDataType.Boolean:
-                            <InputCheckbox class="input" Value="@GetBool(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
+                        case FormFieldComponentKind.Checkbox:
+                            <InputCheckbox class="input" Value="@GetBool(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
                             break;
-                        case FieldDataType.Date:
-                        case FieldDataType.DateTime:
-                            <InputDate TValue="DateTime?" class="input" Value="@GetDateTime(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
+                        case FormFieldComponentKind.DatePicker:
+                            <InputDate TValue="DateTime?" class="input" Value="@GetDateTime(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
+                            break;
+                        case FormFieldComponentKind.Select:
+                            <select class="input" @onchange="@(args => SetValue(field.FieldName, args.Value?.ToString()))" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)">
+                                <option value="">Sélectionner…</option>
+                                @foreach (var option in field.Options)
+                                {
+                                    <option value="@option" selected="@(string.Equals(GetString(field.FieldName), option, StringComparison.OrdinalIgnoreCase))">@option</option>
+                                }
+                            </select>
+                            break;
+                        case FormFieldComponentKind.FilePlaceholder:
+                            <InputText class="input" Value="@GetString(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" placeholder="@field.Placeholder" disabled="true" />
                             break;
                         default:
-                            <InputText class="input" Value="@GetString(field.Name)" ValueChanged="v => SetValue(field, v)" disabled="@IsFieldDisabled(field)" />
+                            <InputText class="input" Value="@GetString(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
                             break;
                     }
 
-                    @if (TryGetErrors(field.Name, out var errors))
+                    @if (TryGetErrors(field.FieldName, out var errors))
                     {
                         foreach (var error in errors)
                         {
@@ -80,6 +90,7 @@
     [Inject] public IAuthorizationService? AuthorizationService { get; set; }
     [Inject] public ICurrentUserService? CurrentUserService { get; set; }
     [Inject] public IOfflineActionQueue? OfflineActionQueue { get; set; }
+    [Inject] public IDynamicFormRenderer? FormRenderer { get; set; }
 
     [Parameter] public STable? Table { get; set; }
     [Parameter] public Guid? TableId { get; set; }
@@ -107,6 +118,7 @@
     private bool CanDelete { get; set; } = true;
     private Dictionary<string, bool> FieldWriteAccess { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     private bool IsPending { get; set; }
+    private FormRenderModel? FormModel { get; set; }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -116,6 +128,7 @@
         var recordChanged = _lastRecordId != ActiveRecordId;
         if (tableChanged || recordChanged)
         {
+            FormModel = null;
             FieldValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
             ClearErrors();
             await LoadExistingRecord();
@@ -217,10 +230,13 @@
         return false;
     }
 
-    private void SetValue(SFieldDefinition field, object? value)
+    private void SetValue(string fieldName, object? value)
     {
-        FieldValues[field.Name] = value;
-        ValidateField(field);
+        FieldValues[fieldName] = value;
+        if (ResolvedTable?.Fields.FirstOrDefault(f => string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase)) is { } definition)
+        {
+            ValidateField(definition);
+        }
     }
 
     private async Task HandleSubmit(EditContext _)
@@ -357,14 +373,14 @@
         CanDelete = deleteResult.IsAllowed;
     }
 
-    private bool IsFieldDisabled(SFieldDefinition field)
+    private bool IsFieldDisabled(string fieldName, bool isReadOnly)
     {
-        if (field.IsReadOnly)
+        if (isReadOnly)
         {
             return true;
         }
 
-        if (FieldWriteAccess.TryGetValue(field.Name, out var allowed))
+        if (FieldWriteAccess.TryGetValue(fieldName, out var allowed))
         {
             return !allowed;
         }
@@ -423,6 +439,23 @@
 
             FieldValues[field.Name] = field.DefaultValue;
         }
+    }
+
+    private FormRenderModel ResolveFormModel()
+    {
+        if (ResolvedTable is null)
+        {
+            return new FormRenderModel(Guid.Empty, string.Empty, Array.Empty<FormFieldRenderModel>());
+        }
+
+        if (FormModel is not null)
+        {
+            return FormModel;
+        }
+
+        var renderer = FormRenderer ?? new DynamicFormRenderer();
+        FormModel = renderer.Render(ResolvedTable);
+        return FormModel;
     }
 
     private bool ValidateForm()
