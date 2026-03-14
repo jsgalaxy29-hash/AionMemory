@@ -45,11 +45,17 @@ public class STable
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
         ArgumentNullException.ThrowIfNull(fields);
 
-        return new STable
+        var table = new STable
         {
             Name = name,
-            DisplayName = displayName,
-            Fields = fields.ToList()
+            DisplayName = displayName
         };
+
+        foreach (var field in fields)
+        {
+            table.Fields.Add(field);
+        }
+
+        return table;
     }
 }

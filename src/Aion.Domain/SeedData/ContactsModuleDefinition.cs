@@ -91,68 +91,80 @@ public static class ContactsModuleDefinition
 
     public static STable CreateTable()
     {
-        return new STable
+
+
+        var table = new STable
         {
             Id = EntityId,
             Name = "Contact",
             DisplayName = "Contacts",
             Description = "Carnet d'adresses minimal pour la démo",
-            Fields = new List<SFieldDefinition>
-            {
-                new()
-                {
-                    Id = FirstNameFieldId,
-                    TableId = EntityId,
-                    Name = "firstName",
-                    Label = "Prénom",
-                    DataType = FieldDataType.Text,
-                    IsRequired = true
-                },
-                new()
-                {
-                    Id = LastNameFieldId,
-                    TableId = EntityId,
-                    Name = "lastName",
-                    Label = "Nom",
-                    DataType = FieldDataType.Text,
-                    IsRequired = true
-                },
-                new()
-                {
-                    Id = EmailFieldId,
-                    TableId = EntityId,
-                    Name = "email",
-                    Label = "Email",
-                    DataType = FieldDataType.Text
-                },
-                new()
-                {
-                    Id = PhoneFieldId,
-                    TableId = EntityId,
-                    Name = "phone",
-                    Label = "Téléphone",
-                    DataType = FieldDataType.Text
-                },
-                new()
-                {
-                    Id = NotesFieldId,
-                    TableId = EntityId,
-                    Name = "notes",
-                    Label = "Notes",
-                    DataType = FieldDataType.Text
-                }
-            },
-            Views = new List<SViewDefinition>
-            {
-                new()
-                {
-                    Id = EmailViewId,
-                    TableId = EntityId,
-                    Name = "Email uniquement",
-                    QueryDefinition = "{ \"email\": \"\" }",
-                    Visualization = "table"
-                }
-            }
         };
+
+        // Remplacement de AddRange par un foreach qui appelle ICollection<T>.Add
+        foreach (var field in new[]
+                {
+                    new SFieldDefinition
+                    {
+                        Id = FirstNameFieldId,
+                        TableId = EntityId,
+                        Name = "firstName",
+                        Label = "Prénom",
+                        DataType = FieldDataType.Text,
+                        IsRequired = true
+                    },
+                    new SFieldDefinition
+                    {
+                        Id = LastNameFieldId,
+                        TableId = EntityId,
+                        Name = "lastName",
+                        Label = "Nom",
+                        DataType = FieldDataType.Text,
+                        IsRequired = true
+                    },
+                    new SFieldDefinition
+                    {
+                        Id = EmailFieldId,
+                        TableId = EntityId,
+                        Name = "email",
+                        Label = "Email",
+                        DataType = FieldDataType.Text
+                    },
+                    new SFieldDefinition
+                    {
+                        Id = PhoneFieldId,
+                        TableId = EntityId,
+                        Name = "phone",
+                        Label = "Téléphone",
+                        DataType = FieldDataType.Text
+                    },
+                    new SFieldDefinition
+                    {
+                        Id = NotesFieldId,
+                        TableId = EntityId,
+                        Name = "notes",
+                        Label = "Notes",
+                        DataType = FieldDataType.Text
+                    }
+                })
+        {
+            table.Fields.Add(field);
+        }
+
+        // Même correction pour les vues
+        foreach (var view in new[]
+                    {new SViewDefinition
+                    {
+                        Id = EmailViewId,
+                        TableId = EntityId,
+                        Name = "Email uniquement",
+                        QueryDefinition = "{ \"email\": \"\" }",
+                        Visualization = "table"
+                    }})
+        {
+            table.Views.Add(view);
+        }
+
+        return table;
     }
 }

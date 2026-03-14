@@ -87,8 +87,8 @@ public interface IAgendaService
     Task<S_Event> AddEventAsync(S_Event evt, CancellationToken cancellationToken = default);
     Task<S_Event> UpdateEventAsync(S_Event evt, CancellationToken cancellationToken = default);
     Task DeleteEventAsync(Guid eventId, CancellationToken cancellationToken = default);
-    Task<IEnumerable<S_Event>> GetEventsAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default);
-    Task<IEnumerable<S_Event>> GetOccurrencesAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default);
+    Task<IEnumerable<S_Event>> GetEventsAsync(DateTimeOffset from, DateTimeOffset tot, CancellationToken cancellationToken = default);
+    Task<IEnumerable<S_Event>> GetOccurrencesAsync(DateTimeOffset from, DateTimeOffset tot, CancellationToken cancellationToken = default);
     Task<IEnumerable<S_Event>> GetPendingRemindersAsync(DateTimeOffset asOf, CancellationToken cancellationToken = default);
 }
 
@@ -187,7 +187,7 @@ public interface ILifeService
 {
     Task<S_HistoryEvent> AddHistoryAsync(S_HistoryEvent evt, CancellationToken cancellationToken = default);
     Task<TimelinePage> GetTimelinePageAsync(TimelineQuery query, CancellationToken cancellationToken = default);
-    Task<IEnumerable<S_HistoryEvent>> GetTimelineAsync(DateTimeOffset? from = null, DateTimeOffset? to = null, CancellationToken cancellationToken = default);
+    Task<IEnumerable<S_HistoryEvent>> GetTimelineAsync(DateTimeOffset? from = null, DateTimeOffset? tot = null, CancellationToken cancellationToken = default);
 }
 
 public interface IPredictService
