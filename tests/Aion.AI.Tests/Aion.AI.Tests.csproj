@@ -15,7 +15,7 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Aion.AI\Aion.AI.csproj" />
+    <ProjectReference Include="..\..\src\Aion.AI\Aion.AI.csproj" />
     <ProjectReference Include="..\..\src\Aion.Domain\Aion.Domain.csproj" />
   </ItemGroup>
 </Project>
