@@ -110,8 +110,12 @@
 
     private Type ResolveFieldComponent(FormFieldComponentKind componentKind)
     {
-        var registry = FieldComponentRegistry ?? new DynamicFieldComponentRegistry();
-        return registry.Resolve(componentKind);
+        if (FieldComponentRegistry is null)
+        {
+            throw new InvalidOperationException($"{nameof(IDynamicFieldComponentRegistry)} must be registered in the DI container.");
+        }
+
+        return FieldComponentRegistry.Resolve(componentKind);
     }
 
     private IReadOnlyDictionary<string, object?> BuildFieldComponentParameters(FormFieldRenderModel field)
@@ -348,8 +352,12 @@
             return FormModel;
         }
 
-        var renderer = FormRenderer ?? new DynamicFormRenderer();
-        FormModel = renderer.Render(ResolvedTable);
+        if (FormRenderer is null)
+        {
+            throw new InvalidOperationException($"{nameof(IDynamicFormRenderer)} must be registered in the DI container.");
+        }
+
+        FormModel = FormRenderer.Render(ResolvedTable);
         return FormModel;
     }
 
