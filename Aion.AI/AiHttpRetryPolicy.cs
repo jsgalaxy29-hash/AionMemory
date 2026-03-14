@@ -1,4 +1,5 @@
 using System.Net;
+using Aion.AI.Observability;
 using Microsoft.Extensions.Logging;
 
 namespace Aion.AI;
