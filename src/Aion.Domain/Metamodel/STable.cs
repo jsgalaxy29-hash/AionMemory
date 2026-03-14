@@ -19,7 +19,9 @@ public class STable
     public string? Description { get; set; }
 
     public bool IsSystem { get; set; }
+
     public bool SupportsSoftDelete { get; set; }
+
     public bool HasAuditTrail { get; set; }
 
     [StringLength(128)]
@@ -30,10 +32,14 @@ public class STable
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
-    public ICollection<SFieldDefinition> Fields { get; set; } = new List<SFieldDefinition>();
-    public ICollection<SViewDefinition> Views { get; set; } = new List<SViewDefinition>();
+    public ICollection<SFieldDefinition> Fields { get;  } = new List<SFieldDefinition>();
 
-    public static STable Create(string name, string displayName, IEnumerable<SFieldDefinition> fields)
+    public ICollection<SViewDefinition> Views { get; } = new List<SViewDefinition>();
+
+    public static STable Create(
+        string name,
+        string displayName,
+        IEnumerable<SFieldDefinition> fields)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
