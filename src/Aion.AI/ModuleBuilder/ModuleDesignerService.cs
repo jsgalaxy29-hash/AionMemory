@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Aion.Domain;
+using Aion.Domain.ModuleBuilder;
 
 namespace Aion.AI.ModuleBuilder;
 
@@ -19,12 +20,14 @@ public class ModuleDesignerService : IModuleDesignerService
 
     private readonly IModuleDesigner _designer;
     private readonly IMetadataService _metadata;
+    private readonly IModuleSchemaService _moduleSchemaService;
     private readonly IDataEngine _dataEngine;
 
-    public ModuleDesignerService(IModuleDesigner designer, IMetadataService metadata, IDataEngine dataEngine)
+    public ModuleDesignerService(IModuleDesigner designer, IMetadataService metadata, IModuleSchemaService moduleSchemaService, IDataEngine dataEngine)
     {
         _designer = designer;
         _metadata = metadata;
+        _moduleSchemaService = moduleSchemaService;
         _dataEngine = dataEngine;
     }
 
@@ -68,31 +71,108 @@ public class ModuleDesignerService : IModuleDesignerService
                 continue;
             }
 
-            var table = new STable
-            {
-                Id = entity.Id,
-                Name = entity.Name,
-                DisplayName = entity.PluralName,
-                Description = entity.Description,
-                Fields = entity.Fields.Select(f => new SFieldDefinition
-                {
-                    Id = f.Id,
-                    TableId = entity.Id,
-                    Name = f.Name,
-                    Label = f.Label,
-                    DataType = f.DataType,
-                    IsRequired = f.IsRequired,
-                    IsSearchable = f.IsSearchable,
-                    IsListVisible = f.IsListVisible,
-                    DefaultValue = f.DefaultValue,
-                    EnumValues = f.EnumValues,
-                    RelationTargetEntityTypeId = f.RelationTargetEntityTypeId
-                }).ToList(),
-                Views = new List<SViewDefinition>()
-            };
-
-            await _dataEngine.CreateTableAsync(table, token).ConfigureAwait(false);
+            var spec = BuildSpec(module, entity);
+            await _moduleSchemaService.CreateModuleAsync(spec, token).ConfigureAwait(false);
         }
+    }
+
+    private static ModuleSpec BuildSpec(S_Module module, S_EntityType entity)
+    {
+        var tableSpec = new TableSpec
+        {
+            Id = entity.Id,
+            Slug = entity.Name,
+            DisplayName = entity.PluralName,
+            Description = entity.Description,
+            Fields = entity.Fields.Select(f => new FieldSpec
+            {
+                Id = f.Id,
+                Slug = f.Name,
+                Label = f.Label,
+                DataType = MapFieldDataType(f.DataType),
+                IsRequired = f.IsRequired,
+                IsSearchable = f.IsSearchable,
+                IsListVisible = f.IsListVisible,
+                DefaultValue = TryParseDefaultValue(f.DefaultValue),
+                EnumValues = ParseEnumValues(f.EnumValues),
+                Lookup = f.RelationTargetEntityTypeId.HasValue
+                    ? new LookupSpec { TargetTableSlug = ResolveLookupSlug(module, f.RelationTargetEntityTypeId.Value) }
+                    : null
+            }).ToList(),
+            Views = new List<ViewSpec>()
+        };
+
+        return new ModuleSpec
+        {
+            Version = ModuleSpecVersions.V1,
+            ModuleId = module.Id,
+            Slug = module.Name,
+            DisplayName = module.Name,
+            Description = module.Description,
+            Tables = new List<TableSpec> { tableSpec }
+        };
+    }
+
+    private static string ResolveLookupSlug(S_Module module, Guid targetEntityTypeId)
+        => module.EntityTypes.FirstOrDefault(e => e.Id == targetEntityTypeId)?.Name ?? targetEntityTypeId.ToString();
+
+    private static string MapFieldDataType(FieldDataType dataType) => dataType switch
+    {
+        FieldDataType.Number => ModuleFieldDataTypes.Number,
+        FieldDataType.Decimal => ModuleFieldDataTypes.Decimal,
+        FieldDataType.Boolean => ModuleFieldDataTypes.Boolean,
+        FieldDataType.Date => ModuleFieldDataTypes.Date,
+        FieldDataType.DateTime => ModuleFieldDataTypes.DateTime,
+        FieldDataType.Lookup => ModuleFieldDataTypes.Lookup,
+        FieldDataType.File => ModuleFieldDataTypes.File,
+        FieldDataType.Enum => ModuleFieldDataTypes.Enum,
+        FieldDataType.Note => ModuleFieldDataTypes.Note,
+        FieldDataType.Json => ModuleFieldDataTypes.Json,
+        FieldDataType.Tags => ModuleFieldDataTypes.Tags,
+        _ => ModuleFieldDataTypes.Text
+    };
+
+    private static JsonElement? TryParseDefaultValue(string? defaultValue)
+    {
+        if (string.IsNullOrWhiteSpace(defaultValue))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<JsonElement>(defaultValue, SerializerOptions);
+        }
+        catch (JsonException)
+        {
+            return JsonSerializer.SerializeToElement(defaultValue);
+        }
+    }
+
+    private static List<string>? ParseEnumValues(string? enumValues)
+    {
+        if (string.IsNullOrWhiteSpace(enumValues))
+        {
+            return null;
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<List<string>>(enumValues, SerializerOptions);
+            if (parsed is not null && parsed.Count > 0)
+            {
+                return parsed;
+            }
+        }
+        catch (JsonException)
+        {
+            // Transitional path: legacy enum payloads can still be persisted as raw string segments.
+        }
+
+        return enumValues
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static S_Module ParseModuleFromJson(string json)
