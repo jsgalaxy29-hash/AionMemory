@@ -27,7 +27,4 @@
     <RazorComponent Include="..\..\src\Aion.AppHost\Components\Pages\Notes.razor" Link="Components/Pages/Notes.razor" />
     <RazorComponent Include="..\..\src\Aion.AppHost\Components\Pages\RecordDetail.razor" Link="Components/Pages/RecordDetail.razor" />
   </ItemGroup>
-  <ItemGroup>
-    <Content Include="_Imports.razor" />
-  </ItemGroup>
 </Project>
