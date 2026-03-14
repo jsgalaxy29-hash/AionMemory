@@ -59,7 +59,7 @@ public sealed class ChatAnswerer : IChatAnswerer
 
     private bool TryParseResponse(string raw, MemoryContextResult context, out AssistantAnswer answer)
     {
-        answer = default;
+        answer = default!;
         if (string.IsNullOrWhiteSpace(raw))
         {
             return false;

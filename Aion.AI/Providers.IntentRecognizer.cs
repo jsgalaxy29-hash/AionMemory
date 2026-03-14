@@ -150,7 +150,7 @@ public sealed class IntentRecognizer : IIntentDetector
             parameters["error"] = error;
         }
 
-        return new IntentDetectionResult(guessed.Name, parameters, confidence, rawResponse);
+        return new IntentDetectionResult(guessed.Name, parameters, confidence, rawResponse ?? string.Empty);
     }
 
     private sealed class NullScope : IDisposable
