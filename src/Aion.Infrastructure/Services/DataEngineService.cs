@@ -686,7 +686,7 @@ public sealed class AionDataEngine : IAionDataEngine, IDataEngine
 
         try
         {
-            await using var command = BuildSearchCommand(connection, query, tableId, options);
+            using var command = BuildSearchCommand(connection, query, tableId, options);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             var results = new List<FullTextHit>();
 
@@ -1405,7 +1405,7 @@ LIMIT $take OFFSET $skip;
                 }
                 break;
             default:
-                throw new ArgumentOutOfRangeException(nameof(field.DataType), $"Unsupported data type {field.DataType}");
+                throw new ArgumentOutOfRangeException(nameof(field.DataType), field.DataType, $"Unsupported data type {field.DataType}");
         }
 
         if (value is string str)
@@ -1556,7 +1556,7 @@ LIMIT $take OFFSET $skip;
                 => NormalizeBooleanValue(field, value),
             FieldDataType.Date or FieldDataType.DateTime
                 => NormalizeDateValue(field, value),
-            _ => throw new ArgumentOutOfRangeException(nameof(field.DataType), $"Unsupported data type {field.DataType}")
+            _ => throw new ArgumentOutOfRangeException(nameof(field.DataType), field.DataType, $"Unsupported data type {field.DataType}")
         };
     }
 
@@ -1693,7 +1693,7 @@ LIMIT $take OFFSET $skip;
         throw new InvalidOperationException($"Field '{field.Name}' expects a boolean value");
     }
 
-    private static string NormalizeDateValue(SFieldDefinition field, object value)
+    private static string NormalizeDateValue(SFieldDefinition field, object? value)
     {
         if (value is JsonElement element)
         {
@@ -1768,7 +1768,7 @@ LIMIT $take OFFSET $skip;
     {
         var added = 0;
 
-        if (!table.Views.Any())
+        if (table.Views.Count == 0)
         {
             table.Views.Add(new SViewDefinition
             {
@@ -1787,7 +1787,7 @@ LIMIT $take OFFSET $skip;
             view.DisplayName = view.Name;
         }
 
-        if (string.IsNullOrWhiteSpace(table.DefaultView) && table.Views.Any())
+        if (string.IsNullOrWhiteSpace(table.DefaultView) && table.Views.Count > 0)
         {
             table.DefaultView = table.Views.FirstOrDefault(v => v.IsDefault)?.Name ?? table.Views.First().Name;
         }
@@ -1795,7 +1795,7 @@ LIMIT $take OFFSET $skip;
         return added;
     }
 
-    private static IDictionary<string, object?> ParseJsonPayload(string dataJson)
+    private static IReadOnlyDictionary<string, object?> ParseJsonPayload(string dataJson)
     {
         var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(dataJson))
@@ -1818,7 +1818,7 @@ LIMIT $take OFFSET $skip;
     }
 
     private static string SerializeValues(IDictionary<string, object?> values)
-        => JsonSerializer.Serialize(values, new JsonSerializerOptions { WriteIndented = false });
+        => JsonSerializer.Serialize(values, EmbeddingSerializerOptions);
 
     private static Guid? ParseGuid(object value)
         => value switch
@@ -1861,7 +1861,7 @@ LIMIT $take OFFSET $skip;
         return node;
     }
 
-    private string BuildRecordTitle(STable table, F_Record record)
+    private static string BuildRecordTitle(STable table, F_Record record)
     {
         var values = ParseJsonPayload(record.DataJson);
         var templateTitle = ApplyRowLabelTemplate(table.RowLabelTemplate, values);
@@ -1877,7 +1877,7 @@ LIMIT $take OFFSET $skip;
         }
 
         var prefix = string.IsNullOrWhiteSpace(table.DisplayName) ? table.Name : table.DisplayName;
-        return $"{prefix} #{record.Id.ToString()[..8]}";
+        return $"{prefix} #{record.Id.ToString("N", CultureInfo.InvariantCulture)[..8]}";
     }
 
     private sealed record LookupValidationEntry(SFieldDefinition Field, string LookupTarget, Guid LookupId);
