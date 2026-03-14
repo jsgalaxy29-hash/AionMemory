@@ -3,7 +3,7 @@ using Aion.AI;
 using Aion.AI.ModuleBuilder;
 using Aion.Domain.ModuleBuilder;
 using Aion.Infrastructure.ModuleBuilder;
-using Aion.Infrastructure.Observability;
+using Aion.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -49,15 +49,16 @@ public class ModuleDesignServiceTests
         await context.Database.MigrateAsync();
 
         var validator = new ModuleValidator(context, NullLogger<ModuleValidator>.Instance);
-        var applier = new ModuleApplier(
-            context,
+        var tableMetadataService = new TableMetadataService(context);
+        var fieldMetadataService = new FieldMetadataService(context);
+        var schemaService = new ModuleSchemaService(
+            tableMetadataService,
+            fieldMetadataService,
             validator,
-            NullLogger<ModuleApplier>.Instance,
-            new OperationScopeFactory(),
-            new NullSecurityAuditService());
+            NullLogger<ModuleSchemaService>.Instance);
 
         var chatModel = new StubChatModel(payload);
-        var designer = new ModuleDesignService(chatModel, validator, applier, NullLogger<ModuleDesignService>.Instance);
+        var designer = new ModuleDesignService(chatModel, validator, schemaService, NullLogger<ModuleDesignService>.Instance);
 
         var result = await designer.DesignAndApplyAsync(new ModuleDesignRequest
         {

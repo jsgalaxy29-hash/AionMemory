@@ -12,7 +12,7 @@ public sealed class FieldMetadataService : IFieldMetadataService
         _db = db;
     }
 
-    public async Task<SFieldDefinition> AddFieldAsync(Guid tableId, SFieldDefinition field, CancellationToken cancellationToken = default)
+    public async Task AddFieldAsync(Guid tableId, SFieldDefinition field, CancellationToken cancellationToken = default)
     {
         var table = await _db.Tables
             .Include(t => t.Fields)
@@ -23,7 +23,6 @@ public sealed class FieldMetadataService : IFieldMetadataService
         field.TableId = tableId;
         table.Fields.Add(field);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return field;
     }
 
     public async Task<IReadOnlyList<SFieldDefinition>> GetByTableAsync(Guid tableId, CancellationToken cancellationToken = default)
