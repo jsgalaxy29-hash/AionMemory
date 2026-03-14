@@ -114,6 +114,7 @@ public static class MauiProgram
         services.AddScoped<IRecordQueryService, RecordQueryService>();
         services.AddScoped<IModuleViewService, ModuleViewService>();
         services.AddScoped<IDynamicFormRenderer, DynamicFormRenderer>();
+        services.AddScoped<IDynamicFieldComponentRegistry, DynamicFieldComponentRegistry>();
         services.AddScoped<IDynamicListRenderer, DynamicListRenderer>();
         services.AddScoped<UiState>();
         services.AddScoped<IWorkspaceContextAccessor, WorkspaceContext>();

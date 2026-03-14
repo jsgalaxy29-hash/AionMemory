@@ -1,0 +1,13 @@
+@using Aion.AppHost.Services.Rendering
+@using Microsoft.AspNetCore.Components.Forms
+
+<InputCheckbox class="input" data-field-renderer="checkbox" Value="@FieldValueConverters.ToBoolValue(Value)" ValueChanged="OnValueChanged" disabled="@Disabled" />
+
+@code {
+    [Parameter, EditorRequired] public FormFieldRenderModel Field { get; set; } = default!;
+    [Parameter] public object? Value { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<object?> ValueChanged { get; set; }
+
+    private Task OnValueChanged(bool value) => ValueChanged.InvokeAsync(value);
+}

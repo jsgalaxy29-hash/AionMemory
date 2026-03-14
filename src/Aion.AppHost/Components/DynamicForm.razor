@@ -3,6 +3,7 @@
 @using Aion.Domain
 @using Aion.Domain.Logic
 @using Aion.AppHost.Services.Rendering
+@using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Forms
 @inherits OwningComponentBase
 @implements IDisposable
@@ -14,43 +15,7 @@
             {
                 <div>
                     <label>@field.Label @if (field.IsRequired) { <span class="text-muted">*</span> }</label>
-                    @switch (field.ComponentKind)
-                    {
-                        case FormFieldComponentKind.Text:
-                            <InputText class="input" Value="@GetString(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
-                            break;
-                        case FormFieldComponentKind.TextArea:
-                        case FormFieldComponentKind.JsonTextArea:
-                            <InputTextArea class="input" Value="@GetString(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
-                            break;
-                        case FormFieldComponentKind.Number:
-                            <InputNumber TValue="long?" class="input" Value="@GetLong(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
-                            break;
-                        case FormFieldComponentKind.Decimal:
-                            <InputNumber TValue="decimal?" class="input" Value="@GetDecimal(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
-                            break;
-                        case FormFieldComponentKind.Checkbox:
-                            <InputCheckbox class="input" Value="@GetBool(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
-                            break;
-                        case FormFieldComponentKind.DatePicker:
-                            <InputDate TValue="DateTime?" class="input" Value="@GetDateTime(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
-                            break;
-                        case FormFieldComponentKind.Select:
-                            <select class="input" @onchange="@(args => SetValue(field.FieldName, args.Value?.ToString()))" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)">
-                                <option value="">Sélectionner…</option>
-                                @foreach (var option in field.Options)
-                                {
-                                    <option value="@option" selected="@(string.Equals(GetString(field.FieldName), option, StringComparison.OrdinalIgnoreCase))">@option</option>
-                                }
-                            </select>
-                            break;
-                        case FormFieldComponentKind.FilePlaceholder:
-                            <InputText class="input" Value="@GetString(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" placeholder="@field.Placeholder" disabled="true" />
-                            break;
-                        default:
-                            <InputText class="input" Value="@GetString(field.FieldName)" ValueChanged="v => SetValue(field.FieldName, v)" disabled="@IsFieldDisabled(field.FieldName, field.IsReadOnly)" />
-                            break;
-                    }
+                    <DynamicComponent Type="@ResolveFieldComponent(field.ComponentKind)" Parameters="@BuildFieldComponentParameters(field)" />
 
                     @if (TryGetErrors(field.FieldName, out var errors))
                     {
@@ -91,6 +56,7 @@
     [Inject] public ICurrentUserService? CurrentUserService { get; set; }
     [Inject] public IOfflineActionQueue? OfflineActionQueue { get; set; }
     [Inject] public IDynamicFormRenderer? FormRenderer { get; set; }
+    [Inject] public IDynamicFieldComponentRegistry? FieldComponentRegistry { get; set; }
 
     [Parameter] public STable? Table { get; set; }
     [Parameter] public Guid? TableId { get; set; }
@@ -140,94 +106,23 @@
         }
     }
 
-    private string? GetString(string key) => FieldValues.TryGetValue(key, out var value) ? value?.ToString() : null;
+    private object? GetValue(string key) => FieldValues.TryGetValue(key, out var value) ? value : null;
 
-    private DateTime? GetDateTime(string key)
+    private Type ResolveFieldComponent(FormFieldComponentKind componentKind)
     {
-        if (FieldValues.TryGetValue(key, out var value))
-        {
-            if (value is JsonElement element)
-            {
-                if (element.ValueKind == JsonValueKind.String && DateTime.TryParse(element.GetString(), out var parsed))
-                {
-                    return parsed;
-                }
-
-                if (element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var timestamp))
-                {
-                    return DateTimeOffset.FromUnixTimeSeconds(timestamp).DateTime;
-                }
-            }
-
-            if (value is DateTime dateTime)
-            {
-                return dateTime;
-            }
-        }
-
-        return null;
+        var registry = FieldComponentRegistry ?? new DynamicFieldComponentRegistry();
+        return registry.Resolve(componentKind);
     }
 
-    private decimal? GetDecimal(string key)
+    private IReadOnlyDictionary<string, object?> BuildFieldComponentParameters(FormFieldRenderModel field)
     {
-        if (!FieldValues.TryGetValue(key, out var value))
+        return new Dictionary<string, object?>
         {
-            return null;
-        }
-
-        if (value is decimal d)
-        {
-            return d;
-        }
-
-        if (value is JsonElement element && element.ValueKind == JsonValueKind.Number && element.TryGetDecimal(out var parsed))
-        {
-            return parsed;
-        }
-
-        if (value is double dbl)
-        {
-            return (decimal)dbl;
-        }
-
-        return null;
-    }
-
-    private long? GetLong(string key)
-    {
-        if (!FieldValues.TryGetValue(key, out var value))
-        {
-            return null;
-        }
-
-        return value switch
-        {
-            long l => l,
-            int i => i,
-            decimal d => (long)d,
-            JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var parsed) => parsed,
-            _ => null
+            ["Field"] = field,
+            ["Value"] = GetValue(field.FieldName),
+            ["Disabled"] = IsFieldDisabled(field.FieldName, field.IsReadOnly),
+            ["ValueChanged"] = EventCallback.Factory.Create<object?>(this, value => SetValue(field.FieldName, value))
         };
-    }
-
-    private bool GetBool(string key)
-    {
-        if (!FieldValues.TryGetValue(key, out var value))
-        {
-            return false;
-        }
-
-        if (value is bool b)
-        {
-            return b;
-        }
-
-        if (value is JsonElement element && element.ValueKind is JsonValueKind.True or JsonValueKind.False)
-        {
-            return element.GetBoolean();
-        }
-
-        return false;
     }
 
     private void SetValue(string fieldName, object? value)
