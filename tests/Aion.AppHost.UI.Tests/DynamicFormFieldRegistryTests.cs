@@ -39,6 +39,7 @@ public sealed class DynamicFormFieldRegistryTests : TestContext
         var formPath = Path.Combine(repositoryRoot, "src", "Aion.AppHost", "Components", "DynamicForm.razor");
         var content = File.ReadAllText(formPath);
 
+        Assert.DoesNotContain("@switch(field.ComponentKind)", content, StringComparison.Ordinal);
         Assert.DoesNotContain("@switch (field.ComponentKind)", content, StringComparison.Ordinal);
     }
 
