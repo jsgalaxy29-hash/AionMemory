@@ -11,9 +11,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<OpenAiEmbeddingProvider>();
         services.AddScoped<OpenAiAudioTranscriptionProvider>();
 
-        services.AddKeyedSingleton<IChatModel>(AiProviderNames.OpenAi, sp => sp.GetRequiredService<OpenAiTextGenerationProvider>());
-        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.OpenAi, sp => sp.GetRequiredService<OpenAiEmbeddingProvider>());
-        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.OpenAi, sp => sp.GetRequiredService<OpenAiAudioTranscriptionProvider>());
+        services.AddKeyedSingleton<IChatModel>(AiProviderNames.OpenAi, (sp, _) => sp.GetRequiredService<OpenAiTextGenerationProvider>());
+        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.OpenAi, (sp, _) => sp.GetRequiredService<OpenAiEmbeddingProvider>());
+        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.OpenAi, (sp, _) => sp.GetRequiredService<OpenAiAudioTranscriptionProvider>());
 
         return services;
     }
