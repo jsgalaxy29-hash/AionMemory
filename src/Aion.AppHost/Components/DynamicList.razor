@@ -1,6 +1,7 @@
 @using System.Text.Json
 @using Aion.Domain
 @using Aion.Domain.Logic
+@using Aion.AppHost.Services.Rendering
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @inherits OwningComponentBase
 @implements IDisposable
@@ -65,9 +66,9 @@
                 <th>Statut</th>
                 @if (ResolvedTable is not null)
                 {
-                    @foreach (var field in ResolvedTable.Fields.Where(f => f.IsListVisible).Take(3))
+                    @foreach (var column in ResolveListModel().Columns.Take(3))
                     {
-                        <th>@field.Label</th>
+                        <th>@column.Label</th>
                     }
                 }
                 <th>Créé le</th>
@@ -91,9 +92,9 @@
                             </td>
                             @if (ResolvedTable is not null)
                             {
-                                @foreach (var field in ResolvedTable.Fields.Where(f => f.IsListVisible).Take(3))
+                                @foreach (var column in ResolveListModel().Columns.Take(3))
                                 {
-                                    <td>@(payload.TryGetValue(field.Name, out var value) ? value : null)</td>
+                                    <td>@(payload.TryGetValue(column.FieldName, out var value) ? value : null)</td>
                                 }
                             }
                             <td>@item.CreatedAt.ToLocalTime().ToString("g")</td>
@@ -120,6 +121,7 @@
     [Inject] public IAuthorizationService? AuthorizationService { get; set; }
     [Inject] public ICurrentUserService? CurrentUserService { get; set; }
     [Inject] public IOfflineActionQueue? OfflineActionQueue { get; set; }
+    [Inject] public IDynamicListRenderer? ListRenderer { get; set; }
 
     [Parameter] public STable? Table { get; set; }
     [Parameter] public Guid? TableId { get; set; }
@@ -155,6 +157,7 @@
     private int _lastPageSize;
     private bool CanDelete { get; set; } = true;
     private HashSet<Guid> PendingRecordIds { get; } = new();
+    private ListRenderModel? ListModel { get; set; }
 
     private IEnumerable<SFieldDefinition> SortableFields
         => ResolvedTable?.Fields.Where(f => f.IsSortable) ?? Enumerable.Empty<SFieldDefinition>();
@@ -169,6 +172,10 @@
         await EnsureTableMetadataAsync();
 
         var tableChanged = _lastTableId != ResolvedTable?.Id;
+        if (tableChanged)
+        {
+            ListModel = null;
+        }
         if (tableChanged)
         {
             SearchText = string.Empty;
@@ -380,6 +387,23 @@
         }
     }
 
+
+    private ListRenderModel ResolveListModel()
+    {
+        if (ResolvedTable is null)
+        {
+            return new ListRenderModel(Guid.Empty, string.Empty, Array.Empty<ListColumnRenderModel>());
+        }
+
+        if (ListModel is not null)
+        {
+            return ListModel;
+        }
+
+        var renderer = ListRenderer ?? new DynamicListRenderer();
+        ListModel = renderer.Render(ResolvedTable);
+        return ListModel;
+    }
     public void Dispose()
     {
         _refreshCts?.Cancel();
