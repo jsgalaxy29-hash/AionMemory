@@ -6,12 +6,12 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Aion.Domain;
-using Aion.Domain.ModuleBuilder;
+using DomainModuleBuilder = Aion.Domain.ModuleBuilder;
 using Microsoft.Extensions.Logging;
 
 namespace Aion.AI.ModuleBuilder;
 
-public sealed class ModuleDesignService : IModuleDesignService
+public sealed class ModuleDesignService : DomainModuleBuilder.IModuleDesignService
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -24,6 +24,31 @@ public sealed class ModuleDesignService : IModuleDesignService
     private readonly IModuleValidator _validator;
     private readonly IModuleSchemaService _moduleSchemaService;
     private readonly ILogger<ModuleDesignService> _logger;
+    private static readonly Action<ILogger, Exception?> LogModuleDesignJsonParseFailed =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(1, nameof(LogModuleDesignJsonParseFailed)),
+            "Failed to parse module design response JSON.");
+
+    private const string ModuleSpecJsonExample =
+        """
+{
+  "version": "{VERSION}",
+  "slug": "module",
+  "displayName": "Nom lisible",
+  "description": "Optionnel",
+  "tables": [
+    {
+      "slug": "table",
+      "displayName": "Nom table",
+      "fields": [
+        { "slug": "champ", "label": "Libellé", "dataType": "Text|Number|Decimal|Boolean|Date|DateTime|Enum|Lookup|File|Note|Json|Tags", "isRequired": false }
+      ],
+      "views": []
+    }
+  ]
+}
+""";
 
     public ModuleDesignService(IChatModel provider, IModuleValidator validator, IModuleSchemaService moduleSchemaService, ILogger<ModuleDesignService> logger)
     {
@@ -35,7 +60,7 @@ public sealed class ModuleDesignService : IModuleDesignService
 
     public string? LastGeneratedJson { get; private set; }
 
-    public async Task<ModuleDesignResult> DesignModuleAsync(ModuleDesignRequest request, CancellationToken cancellationToken = default)
+    public async Task<DomainModuleBuilder.ModuleDesignResult> DesignModuleAsync(DomainModuleBuilder.ModuleDesignRequest request, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.Prompt))
         {
@@ -54,10 +79,10 @@ public sealed class ModuleDesignService : IModuleDesignService
 
         if (!structured.IsValid || string.IsNullOrWhiteSpace(structured.Json))
         {
-            return new ModuleDesignResult(
+            return new DomainModuleBuilder.ModuleDesignResult(
                 null,
                 BuildFallbackQuestions(request.Prompt),
-                Array.Empty<ModuleDesignSource>(),
+                Array.Empty<DomainModuleBuilder.ModuleDesignSource>(),
                 structured.Json ?? string.Empty);
         }
 
@@ -68,20 +93,20 @@ public sealed class ModuleDesignService : IModuleDesignService
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Failed to parse module design response JSON.");
-            return new ModuleDesignResult(
+            LogModuleDesignJsonParseFailed(_logger, ex);
+            return new DomainModuleBuilder.ModuleDesignResult(
                 null,
                 BuildFallbackQuestions(request.Prompt),
-                Array.Empty<ModuleDesignSource>(),
+                Array.Empty<DomainModuleBuilder.ModuleDesignSource>(),
                 structured.Json ?? string.Empty);
         }
 
         if (response is null)
         {
-            return new ModuleDesignResult(
+            return new DomainModuleBuilder.ModuleDesignResult(
                 null,
                 BuildFallbackQuestions(request.Prompt),
-                Array.Empty<ModuleDesignSource>(),
+                Array.Empty<DomainModuleBuilder.ModuleDesignSource>(),
                 structured.Json ?? string.Empty);
         }
 
@@ -90,12 +115,12 @@ public sealed class ModuleDesignService : IModuleDesignService
         if (string.Equals(response.Status, "clarify", StringComparison.OrdinalIgnoreCase))
         {
             var questions = MapQuestions(response.Questions);
-            return new ModuleDesignResult(null, questions, sources, structured.Json ?? string.Empty);
+            return new DomainModuleBuilder.ModuleDesignResult(null, questions, sources, structured.Json ?? string.Empty);
         }
 
         if (!string.Equals(response.Status, "complete", StringComparison.OrdinalIgnoreCase))
         {
-            return new ModuleDesignResult(
+            return new DomainModuleBuilder.ModuleDesignResult(
                 null,
                 BuildFallbackQuestions(request.Prompt),
                 sources,
@@ -105,7 +130,7 @@ public sealed class ModuleDesignService : IModuleDesignService
         var spec = ParseSpec(response.Spec);
         if (spec is null)
         {
-            return new ModuleDesignResult(
+            return new DomainModuleBuilder.ModuleDesignResult(
                 null,
                 BuildFallbackQuestions(request.Prompt),
                 sources,
@@ -121,25 +146,25 @@ public sealed class ModuleDesignService : IModuleDesignService
         if (!validation.IsValid)
         {
             var questions = BuildValidationQuestions(validation.Errors);
-            return new ModuleDesignResult(null, questions, sources, structured.Json ?? string.Empty);
+            return new DomainModuleBuilder.ModuleDesignResult(null, questions, sources, structured.Json ?? string.Empty);
         }
 
-        return new ModuleDesignResult(spec, Array.Empty<ModuleDesignQuestion>(), sources, structured.Json ?? string.Empty);
+        return new DomainModuleBuilder.ModuleDesignResult(spec, Array.Empty<DomainModuleBuilder.ModuleDesignQuestion>(), sources, structured.Json ?? string.Empty);
     }
 
-    public async Task<ModuleDesignApplyResult> DesignAndApplyAsync(ModuleDesignRequest request, CancellationToken cancellationToken = default)
+    public async Task<DomainModuleBuilder.ModuleDesignApplyResult> DesignAndApplyAsync(DomainModuleBuilder.ModuleDesignRequest request, CancellationToken cancellationToken = default)
     {
         var design = await DesignModuleAsync(request, cancellationToken).ConfigureAwait(false);
         if (!design.IsComplete || design.Spec is null)
         {
-            return new ModuleDesignApplyResult(design, Array.Empty<STable>());
+            return new DomainModuleBuilder.ModuleDesignApplyResult(design, Array.Empty<STable>());
         }
 
         var createdTable = await _moduleSchemaService.CreateModuleAsync(design.Spec, cancellationToken).ConfigureAwait(false);
-        return new ModuleDesignApplyResult(design, new[] { createdTable });
+        return new DomainModuleBuilder.ModuleDesignApplyResult(design, new[] { createdTable });
     }
 
-    private static string BuildPrompt(ModuleDesignRequest request)
+    private static string BuildPrompt(DomainModuleBuilder.ModuleDesignRequest request)
     {
         var answersSection = BuildAnswersSection(request.Answers);
         var schemaOrg = request.UseSchemaOrg
@@ -156,22 +181,7 @@ Format JSON attendu :
 {StructuredJsonSchemas.ModuleSpecDesign.Description}
 
 ModuleSpec v{ModuleSpecVersions.V1} attendu :
-{{
-  "version": "{ModuleSpecVersions.V1}",
-  "slug": "module",
-  "displayName": "Nom lisible",
-  "description": "Optionnel",
-  "tables": [
-    {{
-      "slug": "table",
-      "displayName": "Nom table",
-      "fields": [
-        {{ "slug": "champ", "label": "Libellé", "dataType": "Text|Number|Decimal|Boolean|Date|DateTime|Enum|Lookup|File|Note|Json|Tags", "isRequired": false }}
-      ],
-      "views": []
-    }}
-  ]
-}}
+{ModuleSpecJsonExample.Replace("{VERSION}", ModuleSpecVersions.V1, StringComparison.Ordinal)}
 
 Description utilisateur (locale {request.Locale}) :
 {request.Prompt}
@@ -183,7 +193,7 @@ Ne réponds que par du JSON valide sans texte additionnel.
 """;
     }
 
-    private static string BuildAnswersSection(IReadOnlyList<ModuleDesignAnswer> answers)
+    private static string BuildAnswersSection(IReadOnlyList<DomainModuleBuilder.ModuleDesignAnswer> answers)
     {
         if (answers.Count == 0)
         {
@@ -199,18 +209,18 @@ Ne réponds que par du JSON valide sans texte additionnel.
         return builder.ToString().Trim();
     }
 
-    private static IReadOnlyList<ModuleDesignQuestion> BuildFallbackQuestions(string prompt)
+    private static IReadOnlyList<DomainModuleBuilder.ModuleDesignQuestion> BuildFallbackQuestions(string prompt)
         => new[]
         {
-            new ModuleDesignQuestion("module-goal", $"Quel est l'objectif principal du module \"{prompt}\" ?", true, "Ex: suivi d'activité, CRM, inventaire"),
-            new ModuleDesignQuestion("entities", "Quelles sont les entités principales à suivre ?", true, "Ex: clients, projets, commandes"),
-            new ModuleDesignQuestion("fields", "Quels champs clés sont indispensables pour chaque entité ?", true, "Ex: statut, date, montant"),
-            new ModuleDesignQuestion("relations", "Y a-t-il des relations ou statuts spécifiques à modéliser ?", false, "Ex: client → commandes, statut en cours")
+            new DomainModuleBuilder.ModuleDesignQuestion("module-goal", $"Quel est l'objectif principal du module \"{prompt}\" ?", true, "Ex: suivi d'activité, CRM, inventaire"),
+            new DomainModuleBuilder.ModuleDesignQuestion("entities", "Quelles sont les entités principales à suivre ?", true, "Ex: clients, projets, commandes"),
+            new DomainModuleBuilder.ModuleDesignQuestion("fields", "Quels champs clés sont indispensables pour chaque entité ?", true, "Ex: statut, date, montant"),
+            new DomainModuleBuilder.ModuleDesignQuestion("relations", "Y a-t-il des relations ou statuts spécifiques à modéliser ?", false, "Ex: client → commandes, statut en cours")
         };
 
-    private static IReadOnlyList<ModuleDesignQuestion> BuildValidationQuestions(IEnumerable<string> errors)
+    private static IReadOnlyList<DomainModuleBuilder.ModuleDesignQuestion> BuildValidationQuestions(IEnumerable<string> errors)
         => errors
-            .Select((error, index) => new ModuleDesignQuestion($"validation-{index + 1}", $"Peux-tu préciser : {error}", true))
+            .Select((error, index) => new DomainModuleBuilder.ModuleDesignQuestion($"validation-{index + 1}", $"Peux-tu préciser : {error}", true))
             .ToList();
 
     private static ModuleSpec? ParseSpec(JsonElement? specElement)
@@ -230,23 +240,35 @@ Ne réponds que par du JSON valide sans texte additionnel.
         }
     }
 
-    private static IReadOnlyList<ModuleDesignQuestion> MapQuestions(IReadOnlyList<ModuleDesignQuestionPayload>? questions)
-        => questions?
+    private static IReadOnlyList<DomainModuleBuilder.ModuleDesignQuestion> MapQuestions(IReadOnlyList<ModuleDesignQuestionPayload>? questions)
+    {
+        if (questions is null)
+        {
+            return Array.Empty<DomainModuleBuilder.ModuleDesignQuestion>();
+        }
+
+        return questions
             .Where(q => !string.IsNullOrWhiteSpace(q.Question))
             .Select((q, index) =>
             {
                 var id = string.IsNullOrWhiteSpace(q.Id) ? $"question-{index + 1}" : q.Id;
-                return new ModuleDesignQuestion(id, q.Question ?? string.Empty, q.Required ?? true, q.Hint);
+                return new DomainModuleBuilder.ModuleDesignQuestion(id, q.Question ?? string.Empty, q.Required ?? true, q.Hint);
             })
-            .ToList()
-            ?? Array.Empty<ModuleDesignQuestion>();
+            .ToList();
+    }
 
-    private static IReadOnlyList<ModuleDesignSource> MapSources(IReadOnlyList<ModuleDesignSourcePayload>? sources)
-        => sources?
+    private static IReadOnlyList<DomainModuleBuilder.ModuleDesignSource> MapSources(IReadOnlyList<ModuleDesignSourcePayload>? sources)
+    {
+        if (sources is null)
+        {
+            return Array.Empty<DomainModuleBuilder.ModuleDesignSource>();
+        }
+
+        return sources
             .Where(s => !string.IsNullOrWhiteSpace(s.Title))
-            .Select(s => new ModuleDesignSource(s.Title ?? string.Empty, ParseUrl(s.Url), s.Type))
-            .ToList()
-            ?? Array.Empty<ModuleDesignSource>();
+            .Select(s => new DomainModuleBuilder.ModuleDesignSource(s.Title ?? string.Empty, ParseUrl(s.Url), s.Type))
+            .ToList();
+    }
 
     private static Uri? ParseUrl(string? url)
         => Uri.TryCreate(url, UriKind.Absolute, out var parsed) ? parsed : null;
