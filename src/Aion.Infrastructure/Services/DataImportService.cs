@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
