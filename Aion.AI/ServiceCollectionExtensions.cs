@@ -1,4 +1,5 @@
 using Aion.AI.ModuleBuilder;
+using Aion.AI.Adapters;
 using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
 using Microsoft.Extensions.Configuration;
@@ -52,28 +53,28 @@ public static class ServiceCollectionExtensions
         services.AddScoped<InactiveTranscriptionModel>();
         services.AddSingleton<InactiveVisionModel>();
 
-        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpTextGenerationProvider>());
-        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpEmbeddingProvider>());
-        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Http, sp => sp.GetRequiredService<HttpAudioTranscriptionProvider>());
-        services.AddKeyedScoped<IVisionModel>(AiProviderNames.Http, sp => sp.GetRequiredService<VisionEngine>());
+        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Http, (sp, _) => sp.GetRequiredService<HttpTextGenerationProvider>());
+        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Http, (sp, _) => sp.GetRequiredService<HttpEmbeddingProvider>());
+        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Http, (sp, _) => sp.GetRequiredService<HttpAudioTranscriptionProvider>());
+        services.AddKeyedScoped<IVisionModel>(AiProviderNames.Http, (sp, _) => sp.GetRequiredService<VisionEngine>());
 
-        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Mock, sp => sp.GetRequiredService<HttpMockChatModel>());
-        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Mock, sp => sp.GetRequiredService<HttpMockEmbeddingsModel>());
-        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Mock, sp => sp.GetRequiredService<HttpMockTranscriptionModel>());
-        services.AddKeyedSingleton<IVisionModel>(AiProviderNames.Mock, sp => sp.GetRequiredService<HttpMockVisionModel>());
+        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Mock, (sp, _) => sp.GetRequiredService<HttpMockChatModel>());
+        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Mock, (sp, _) => sp.GetRequiredService<HttpMockEmbeddingsModel>());
+        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Mock, (sp, _) => sp.GetRequiredService<HttpMockTranscriptionModel>());
+        services.AddKeyedSingleton<IVisionModel>(AiProviderNames.Mock, (sp, _) => sp.GetRequiredService<HttpMockVisionModel>());
 
-        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Offline, sp => sp.GetRequiredService<OfflineChatModel>());
-        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Offline, sp => sp.GetRequiredService<OfflineEmbeddingsModel>());
-        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Offline, sp => sp.GetRequiredService<OfflineTranscriptionModel>());
-        services.AddKeyedSingleton<IVisionModel>(AiProviderNames.Offline, sp => sp.GetRequiredService<OfflineVisionModel>());
+        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Offline, (sp, _) => sp.GetRequiredService<OfflineChatModel>());
+        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Offline, (sp, _) => sp.GetRequiredService<OfflineEmbeddingsModel>());
+        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Offline, (sp, _) => sp.GetRequiredService<OfflineTranscriptionModel>());
+        services.AddKeyedSingleton<IVisionModel>(AiProviderNames.Offline, (sp, _) => sp.GetRequiredService<OfflineVisionModel>());
 
-        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Local, sp => sp.GetRequiredService<EchoLlmProvider>());
-        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Local, sp => sp.GetRequiredService<DeterministicEmbeddingProvider>());
-        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Local, sp => sp.GetRequiredService<StubAudioTranscriptionProvider>());
-        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Inactive, sp => sp.GetRequiredService<InactiveChatModel>());
-        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Inactive, sp => sp.GetRequiredService<InactiveEmbeddingsModel>());
-        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Inactive, sp => sp.GetRequiredService<InactiveTranscriptionModel>());
-        services.AddKeyedSingleton<IVisionModel>(AiProviderNames.Inactive, sp => sp.GetRequiredService<InactiveVisionModel>());
+        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Local, (sp, _) => sp.GetRequiredService<EchoLlmProvider>());
+        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Local, (sp, _) => sp.GetRequiredService<DeterministicEmbeddingProvider>());
+        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Local, (sp, _) => sp.GetRequiredService<StubAudioTranscriptionProvider>());
+        services.AddKeyedSingleton<IChatModel>(AiProviderNames.Inactive, (sp, _) => sp.GetRequiredService<InactiveChatModel>());
+        services.AddKeyedSingleton<IEmbeddingsModel>(AiProviderNames.Inactive, (sp, _) => sp.GetRequiredService<InactiveEmbeddingsModel>());
+        services.AddKeyedScoped<ITranscriptionModel>(AiProviderNames.Inactive, (sp, _) => sp.GetRequiredService<InactiveTranscriptionModel>());
+        services.AddKeyedSingleton<IVisionModel>(AiProviderNames.Inactive, (sp, _) => sp.GetRequiredService<InactiveVisionModel>());
 
         services.AddScoped<AiModelFactory>();
         services.AddScoped<IChatModel>(sp => sp.GetRequiredService<AiModelFactory>());
@@ -83,7 +84,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ILLMProvider>(sp => sp.GetRequiredService<IChatModel>());
         services.AddScoped<IEmbeddingProvider>(sp => sp.GetRequiredService<IEmbeddingsModel>());
         services.AddScoped<IAudioTranscriptionProvider>(sp => sp.GetRequiredService<ITranscriptionModel>());
-        services.TryAddScoped<IAionVisionService>(sp => sp.GetRequiredService<IVisionModel>());
+        services.TryAddScoped<IAionVisionService>(sp => sp.GetRequiredService<VisionEngine>());
         services.TryAddScoped<IVisionService>(sp => sp.GetRequiredService<IVisionModel>());
 
         services.AddScoped<IIntentDetector, IntentRecognizer>();
