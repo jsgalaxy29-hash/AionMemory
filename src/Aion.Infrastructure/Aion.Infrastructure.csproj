@@ -21,6 +21,7 @@
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Aion.AI\Aion.AI.csproj" />
     <ProjectReference Include="..\Aion.Domain\Aion.Domain.csproj" />
   </ItemGroup>
   <ItemGroup>

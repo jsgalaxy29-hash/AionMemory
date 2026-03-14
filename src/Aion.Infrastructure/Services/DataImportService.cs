@@ -4,6 +4,7 @@ using Aion.Domain;
 using Aion.Domain.ModuleBuilder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Aion.Infrastructure.Services;
 
@@ -87,7 +88,7 @@ public sealed class DataImportService : IDataImportService
         await _securityAudit.LogAsync(new SecurityAuditEvent(
             SecurityAuditCategory.DataImport,
             "data.import",
-            metadata: new Dictionary<string, object?>
+            Metadata: new Dictionary<string, object?>
             {
                 ["tableCount"] = manifest.TableCount,
                 ["recordCount"] = manifest.RecordCount,
@@ -300,21 +301,25 @@ public sealed class DataImportService : IDataImportService
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 8192, FileOptions.Asynchronous | FileOptions.SequentialScan);
         using var reader = new StreamReader(stream);
 
-        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested)
         {
-            var line = await reader.ReadLineAsync().ConfigureAwait(false);
-            if (line is not null)
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (line is null)
             {
-                yield return line;
+                break;
             }
+
+            yield return line;
         }
     }
 
-    private static async Task<string> PrepareWorkingFolderAsync(string sourcePath, CancellationToken cancellationToken)
+    private static Task<string> PrepareWorkingFolderAsync(string sourcePath, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (Directory.Exists(sourcePath))
         {
-            return sourcePath;
+            return Task.FromResult(sourcePath);
         }
 
         if (!File.Exists(sourcePath))
@@ -325,11 +330,11 @@ public sealed class DataImportService : IDataImportService
         var tempFolder = Path.Combine(Path.GetTempPath(), $"aion-import-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempFolder);
 
-        await using var archiveStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var archiveStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.SequentialScan);
         using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Read, leaveOpen: false);
 
         archive.ExtractToDirectory(tempFolder);
-        return tempFolder;
+        return Task.FromResult(tempFolder);
     }
 
     private sealed record RecordImportPayload
