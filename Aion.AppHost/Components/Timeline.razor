@@ -1,0 +1,32 @@
+<div class="timeline">
+    @if (Events is null)
+    {
+        <p>Loading timeline…</p>
+    }
+    else
+    {
+        @foreach (var evt in Events)
+        {
+            <div class="timeline-item">
+                <strong>@evt.OccurredAt.ToString("u")</strong> - @evt.Title
+                @if (!string.IsNullOrWhiteSpace(evt.Description))
+                {
+                    <div class="text-muted">@evt.Description</div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public ILifeService? LifeService { get; set; }
+    protected IEnumerable<S_HistoryEvent>? Events { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (LifeService is not null)
+        {
+            Events = await LifeService.GetTimelineAsync();
+        }
+    }
+}
