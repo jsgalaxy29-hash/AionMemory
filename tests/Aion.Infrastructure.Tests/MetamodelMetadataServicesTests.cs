@@ -23,23 +23,27 @@ public sealed class MetamodelMetadataServicesTests
         var tableService = new TableMetadataService(context);
         var fieldService = new FieldMetadataService(context);
 
-        var created = await tableService.CreateAsync(new STable
+        var created = new STable
         {
             Name = "customer",
             DisplayName = "Client",
             Description = "Fiche client"
-        });
+        };
+
+        await tableService.CreateAsync(created);
 
         Assert.NotEqual(Guid.Empty, created.Id);
 
-        var field = await fieldService.AddFieldAsync(created.Id, new SFieldDefinition
+        var field = new SFieldDefinition
         {
             Name = "firstName",
             Label = "Prénom",
             DataType = FieldDataType.Text,
             IsRequired = true,
             Order = 1
-        });
+        };
+
+        await fieldService.AddFieldAsync(created.Id, field);
 
         Assert.Equal(created.Id, field.TableId);
 

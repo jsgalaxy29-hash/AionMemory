@@ -22,14 +22,14 @@ public sealed class ModuleDesignService : IModuleDesignService
 
     private readonly IChatModel _provider;
     private readonly IModuleValidator _validator;
-    private readonly IModuleApplier _applier;
+    private readonly IModuleSchemaService _moduleSchemaService;
     private readonly ILogger<ModuleDesignService> _logger;
 
-    public ModuleDesignService(IChatModel provider, IModuleValidator validator, IModuleApplier applier, ILogger<ModuleDesignService> logger)
+    public ModuleDesignService(IChatModel provider, IModuleValidator validator, IModuleSchemaService moduleSchemaService, ILogger<ModuleDesignService> logger)
     {
         _provider = provider;
         _validator = validator;
-        _applier = applier;
+        _moduleSchemaService = moduleSchemaService;
         _logger = logger;
     }
 
@@ -135,8 +135,8 @@ public sealed class ModuleDesignService : IModuleDesignService
             return new ModuleDesignApplyResult(design, Array.Empty<STable>());
         }
 
-        var tables = await _applier.ApplyAsync(design.Spec, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return new ModuleDesignApplyResult(design, tables);
+        var createdTable = await _moduleSchemaService.CreateModuleAsync(design.Spec, cancellationToken).ConfigureAwait(false);
+        return new ModuleDesignApplyResult(design, new[] { createdTable });
     }
 
     private static string BuildPrompt(ModuleDesignRequest request)

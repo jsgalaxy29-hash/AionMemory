@@ -12,11 +12,10 @@ public sealed class TableMetadataService : ITableMetadataService
         _db = db;
     }
 
-    public async Task<STable> CreateAsync(STable table, CancellationToken cancellationToken = default)
+    public async Task CreateAsync(STable table, CancellationToken cancellationToken = default)
     {
         await _db.Tables.AddAsync(table, cancellationToken).ConfigureAwait(false);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return table;
     }
 
     public Task<STable?> GetByIdAsync(Guid tableId, CancellationToken cancellationToken = default)
