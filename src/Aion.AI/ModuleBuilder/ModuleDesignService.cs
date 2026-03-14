@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Aion.Domain;
 using DomainModuleBuilder = Aion.Domain.ModuleBuilder;
 using Microsoft.Extensions.Logging;
+using Aion.Domain.ModuleBuilder;
 
 namespace Aion.AI.ModuleBuilder;
 

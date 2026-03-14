@@ -1,3 +1,5 @@
+using Aion.Domain;
+
 using Microsoft.Extensions.Logging;
 
 namespace Aion.AI;
@@ -41,10 +43,7 @@ public sealed class IntentRouter : IIntentRouter
 
     public async Task<IntentRouteResult> RouteAsync(IntentRouteRequest request, CancellationToken cancellationToken = default)
     {
-        if (request is null)
-        {
-            throw new ArgumentNullException(nameof(request));
-        }
+        ArgumentNullException.ThrowIfNull(request);
 
         if (string.IsNullOrWhiteSpace(request.Input))
         {
@@ -87,7 +86,7 @@ public sealed class IntentRouter : IIntentRouter
     {
         var design = await _moduleDesigner.GenerateModuleAsync(new ModuleDesignRequest { Prompt = input }, cancellationToken).ConfigureAwait(false);
         var module = design.Module;
-        var entities = module.EntityTypes.Any()
+        var entities = module.EntityTypes.Count != 0
             ? string.Join(", ", module.EntityTypes.Select(e => $"{e.Name} ({e.Fields.Count} champs)"))
             : "Aucune entité proposée";
 
