@@ -32,7 +32,7 @@ public sealed class AiModelFactory : IChatModel, IEmbeddingsModel, ITranscriptio
     public Task<S_VisionAnalysis> AnalyzeAsync(VisionAnalysisRequest request, CancellationToken cancellationToken = default)
         => Resolve<IVisionModel>("vision").AnalyzeAsync(request, cancellationToken);
 
-    private T Resolve<T>(string capability)
+    private T Resolve<T>(string capability) where T : notnull
     {
         var status = _selector.GetStatus();
         var providerName = status.IsConfigured ? status.ActiveProvider : AiProviderNames.Inactive;
