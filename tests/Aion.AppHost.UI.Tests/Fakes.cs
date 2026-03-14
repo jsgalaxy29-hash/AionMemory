@@ -174,8 +174,12 @@ internal sealed class FakeRecordQueryService : IRecordQueryService
 {
     private readonly Dictionary<Guid, int> _counts = new();
     private readonly Dictionary<Guid, ResolvedRecord?> _resolvedRecords = new();
+    private readonly Dictionary<Guid, List<F_Record>> _recordsByTable = new();
 
-    public FakeRecordQueryService(Dictionary<Guid, int>? counts = null, Dictionary<Guid, ResolvedRecord?>? resolvedRecords = null)
+    public FakeRecordQueryService(
+        Dictionary<Guid, int>? counts = null,
+        Dictionary<Guid, ResolvedRecord?>? resolvedRecords = null,
+        Dictionary<Guid, List<F_Record>>? recordsByTable = null)
     {
         if (counts is not null)
         {
@@ -192,16 +196,40 @@ internal sealed class FakeRecordQueryService : IRecordQueryService
                 _resolvedRecords[entry.Key] = entry.Value;
             }
         }
+
+        if (recordsByTable is not null)
+        {
+            foreach (var entry in recordsByTable)
+            {
+                _recordsByTable[entry.Key] = entry.Value.ToList();
+            }
+        }
     }
 
     public Task<RecordPage<F_Record>> QueryAsync(Guid tableId, QuerySpec query, CancellationToken cancellationToken = default)
-        => Task.FromResult(new RecordPage<F_Record>(Array.Empty<F_Record>(), 0));
+    {
+        var records = _recordsByTable.TryGetValue(tableId, out var stored)
+            ? stored
+            : new List<F_Record>();
+
+        var skip = Math.Max(0, query.Skip ?? 0);
+        var take = Math.Max(0, query.Take ?? records.Count);
+        var page = records.Skip(skip).Take(take).ToList();
+        return Task.FromResult(new RecordPage<F_Record>(page, records.Count));
+    }
 
     public Task<int> CountAsync(Guid tableId, QuerySpec query, CancellationToken cancellationToken = default)
         => Task.FromResult(_counts.TryGetValue(tableId, out var count) ? count : 0);
 
     public Task<F_Record?> GetAsync(Guid tableId, Guid recordId, CancellationToken cancellationToken = default)
-        => Task.FromResult<F_Record?>(null);
+    {
+        if (_recordsByTable.TryGetValue(tableId, out var records))
+        {
+            return Task.FromResult(records.FirstOrDefault(r => r.Id == recordId));
+        }
+
+        return Task.FromResult<F_Record?>(null);
+    }
 
     public Task<ResolvedRecord?> GetResolvedAsync(Guid tableId, Guid recordId, CancellationToken cancellationToken = default)
         => Task.FromResult(_resolvedRecords.TryGetValue(recordId, out var record) ? record : null);
@@ -212,13 +240,40 @@ internal sealed class FakeRecordQueryService : IRecordQueryService
         {
             Id = recordId ?? Guid.NewGuid(),
             TableId = tableId,
-            DataJson = "{}"
+            DataJson = System.Text.Json.JsonSerializer.Serialize(data),
+            UpdatedAt = DateTimeOffset.UtcNow
         };
+
+        if (!_recordsByTable.TryGetValue(tableId, out var records))
+        {
+            records = new List<F_Record>();
+            _recordsByTable[tableId] = records;
+        }
+
+        var existingIndex = records.FindIndex(r => r.Id == record.Id);
+        if (existingIndex >= 0)
+        {
+            record.CreatedAt = records[existingIndex].CreatedAt;
+            records[existingIndex] = record;
+        }
+        else
+        {
+            record.CreatedAt = DateTimeOffset.UtcNow;
+            records.Insert(0, record);
+        }
+
         return Task.FromResult(record);
     }
 
     public Task DeleteAsync(Guid tableId, Guid recordId, CancellationToken cancellationToken = default)
-        => Task.CompletedTask;
+    {
+        if (_recordsByTable.TryGetValue(tableId, out var records))
+        {
+            records.RemoveAll(r => r.Id == recordId);
+        }
+
+        return Task.CompletedTask;
+    }
 }
 
 internal sealed class FakeModuleViewService : IModuleViewService

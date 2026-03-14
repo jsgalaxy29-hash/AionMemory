@@ -1,0 +1,199 @@
+@page "/runtime/module/{tableId:guid}"
+@page "/runtime/module/by-name/{tableName}"
+@inject IModuleViewService ModuleViews
+@inject IRecordQueryService RecordQueries
+@implements IDisposable
+
+<div class="module-runtime-page">
+    @if (IsLoading)
+    {
+        <div class="card">
+            <p class="text-muted">Chargement des métadonnées…</p>
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(LoadError))
+    {
+        <div class="card">
+            <p class="text-muted">@LoadError</p>
+        </div>
+    }
+    else if (Table is null)
+    {
+        <div class="card">
+            <p class="text-muted">Table introuvable.</p>
+        </div>
+    }
+    else
+    {
+        <header class="card module-runtime-page__header">
+            <div>
+                <div class="text-muted">Runtime module</div>
+                <h3 style="margin:0;">@Table.DisplayName</h3>
+                <p class="text-muted" style="margin:4px 0 0 0;">Table : @Table.Name</p>
+            </div>
+            <div class="module-runtime-page__actions">
+                @if (Mode == RuntimePageMode.List)
+                {
+                    <button type="button" class="button" @onclick="OpenCreate">Nouveau</button>
+                }
+                else
+                {
+                    <button type="button" class="button secondary" @onclick="BackToList">Retour à la liste</button>
+                }
+            </div>
+        </header>
+
+        <div class="grid columns-2 module-runtime-page__content">
+            <div class="card stretch">
+                <div class="module-host__section-header">
+                    <div>
+                        <div class="text-muted">Liste dynamique</div>
+                        <h4 style="margin:0;">@Table.DisplayName</h4>
+                    </div>
+                </div>
+                <DynamicList Table="Table"
+                             RecordService="RecordQueries"
+                             ViewService="ModuleViews"
+                             OnSelect="HandleSelect"
+                             OnDeleted="HandleDeleted" />
+            </div>
+
+            <div class="card stretch">
+                <div class="module-host__section-header">
+                    <div>
+                        <div class="text-muted">Fiche dynamique</div>
+                        <h4 style="margin:0;">@GetFormTitle()</h4>
+                    </div>
+                </div>
+
+                @if (Mode == RuntimePageMode.List)
+                {
+                    <p class="text-muted">Sélectionnez un enregistrement dans la liste ou créez-en un nouveau.</p>
+                }
+                else
+                {
+                    <DynamicForm Table="Table"
+                                 RecordId="SelectedRecordId"
+                                 RecordService="RecordQueries"
+                                 ViewService="ModuleViews"
+                                 OnSaved="HandleSaved"
+                                 OnDeleted="HandleDeleted" />
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? TableId { get; set; }
+    [Parameter] public string? TableName { get; set; }
+
+    private STable? Table { get; set; }
+    private Guid? SelectedRecordId { get; set; }
+    private RuntimePageMode Mode { get; set; } = RuntimePageMode.List;
+    private bool IsLoading { get; set; }
+    private string? LoadError { get; set; }
+    private CancellationTokenSource? _loadCts;
+    private Guid? _lastTableId;
+    private string? _lastTableName;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_lastTableId == TableId && string.Equals(_lastTableName, TableName, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await LoadTableAsync();
+        _lastTableId = TableId;
+        _lastTableName = TableName;
+    }
+
+    private async Task LoadTableAsync()
+    {
+        _loadCts?.Cancel();
+        _loadCts = new CancellationTokenSource();
+        IsLoading = true;
+        LoadError = null;
+
+        try
+        {
+            if (TableId is Guid tableId)
+            {
+                Table = await ModuleViews.GetTableAsync(tableId, _loadCts.Token).ConfigureAwait(false);
+            }
+            else if (!string.IsNullOrWhiteSpace(TableName))
+            {
+                Table = await ModuleViews.GetTableByNameAsync(TableName, _loadCts.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                LoadError = "Aucun identifiant de table fourni.";
+                Table = null;
+            }
+
+            SelectedRecordId = null;
+            Mode = RuntimePageMode.List;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private string GetFormTitle() => Mode switch
+    {
+        RuntimePageMode.Create => "Création",
+        RuntimePageMode.Edit => "Édition",
+        _ => "Liste"
+    };
+
+    private void OpenCreate()
+    {
+        SelectedRecordId = null;
+        Mode = RuntimePageMode.Create;
+    }
+
+    private void HandleSelect(F_Record record)
+    {
+        SelectedRecordId = record.Id;
+        Mode = RuntimePageMode.Edit;
+    }
+
+    private void BackToList()
+    {
+        SelectedRecordId = null;
+        Mode = RuntimePageMode.List;
+    }
+
+    private Task HandleSaved(F_Record record)
+    {
+        SelectedRecordId = record.Id;
+        Mode = RuntimePageMode.List;
+        return Task.CompletedTask;
+    }
+
+    private Task HandleDeleted(Guid recordId)
+    {
+        if (SelectedRecordId == recordId)
+        {
+            SelectedRecordId = null;
+        }
+
+        Mode = RuntimePageMode.List;
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+    }
+
+    private enum RuntimePageMode
+    {
+        List,
+        Create,
+        Edit
+    }
+}
