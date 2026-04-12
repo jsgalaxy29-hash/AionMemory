@@ -1,0 +1,271 @@
+@page "/backups"
+@using Aion.Domain
+@using Microsoft.Data.Sqlite
+@using Microsoft.Extensions.Options
+@inject ICloudBackupService CloudBackupService
+@inject IKeyRotationService KeyRotationService
+@inject IOptions<CloudBackupOptions> CloudOptions
+@inject IOptions<AionDatabaseOptions> DatabaseOptions
+@inject Aion.AppHost.Services.FirstRunState FirstRunState
+
+<section class="panel">
+    <header class="panel__header">
+        <div>
+            <h1>Backups</h1>
+            <p class="text-muted">Sauvegardes chiffrées stockées en S3 compatible.</p>
+        </div>
+        <button class="button" @onclick="CreateBackupAsync" disabled="@IsBusy">Créer un backup</button>
+    </header>
+
+    @if (!CloudOptions.Value.Enabled)
+    {
+        <p class="text-muted">Les sauvegardes cloud sont désactivées. Configurez Aion:Backup:Cloud.</p>
+    }
+    else if (IsLoading)
+    {
+        <p class="text-muted">Chargement…</p>
+    }
+    else if (_backups.Count == 0)
+    {
+        <p class="text-muted">Aucune sauvegarde disponible.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Identifiant</th>
+                    <th>Créée</th>
+                    <th>Taille</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var backup in _backups)
+                {
+                    <tr>
+                        <td>@backup.Id</td>
+                        <td>@backup.CreatedAt.ToLocalTime().ToString("g")</td>
+                        <td>@FormatSize(backup.Size)</td>
+                        <td>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                <button class="button secondary" @onclick="() => PreviewBackupAsync(backup)" disabled="@IsBusy">Prévisualiser</button>
+                                <button class="button" @onclick="() => RestoreBackupAsync(backup)" disabled="@IsBusy">Restaurer</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Status))
+    {
+        <div class="alert">@Status</div>
+    }
+
+    @if (Preview is not null)
+    {
+        <div class="panel__section">
+            <h2>Contenu de la sauvegarde @Preview.Backup.Id</h2>
+            <ul>
+                @foreach (var entry in Preview.Entries)
+                {
+                    <li>@entry</li>
+                }
+            </ul>
+        </div>
+    }
+
+    <div class="panel__section">
+        <h2>Rotation de clé SQLCipher</h2>
+        <p class="text-muted">Crée une sauvegarde locale puis rechiffre la base avec une nouvelle clé. L'action est irréversible sans sauvegarde.</p>
+        <div style="display:grid; gap:12px; max-width:520px;">
+            <label>
+                Nouvelle clé (32 caractères min.)
+                <input class="input" type="password" @bind="_rotationKey" />
+            </label>
+            <label>
+                Confirmer la nouvelle clé
+                <input class="input" type="password" @bind="_rotationKeyConfirmation" />
+            </label>
+            <label style="display:flex; gap:8px; align-items:center;">
+                <input type="checkbox" @bind="_rotationAcknowledged" />
+                <span>J'ai vérifié que la sauvegarde locale est accessible et prête.</span>
+            </label>
+            <label>
+                Tapez <strong>ROTATE</strong> pour confirmer
+                <input class="input" @bind="_rotationPhrase" />
+            </label>
+            <button class="button danger" @onclick="RotateKeyAsync" disabled="@(!CanRotateKey)">Lancer la rotation</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(RotationStatus))
+        {
+            <div class="alert">@RotationStatus</div>
+        }
+        @if (RotationResult is not null)
+        {
+            <p class="text-muted">Sauvegarde créée : @RotationResult.Backup.FileName</p>
+        }
+    </div>
+</section>
+
+@code {
+    private readonly List<CloudBackupEntry> _backups = new();
+    private bool IsLoading { get; set; } = true;
+    private bool IsBusy { get; set; }
+    private string? Status { get; set; }
+    private CloudRestorePreview? Preview { get; set; }
+    private string _rotationKey = string.Empty;
+    private string _rotationKeyConfirmation = string.Empty;
+    private bool _rotationAcknowledged;
+    private string _rotationPhrase = string.Empty;
+    private string? RotationStatus { get; set; }
+    private KeyRotationResult? RotationResult { get; set; }
+
+    private bool CanRotateKey =>
+        !IsBusy
+        && _rotationAcknowledged
+        && _rotationKey.Length >= 32
+        && string.Equals(_rotationKey, _rotationKeyConfirmation, StringComparison.Ordinal)
+        && string.Equals(_rotationPhrase, "ROTATE", StringComparison.Ordinal);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBackupsAsync();
+    }
+
+    private async Task LoadBackupsAsync()
+    {
+        IsLoading = true;
+        Status = null;
+        try
+        {
+            if (CloudOptions.Value.Enabled)
+            {
+                var items = await CloudBackupService.ListBackupsAsync();
+                _backups.Clear();
+                _backups.AddRange(items);
+            }
+        }
+        catch (Exception ex)
+        {
+            Status = $"Erreur lors du chargement: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task CreateBackupAsync()
+    {
+        IsBusy = true;
+        Status = null;
+        Preview = null;
+        try
+        {
+            await CloudBackupService.CreateBackupAsync();
+            await LoadBackupsAsync();
+            Status = "Sauvegarde créée.";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Erreur lors de la sauvegarde: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task PreviewBackupAsync(CloudBackupEntry backup)
+    {
+        IsBusy = true;
+        Status = null;
+        Preview = null;
+        try
+        {
+            var destination = GetDatabasePath();
+            Preview = await CloudBackupService.RestoreAsync(backup.Id, destination, dryRun: true);
+            Status = "Prévisualisation terminée.";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Erreur lors de la prévisualisation: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task RestoreBackupAsync(CloudBackupEntry backup)
+    {
+        IsBusy = true;
+        Status = null;
+        Preview = null;
+        try
+        {
+            var destination = GetDatabasePath();
+            var result = await CloudBackupService.RestoreAsync(backup.Id, destination, dryRun: false);
+            Preview = result;
+            Status = "Restauration terminée.";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Erreur lors de la restauration: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task RotateKeyAsync()
+    {
+        IsBusy = true;
+        RotationStatus = null;
+        RotationResult = null;
+        try
+        {
+            var result = await KeyRotationService.RotateAsync(_rotationKey);
+            DatabaseOptions.Value.EncryptionKey = _rotationKey;
+            await FirstRunState.UpdateDatabaseKeyAsync(_rotationKey);
+            RotationResult = result;
+            RotationStatus = "Rotation terminée. La base est désormais chiffrée avec la nouvelle clé.";
+            _rotationKey = string.Empty;
+            _rotationKeyConfirmation = string.Empty;
+            _rotationAcknowledged = false;
+            _rotationPhrase = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            RotationStatus = $"Erreur lors de la rotation: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private string GetDatabasePath()
+    {
+        var builder = new SqliteConnectionStringBuilder(DatabaseOptions.Value.ConnectionString);
+        return Path.GetFullPath(builder.DataSource);
+    }
+
+    private static string FormatSize(long size)
+    {
+        var units = new[] { "octets", "Ko", "Mo", "Go", "To" };
+        var value = (double)size;
+        var index = 0;
+        while (value >= 1024 && index < units.Length - 1)
+        {
+            value /= 1024;
+            index++;
+        }
+
+        return $"{value:0.##} {units[index]}";
+    }
+}

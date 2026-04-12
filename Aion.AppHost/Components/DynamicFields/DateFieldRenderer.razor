@@ -1,0 +1,15 @@
+@using Aion.AppHost.Services.Rendering
+@using Microsoft.AspNetCore.Components.Forms
+
+<InputDate TValue="DateTime?" class="input" data-field-renderer="date" Value="@CurrentValue" ValueChanged="OnValueChanged" ValueExpression="() => CurrentValue" disabled="@Disabled" />
+
+@code {
+    [Parameter, EditorRequired] public FormFieldRenderModel Field { get; set; } = default!;
+    [Parameter] public object? Value { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<object?> ValueChanged { get; set; }
+
+    private DateTime? CurrentValue => FieldValueConverters.ToDateTimeValue(Value);
+
+    private Task OnValueChanged(DateTime? value) => ValueChanged.InvokeAsync(value);
+}

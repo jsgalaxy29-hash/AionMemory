@@ -1,0 +1,197 @@
+@page "/module-builder"
+@inject IModuleDesignerService Designer
+@inject NavigationManager Navigation
+@inject AiProviderSelector AiSelector
+
+<h3>Module Builder</h3>
+
+<div class="card" style="display:flex; flex-direction:column; gap:8px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <strong>Création IA</strong>
+        @if (!_aiStatus.IsConfigured)
+        {
+            <span class="badge" style="background-color:#c0392b; color:#fff;">IA inactive</span>
+        }
+    </div>
+    <label for="prompt" style="font-weight:600;">Décrivez votre module</label>
+    <textarea id="prompt" class="input" rows="6" placeholder="Ex: Crée-moi un module pour gérer ma cave à vin"
+              @bind="Prompt" disabled="@(!_aiStatus.IsConfigured || IsLoading)"></textarea>
+    <button class="button" @onclick="Generate" disabled="@(!_aiStatus.IsConfigured || IsLoading)">
+        @(IsLoading ? "Génération en cours..." : "Générer le module")
+    </button>
+    @if (!_aiStatus.IsConfigured)
+    {
+        <p class="text-muted">IA inactive : @_aiStatus.Reason. Vous pouvez utiliser le JSON manuel ci-dessous.</p>
+    }
+    @if (!string.IsNullOrWhiteSpace(Status))
+    {
+        <p class="text-muted">@Status</p>
+    }
+</div>
+
+<div class="card" style="display:flex; flex-direction:column; gap:8px; margin-top:12px;">
+    <strong>Création manuelle (JSON)</strong>
+    <label for="manual-json" style="font-weight:600;">Collez un JSON ModuleDesign</label>
+    <textarea id="manual-json" class="input" rows="10"
+              placeholder="{&quot;module&quot;:{&quot;name&quot;:&quot;Cave à vin&quot;,&quot;description&quot;:&quot;Gestion des bouteilles&quot;},&quot;entities&quot;:[{&quot;name&quot;:&quot;Bouteille&quot;,&quot;fields&quot;:[{&quot;name&quot;:&quot;Nom&quot;,&quot;type&quot;:&quot;text&quot;},{&quot;name&quot;:&quot;Millésime&quot;,&quot;type&quot;:&quot;number&quot;}]}]}"
+              @bind="ManualJson" disabled="@IsManualLoading"></textarea>
+    <div style="display:flex; gap:8px; align-items:center;">
+        <button class="button" @onclick="ApplyManualJson" disabled="@IsManualLoading">
+            @(IsManualLoading ? "Application en cours..." : "Créer le module depuis le JSON")
+        </button>
+        <a class="button ghost" href="docs/OFFLINE_MODE.md" target="_blank">Guide hors-ligne</a>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(ManualStatus))
+    {
+        <p class="text-muted">@ManualStatus</p>
+    }
+</div>
+
+@if (!string.IsNullOrWhiteSpace(RawJson))
+{
+    <div class="card" style="margin-top:12px;">
+        <h4>JSON généré</h4>
+        <pre style="white-space:pre-wrap;">@RawJson</pre>
+    </div>
+}
+
+@if (Module is not null)
+{
+    <div class="card" style="margin-top:12px; display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <h4>@Module.Name</h4>
+                    <p class="text-muted">@Module.Description</p>
+                </div>
+                <button class="button secondary" @onclick="OpenModules">Ouvrir dans Modules</button>
+            </div>
+
+        @foreach (var entity in Module.EntityTypes)
+        {
+            <div class="card" style="background:#fafafa;">
+                <div style="display:flex; justify-content:space-between;">
+                    <strong>@entity.Name</strong>
+                    <span class="badge">@entity.Fields.Count champ(s)</span>
+                </div>
+                <ul>
+                    @foreach (var field in entity.Fields)
+                    {
+                        <li><strong>@field.Name</strong> - @field.DataType</li>
+                    }
+                </ul>
+
+                @if (entity.Relations.Any())
+                {
+                    <div class="text-muted">
+                        Relations:
+                        <ul>
+                            @foreach (var relation in entity.Relations)
+                            {
+                                <li>@relation.Kind vers @GetEntityName(relation.ToEntityTypeId) (@GetRoleName(relation))</li>
+                            }
+                        </ul>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private string Prompt { get; set; } = string.Empty;
+    private string ManualJson { get; set; } = string.Empty;
+    private string? RawJson { get; set; }
+    private string? Status { get; set; }
+    private string? ManualStatus { get; set; }
+    private bool IsLoading { get; set; }
+    private bool IsManualLoading { get; set; }
+    private S_Module? Module { get; set; }
+    private AiConfigurationStatus _aiStatus = AiConfigurationStatus.Inactive();
+
+    protected override void OnInitialized()
+    {
+        _aiStatus = AiSelector.GetStatus();
+    }
+
+    private string GetEntityName(Guid entityTypeId)
+    {
+        return Module?.EntityTypes.FirstOrDefault(e => e.Id == entityTypeId)?.Name
+               ?? entityTypeId.ToString();
+    }
+
+    private static string GetRoleName(S_Relation relation)
+        => string.IsNullOrWhiteSpace(relation.RoleName) ? "Relation" : relation.RoleName;
+
+    private async Task Generate()
+    {
+        if (!_aiStatus.IsConfigured)
+        {
+            Status = _aiStatus.Reason ?? "IA inactive.";
+            return;
+        }
+
+        if (IsLoading)
+        {
+            return;
+        }
+
+        IsLoading = true;
+        Status = "Génération du module...";
+        Module = null;
+        RawJson = null;
+
+        try
+        {
+            var module = await Designer.CreateModuleFromPromptAsync(Prompt);
+            Module = module;
+            RawJson = Designer.LastGeneratedJson;
+            Status = "Module généré et enregistré.";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Erreur lors de la génération: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task ApplyManualJson()
+    {
+        if (IsManualLoading)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(ManualJson))
+        {
+            ManualStatus = "Veuillez fournir un JSON de module.";
+            return;
+        }
+
+        IsManualLoading = true;
+        ManualStatus = "Création du module depuis JSON...";
+        Status = null;
+        Module = null;
+        RawJson = null;
+
+        try
+        {
+            var module = await Designer.CreateModuleFromJsonAsync(ManualJson);
+            Module = module;
+            RawJson = ManualJson;
+            ManualStatus = "Module créé et enregistré.";
+        }
+        catch (Exception ex)
+        {
+            ManualStatus = $"Erreur lors de l'import JSON: {ex.Message}";
+        }
+        finally
+        {
+            IsManualLoading = false;
+        }
+    }
+
+    private void OpenModules() => Navigation.NavigateTo("/modules/home");
+}

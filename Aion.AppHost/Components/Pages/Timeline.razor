@@ -1,0 +1,209 @@
+@page "/timeline"
+@implements IAsyncDisposable
+@inject ILifeService TimelineService
+@inject IMetadataService Metadata
+@inject IJSRuntime Js
+
+<div class="list-container">
+    <div class="list-toolbar">
+        <div>
+            <h1 style="margin-bottom: 4px;">Timeline</h1>
+            <div class="text-muted">Historique global des actions Aion.</div>
+        </div>
+        <div class="list-toolbar__actions">
+            <button class="button secondary" @onclick="ResetFilters">Réinitialiser</button>
+            <button class="button" @onclick="ApplyFilters">Appliquer</button>
+        </div>
+    </div>
+
+    <div class="list-filters">
+        <label>
+            Module
+            <select class="input" @bind="SelectedModuleId">
+                <option value="">Tous</option>
+                @foreach (var module in Modules)
+                {
+                    <option value="@module.Id">@module.Name</option>
+                }
+            </select>
+        </label>
+        <label>
+            Du
+            <input class="input" type="date" @bind="FromDate" />
+        </label>
+        <label>
+            Au
+            <input class="input" type="date" @bind="ToDate" />
+        </label>
+    </div>
+
+    <div class="timeline">
+        @if (Entries.Count == 0 && !IsLoading)
+        {
+            <div class="text-muted">Aucun évènement pour cette période.</div>
+        }
+        @foreach (var entry in Entries)
+        {
+            <div class="timeline-item">
+                <div class="text-muted">@entry.Timestamp.ToLocalTime().ToString("g")</div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <strong>@entry.Title</strong>
+                    @if (!string.IsNullOrWhiteSpace(entry.ModuleName))
+                    {
+                        <span class="badge">@entry.ModuleName</span>
+                    }
+                </div>
+                @if (!string.IsNullOrWhiteSpace(entry.Description))
+                {
+                    <div>@entry.Description</div>
+                }
+            </div>
+        }
+    </div>
+
+    <div style="padding: 12px 0;">
+        @if (IsLoading)
+        {
+            <div class="text-muted">Chargement…</div>
+        }
+        else if (!HasMore && Entries.Count > 0)
+        {
+            <div class="text-muted">Fin de la timeline.</div>
+        }
+    </div>
+
+    <div @ref="Sentinel"></div>
+</div>
+
+@code {
+    private const int PageSize = 25;
+    private readonly List<TimelineEntry> _entries = new();
+    private readonly Dictionary<Guid, string> _moduleNames = new();
+    private DotNetObjectReference<Timeline>? _dotNetRef;
+    private bool _observerAttached;
+    private bool _isLoading;
+    private bool _hasMore = true;
+    private int _skip;
+
+    private IReadOnlyList<S_Module> Modules { get; set; } = Array.Empty<S_Module>();
+    private ElementReference Sentinel { get; set; }
+    private string? SelectedModuleId { get; set; }
+    private DateTime? FromDate { get; set; }
+    private DateTime? ToDate { get; set; }
+
+    private bool IsLoading => _isLoading;
+    private bool HasMore => _hasMore;
+    private List<TimelineEntry> Entries => _entries;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Modules = (await Metadata.GetModulesAsync()).OrderBy(m => m.Name).ToList();
+        foreach (var module in Modules)
+        {
+            _moduleNames[module.Id] = module.Name;
+        }
+
+        await LoadMoreAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await Js.InvokeVoidAsync("aionTimeline.observe", Sentinel, _dotNetRef);
+            _observerAttached = true;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnTimelineSentinel()
+    {
+        if (!_isLoading && _hasMore)
+        {
+            await LoadMoreAsync();
+        }
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (_isLoading || !_hasMore)
+        {
+            return;
+        }
+
+        _isLoading = true;
+        StateHasChanged();
+
+        var query = new TimelineQuery(
+            Take: PageSize,
+            Skip: _skip,
+            ModuleId: ResolveModuleId(),
+            From: ResolveFrom(),
+            To: ResolveTo());
+
+        var page = await TimelineService.GetTimelinePageAsync(query);
+        foreach (var item in page.Items)
+        {
+            _entries.Add(new TimelineEntry(
+                item.Id,
+                item.Title,
+                item.Description,
+                item.OccurredAt,
+                item.ModuleId.HasValue && _moduleNames.TryGetValue(item.ModuleId.Value, out var name)
+                    ? name
+                    : null));
+        }
+
+        _skip = page.NextSkip;
+        _hasMore = page.HasMore;
+        _isLoading = false;
+        StateHasChanged();
+    }
+
+    private async Task ApplyFilters()
+    {
+        _entries.Clear();
+        _skip = 0;
+        _hasMore = true;
+        await LoadMoreAsync();
+    }
+
+    private async Task ResetFilters()
+    {
+        SelectedModuleId = null;
+        FromDate = null;
+        ToDate = null;
+        await ApplyFilters();
+    }
+
+    private Guid? ResolveModuleId()
+        => Guid.TryParse(SelectedModuleId, out var id) ? id : null;
+
+    private DateTimeOffset? ResolveFrom()
+        => FromDate.HasValue
+            ? new DateTimeOffset(DateTime.SpecifyKind(FromDate.Value.Date, DateTimeKind.Utc))
+            : null;
+
+    private DateTimeOffset? ResolveTo()
+        => ToDate.HasValue
+            ? new DateTimeOffset(DateTime.SpecifyKind(ToDate.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc))
+            : null;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_observerAttached)
+        {
+            await Js.InvokeVoidAsync("aionTimeline.unobserve", Sentinel);
+        }
+
+        _dotNetRef?.Dispose();
+    }
+
+    private sealed record TimelineEntry(
+        Guid Id,
+        string Title,
+        string? Description,
+        DateTimeOffset Timestamp,
+        string? ModuleName);
+}

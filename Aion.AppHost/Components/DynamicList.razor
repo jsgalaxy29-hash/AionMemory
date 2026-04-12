@@ -1,0 +1,438 @@
+@using System.Text.Json
+@using Aion.Domain
+@using Aion.Domain.Logic
+@using Aion.AppHost.Services.Rendering
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@inherits OwningComponentBase
+@implements IDisposable
+
+<div class="list-container card">
+    <div class="list-toolbar">
+        <div>
+            <h5 style="margin:0;">@ResolvedTable?.DisplayName</h5>
+            <div class="text-muted small">@TotalCount enregistrement(s)</div>
+        </div>
+        <div class="list-toolbar__actions">
+            <input class="input" placeholder="Recherche plein texte" @bind="SearchText" @bind:event="oninput" @onkeydown="HandleSearchKey" />
+            <button class="button secondary" @onclick="ApplySearch">Rechercher</button>
+            <button class="button secondary" @onclick="Refresh">Actualiser</button>
+        </div>
+    </div>
+
+    <div class="list-filters">
+        <label>
+            <span class="text-muted">Vue</span>
+            <select class="input" @onchange="OnViewChanged" value="@SelectedView">
+                <option value="">Toutes les données</option>
+                @foreach (var view in AvailableViews)
+                {
+                    <option value="@view.Name">@view.DisplayName</option>
+                }
+            </select>
+        </label>
+        <label>
+            <span class="text-muted">Tri</span>
+            <div class="list-sort">
+                <select class="input" @onchange="OnSortChanged" value="@SortField">
+                    <option value="">Par défaut</option>
+                    @foreach (var field in SortableFields)
+                    {
+                        <option value="@field.Name">@field.Label</option>
+                    }
+                </select>
+                <button class="button secondary" @onclick="ToggleSortDirection">@(SortDescending ? "↓" : "↑")</button>
+            </div>
+        </label>
+        <label>
+            <span class="text-muted">Pagination</span>
+            <div class="list-pagination">
+                <button class="button secondary" @onclick="PreviousPage" disabled="@(!CanGoPrevious)">◀</button>
+                <span class="text-muted">Page @(PageIndex + 1) / @TotalPages</span>
+                <button class="button secondary" @onclick="NextPage" disabled="@(!CanGoNext)">▶</button>
+                <select class="input" @onchange="OnPageSizeChanged" value="@PageSize">
+                    @foreach (var size in PageSizeOptions)
+                    {
+                        <option value="@size">@size</option>
+                    }
+                </select>
+            </div>
+        </label>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th style="width:220px;">Identifiant</th>
+                <th>Statut</th>
+                @if (ResolvedTable is not null)
+                {
+                    @foreach (var column in VisibleColumns)
+                    {
+                        <th>@column.Label</th>
+                    }
+                }
+                <th>Créé le</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            <Virtualize Context="item" ItemsProvider="LoadItems" @ref="VirtualizedRecords" ItemSize="54">
+                <ItemContent>
+                    @if (item is not null)
+                    {
+                        var payload = DynamicListLogic.DeserializePayload(item.DataJson);
+                        var isPending = PendingRecordIds.Contains(item.Id);
+                        <tr @onclick="() => OnSelect.InvokeAsync(item)" style="cursor:pointer;">
+                            <td>@item.Id</td>
+                            <td>
+                                @if (isPending)
+                                {
+                                    <span class="badge" style="background-color:#f39c12; color:#fff;">Pending</span>
+                                }
+                            </td>
+                            @if (ResolvedTable is not null)
+                            {
+                                @foreach (var column in VisibleColumns)
+                                {
+                                    <td>
+                                        <DynamicComponent Type="@ResolveCellComponent(column.ComponentKind)" Parameters="@BuildCellParameters(column, payload)" />
+                                    </td>
+                                }
+                            }
+                            <td>@item.CreatedAt.ToLocalTime().ToString("g")</td>
+                            <td style="text-align:right;">
+                                <button class="button danger" @onclick="() => DeleteRecord(item)" @onclick:stopPropagation="true" disabled="@(!CanDelete)">Supprimer</button>
+                            </td>
+                        </tr>
+                    }
+                </ItemContent>
+                <Placeholder>
+                    <tr><td colspan="7">Chargement…</td></tr>
+                </Placeholder>
+            </Virtualize>
+        </tbody>
+    </table>
+    <div class="text-muted small">
+        Virt. @PageSize éléments/page - affichage des éléments @DisplayStart à @DisplayEnd
+    </div>
+</div>
+
+@code {
+    [Inject] public IRecordQueryService? InjectedRecordService { get; set; }
+    [Inject] public IModuleViewService? InjectedViewService { get; set; }
+    [Inject] public IAuthorizationService? AuthorizationService { get; set; }
+    [Inject] public ICurrentUserService? CurrentUserService { get; set; }
+    [Inject] public IOfflineActionQueue? OfflineActionQueue { get; set; }
+    [Inject] public IDynamicListRenderer? ListRenderer { get; set; }
+    [Inject] public IDynamicListCellComponentRegistry? ListCellComponentRegistry { get; set; }
+
+    [Parameter] public STable? Table { get; set; }
+    [Parameter] public Guid? TableId { get; set; }
+    [Parameter] public string? TableName { get; set; }
+    [Parameter] public IRecordQueryService? RecordService { get; set; }
+    [Parameter] public IModuleViewService? ViewService { get; set; }
+    [Parameter] public string? Filter { get; set; }
+    [Parameter] public string? SortField { get; set; }
+    [Parameter] public bool SortDescending { get; set; }
+    [Parameter] public int PageSize { get; set; } = 25;
+    [Parameter] public EventCallback<F_Record> OnSelect { get; set; }
+    [Parameter] public EventCallback<Guid> OnDeleted { get; set; }
+
+    private Virtualize<F_Record>? VirtualizedRecords { get; set; }
+    private CancellationTokenSource? _refreshCts;
+    private STable? LoadedTable { get; set; }
+    private STable? ResolvedTable => Table ?? LoadedTable;
+    private string? SelectedView { get; set; }
+    private string SearchText { get; set; } = string.Empty;
+    private int TotalCount { get; set; }
+    private int PageIndex { get; set; }
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)Math.Max(TotalCount, 1) / Math.Max(PageSize, 1)));
+    private bool CanGoPrevious => PageIndex > 0;
+    private bool CanGoNext => PageIndex < TotalPages - 1;
+    private int DisplayStart => TotalCount == 0 ? 0 : PageIndex * PageSize + 1;
+    private int DisplayEnd => TotalCount == 0 ? 0 : Math.Min((PageIndex + 1) * PageSize, TotalCount);
+    private IRecordQueryService? ActiveRecordService => RecordService ?? InjectedRecordService;
+    private IModuleViewService? ActiveViewService => ViewService ?? InjectedViewService;
+    private Guid? _lastTableId;
+    private string? _lastFilter;
+    private string? _lastSortField;
+    private bool _lastSortDescending;
+    private int _lastPageSize;
+    private bool CanDelete { get; set; } = true;
+    private HashSet<Guid> PendingRecordIds { get; } = new();
+    private ListRenderModel? ListModel { get; set; }
+    private IReadOnlyList<ListColumnRenderModel> VisibleColumns => ResolveListModel().Columns.Take(3).ToList();
+
+    private IEnumerable<SFieldDefinition> SortableFields
+        => ResolvedTable?.Fields.Where(f => f.IsSortable) ?? Enumerable.Empty<SFieldDefinition>();
+
+    private IEnumerable<SViewDefinition> AvailableViews
+        => ResolvedTable?.Views ?? Enumerable.Empty<SViewDefinition>();
+
+    private static readonly IReadOnlyList<int> PageSizeOptions = new List<int> { 10, 15, 25, 50, 100 };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await EnsureTableMetadataAsync();
+
+        var tableChanged = _lastTableId != ResolvedTable?.Id;
+        if (tableChanged)
+        {
+            ListModel = null;
+        }
+        if (tableChanged)
+        {
+            SearchText = string.Empty;
+            SelectedView = Filter ?? ResolvedTable?.DefaultView;
+            PageIndex = 0;
+        }
+
+        if (SelectedView is null && (!string.IsNullOrWhiteSpace(Filter) || ResolvedTable?.DefaultView is not null))
+        {
+            SelectedView = Filter ?? ResolvedTable?.DefaultView;
+        }
+
+        var hasChanges = tableChanged
+                         || _lastFilter != Filter
+                         || _lastSortField != SortField
+                         || _lastSortDescending != SortDescending
+                         || _lastPageSize != PageSize;
+
+        if (hasChanges)
+        {
+            PageIndex = 0;
+            await Refresh();
+        }
+
+        if (tableChanged)
+        {
+            await UpdatePermissionsAsync();
+        }
+
+        _lastTableId = ResolvedTable?.Id;
+        _lastFilter = Filter;
+        _lastSortField = SortField;
+        _lastSortDescending = SortDescending;
+        _lastPageSize = PageSize;
+    }
+
+    private async Task Refresh()
+    {
+        _refreshCts?.Cancel();
+        _refreshCts = new CancellationTokenSource();
+        TotalCount = 0;
+        await LoadPendingActionsAsync();
+
+        if (VirtualizedRecords is not null)
+        {
+            await VirtualizedRecords.RefreshDataAsync();
+        }
+    }
+
+    private async ValueTask<ItemsProviderResult<F_Record>> LoadItems(ItemsProviderRequest request)
+    {
+        using var linkedCts = _refreshCts is not null && !_refreshCts.IsCancellationRequested
+            ? CancellationTokenSource.CreateLinkedTokenSource(request.CancellationToken, _refreshCts.Token)
+            : null;
+        var cancellation = linkedCts?.Token ?? request.CancellationToken;
+
+        if (ResolvedTable is null || ActiveRecordService is null)
+        {
+            return new ItemsProviderResult<F_Record>(Array.Empty<F_Record>(), 0);
+        }
+
+        var pageStart = PageIndex * PageSize;
+        var take = Math.Min(Math.Max(1, PageSize - request.StartIndex), Math.Max(1, request.Count));
+        var spec = new QuerySpec
+        {
+            View = SelectedView ?? Filter,
+            FullText = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText,
+            OrderBy = SortField,
+            Descending = SortDescending,
+            Skip = pageStart + request.StartIndex,
+            Take = take
+        };
+
+        var page = await ActiveRecordService.QueryAsync(ResolvedTable.Id, spec, cancellation).ConfigureAwait(false);
+        TotalCount = page.TotalCount;
+        var remaining = Math.Max(0, TotalCount - pageStart);
+        var countForPage = Math.Min(PageSize, remaining);
+        return new ItemsProviderResult<F_Record>(page.Items, countForPage);
+    }
+
+    private async Task EnsureTableMetadataAsync()
+    {
+        if (ResolvedTable is not null)
+        {
+            return;
+        }
+
+        var viewService = ActiveViewService;
+        if (viewService is null)
+        {
+            return;
+        }
+
+        if (TableId.HasValue)
+        {
+            LoadedTable = await viewService.GetTableAsync(TableId.Value).ConfigureAwait(false);
+        }
+        else if (!string.IsNullOrWhiteSpace(TableName))
+        {
+            LoadedTable = await viewService.GetTableByNameAsync(TableName).ConfigureAwait(false);
+        }
+    }
+
+    private async Task LoadPendingActionsAsync()
+    {
+        PendingRecordIds.Clear();
+        if (ResolvedTable is null || OfflineActionQueue is null)
+        {
+            return;
+        }
+
+        var pending = await OfflineActionQueue.GetPendingAsync(ResolvedTable.Id, _refreshCts?.Token ?? CancellationToken.None)
+            .ConfigureAwait(false);
+        foreach (var action in pending)
+        {
+            PendingRecordIds.Add(action.RecordId);
+        }
+    }
+
+    private async Task DeleteRecord(F_Record record)
+    {
+        if (ResolvedTable is null || ActiveRecordService is null || !CanDelete)
+        {
+            return;
+        }
+
+        await ActiveRecordService.DeleteAsync(ResolvedTable.Id, record.Id);
+        await Refresh();
+        await OnDeleted.InvokeAsync(record.Id);
+    }
+
+    private async Task UpdatePermissionsAsync()
+    {
+        if (AuthorizationService is null || CurrentUserService is null || ResolvedTable is null)
+        {
+            CanDelete = true;
+            return;
+        }
+
+        var userId = CurrentUserService.GetCurrentUserId();
+        var deleteScope = PermissionScope.ForTable(ResolvedTable.Id);
+        var deleteResult = await AuthorizationService.AuthorizeAsync(userId, PermissionAction.Delete, deleteScope);
+        CanDelete = deleteResult.IsAllowed;
+    }
+
+    private async Task ApplySearch()
+    {
+        PageIndex = 0;
+        await Refresh();
+    }
+
+    private async Task OnViewChanged(ChangeEventArgs args)
+    {
+        SelectedView = args.Value?.ToString();
+        PageIndex = 0;
+        await Refresh();
+    }
+
+    private async Task OnSortChanged(ChangeEventArgs args)
+    {
+        SortField = args.Value?.ToString();
+        PageIndex = 0;
+        await Refresh();
+    }
+
+    private async Task OnPageSizeChanged(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var parsed) && parsed > 0)
+        {
+            PageSize = parsed;
+            PageIndex = 0;
+            await Refresh();
+        }
+    }
+
+    private Task ToggleSortDirection()
+    {
+        SortDescending = !SortDescending;
+        return Refresh();
+    }
+
+    private async Task PreviousPage()
+    {
+        if (!CanGoPrevious)
+        {
+            return;
+        }
+
+        PageIndex--;
+        await Refresh();
+    }
+
+    private async Task NextPage()
+    {
+        if (!CanGoNext)
+        {
+            return;
+        }
+
+        PageIndex++;
+        await Refresh();
+    }
+
+    private void HandleSearchKey(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+        {
+            _ = ApplySearch();
+        }
+    }
+
+
+    private ListRenderModel ResolveListModel()
+    {
+        if (ResolvedTable is null)
+        {
+            return new ListRenderModel(Guid.Empty, string.Empty, Array.Empty<ListColumnRenderModel>());
+        }
+
+        if (ListModel is not null)
+        {
+            return ListModel;
+        }
+
+        var renderer = ListRenderer ?? new DynamicListRenderer();
+        ListModel = renderer.Render(ResolvedTable);
+        return ListModel;
+    }
+
+    private Type ResolveCellComponent(ListColumnComponentKind componentKind)
+    {
+        if (ListCellComponentRegistry is null)
+        {
+            throw new InvalidOperationException($"{nameof(IDynamicListCellComponentRegistry)} must be registered in the DI container.");
+        }
+
+        return ListCellComponentRegistry.Resolve(componentKind);
+    }
+
+    private IDictionary<string, object> BuildCellParameters(ListColumnRenderModel column, IReadOnlyDictionary<string, object?> payload)
+    {
+        payload.TryGetValue(column.FieldName, out var value);
+        return new Dictionary<string, object>
+        {
+            ["Column"] = column,
+            ["Value"] = value ?? string.Empty
+        };
+    }
+
+    public void Dispose()
+    {
+        _refreshCts?.Cancel();
+        _refreshCts?.Dispose();
+    }
+}

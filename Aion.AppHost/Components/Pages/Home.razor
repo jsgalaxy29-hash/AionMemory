@@ -1,0 +1,211 @@
+@page "/"
+@page "/home"
+@inject IChatModel TextGen
+@inject IIntentDetector IntentDetector
+@inject IModuleDesigner ModuleDesigner
+@inject ISearchService SearchService
+@inject NavigationManager Navigation
+@inject AiProviderSelector AiSelector
+
+<div class="grid columns-2">
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <div>
+                <h3>Chat AION</h3>
+                <p class="text-muted">Mémoire numérique personnelle assistée par IA</p>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button class="button secondary" @onclick="ToggleDictation">🎙️ Dictée</button>
+                <button class="button" @onclick="CreateModuleFromIntent" disabled="@(!_aiStatus.IsConfigured)">Créer module IA</button>
+            </div>
+        </div>
+        <div class="chat-window">
+            @foreach (var message in Messages)
+            {
+                <div class="@($"chat-bubble {(message.IsUser ? "me" : "bot")}")">
+                    <strong>@message.Author</strong>
+                    <div>@message.Content</div>
+                    <small class="text-muted">@message.Timestamp.ToLocalTime().ToString("t")</small>
+                </div>
+            }
+        </div>
+        <div style="display:flex; gap:8px; margin-top:12px;">
+            <input class="input" placeholder="Posez une question à AION" @bind="CurrentInput" @bind:event="oninput" disabled="@(!_aiStatus.IsConfigured)" />
+            <button class="button" @onclick="SendMessage" disabled="@(!_aiStatus.IsConfigured)">Envoyer</button>
+        </div>
+        @if (!_aiStatus.IsConfigured)
+        {
+            <p class="text-muted" style="margin-top:4px;">IA inactive : @_aiStatus.Reason</p>
+        }
+        @if (IsSearching)
+        {
+            <p class="text-muted" style="margin-top:4px;">Recherche contextuelle…</p>
+        }
+        @if (SearchResults.Count > 0)
+        {
+            <div class="card" style="margin-top:8px;">
+                <h4 style="margin-bottom:4px;">Contextes trouvés</h4>
+                <ul style="margin:0; padding-left:18px;">
+                    @foreach (var hit in SearchResults.Take(5))
+                    {
+                        <li><strong>@hit.TargetType</strong> : @hit.Title <span class="text-muted">(@hit.Snippet)</span></li>
+                    }
+                </ul>
+            </div>
+        }
+        <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+            @foreach (var suggestion in Suggestions)
+            {
+                <button class="button secondary" @onclick="() => UseSuggestion(suggestion)">@suggestion</button>
+            }
+        </div>
+        <div style="margin-top:6px;">
+            <button class="button ghost" @onclick="NavigateToTrustSuggestions">Pourquoi ces suggestions ?</button>
+        </div>
+    </div>
+    <div class="grid columns-1" style="gap:12px;">
+        <div class="card">
+            <h4>Actions rapides</h4>
+            <div class="grid columns-3">
+                <button class="button secondary" @onclick="NavigateToModules">📦 Modules</button>
+                <button class="button secondary" @onclick="NavigateToAgenda">🗓️ Agenda</button>
+                <button class="button secondary" @onclick="NavigateToDashboard">📊 Dashboard</button>
+                <button class="button secondary" @onclick="NavigateToPotager">🌱 Potager</button>
+                <button class="button secondary" @onclick="NavigateToExtensions">🧩 Extensions</button>
+                <button class="button secondary" @onclick="NavigateToMarketplace">🛒 Marketplace</button>
+                <button class="button secondary" @onclick="NavigateToMarketplace">👁️ Vision</button>
+            </div>
+        </div>
+        <div class="card">
+            <h4>Intention détectée</h4>
+            <p>@IntentPreview</p>
+        </div>
+        <div class="card">
+            <h4>Notes dictées</h4>
+            <InputFile OnChange="HandleDictation" />
+            <p class="text-muted">@DictationStatus</p>
+        </div>
+    </div>
+</div>
+
+@code {
+    private record ChatMessage(string Author, string Content, bool IsUser)
+    {
+        public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.Now;
+    }
+
+    private readonly List<ChatMessage> Messages =
+    [
+        new("AION", "Bonjour ! Je suis ta mémoire augmentée. Demande-moi de créer un module ou de retrouver une note.", false)
+    ];
+
+    private string CurrentInput { get; set; } = string.Empty;
+    private string IntentPreview { get; set; } = "Décrivez une tâche pour voir l'intention détectée.";
+    private string DictationStatus { get; set; } = "Prêt pour l'enregistrement audio";
+    private bool Listening { get; set; }
+    private bool IsSearching { get; set; }
+    private List<SearchHit> SearchResults { get; set; } = new();
+    private AiConfigurationStatus _aiStatus = AiConfigurationStatus.Inactive();
+    private static readonly string[] Suggestions =
+    [
+        "Créer un module Potager",
+        "Ajoute une note pour mes tomates",
+        "Quels rendez-vous cette semaine ?",
+        "Montre le dashboard Potager"
+    ];
+
+    protected override void OnInitialized()
+    {
+        _aiStatus = AiSelector.GetStatus();
+    }
+
+    private async Task SendMessage()
+    {
+        if (!_aiStatus.IsConfigured)
+        {
+            Messages.Add(new ChatMessage("Système", _aiStatus.Reason ?? "IA inactive.", false));
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(CurrentInput))
+        {
+            return;
+        }
+
+        Messages.Add(new ChatMessage("Moi", CurrentInput, true));
+        IsSearching = true;
+        var intent = await IntentDetector.DetectAsync(new IntentDetectionRequest { Input = CurrentInput });
+        IntentPreview = $"{intent.Intent} (score {intent.Confidence:P0})";
+
+        try
+        {
+            SearchResults = (await SearchService.SearchAsync(CurrentInput)).ToList();
+            var context = SearchResults.Take(5)
+                .Select(hit => $"- [{hit.TargetType}] {hit.Title}: {hit.Snippet}")
+                .ToList();
+
+            var prompt = context.Count == 0
+                ? CurrentInput
+                : $"Contexte:\n{string.Join("\n", context)}\n\nQuestion: {CurrentInput}";
+
+            var reply = await TextGen.GenerateAsync(prompt);
+            Messages.Add(new ChatMessage("AION", reply.Content, false));
+        }
+        finally
+        {
+            IsSearching = false;
+            CurrentInput = string.Empty;
+        }
+    }
+
+    private void UseSuggestion(string suggestion)
+    {
+        CurrentInput = suggestion;
+    }
+
+    private async Task CreateModuleFromIntent()
+    {
+        if (!_aiStatus.IsConfigured)
+        {
+            Messages.Add(new ChatMessage("Système", _aiStatus.Reason ?? "IA inactive.", false));
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(CurrentInput))
+        {
+            CurrentInput = "Module personnel pour suivre mes projets";
+        }
+
+        var moduleResult = await ModuleDesigner.GenerateModuleAsync(new Aion.AI.ModuleDesignRequest { Prompt = CurrentInput });
+        Messages.Add(new ChatMessage("AION", $"Module généré: {moduleResult.Module.Name} avec {moduleResult.Module.EntityTypes.Count} entité(s).", false));
+    }
+
+    private void NavigateToModules() => Navigation.NavigateTo("/modules/home");
+    private void NavigateToAgenda() => Navigation.NavigateTo("/agenda/global");
+    private void NavigateToDashboard() => Navigation.NavigateTo("/dashboard/global");
+    private void NavigateToPotager() => Navigation.NavigateTo("/potager");
+    private void NavigateToExtensions() => Navigation.NavigateTo("/extensions");
+    private void NavigateToMarketplace() => Navigation.NavigateTo("/marketplace");
+    private void NavigateToTrustSuggestions() => Navigation.NavigateTo("/trust-ux#suggestions");
+
+    private void ToggleDictation()
+    {
+        Listening = !Listening;
+        DictationStatus = Listening ? "Dictée en cours…" : "Dictée stoppée";
+    }
+
+    private async Task HandleDictation(InputFileChangeEventArgs args)
+    {
+        if (!_aiStatus.IsConfigured)
+        {
+            DictationStatus = _aiStatus.Reason ?? "IA inactive.";
+            return;
+        }
+
+        var file = args.File;
+        await using var stream = file.OpenReadStream();
+        var result = await TextGen.GenerateAsync($"Transcris {file.Name}");
+        DictationStatus = $"Transcription simulée: {result.Content}";
+        Messages.Add(new ChatMessage("Note", result.Content, false));
+    }
+}

@@ -1,0 +1,298 @@
+@page "/trust-ux"
+@using Aion.Domain
+@inject IMemoryIntelligenceService MemoryIntelligence
+@inject NavigationManager Navigation
+
+<h3>Pourquoi ?</h3>
+<p class="text-muted">Comprendre ce que fait l'IA, pourquoi, et avec quelles données.</p>
+
+@if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <div class="card" style="border:1px solid #e74c3c; background:#fff4f2;">
+        <strong>Erreur :</strong> @ErrorMessage
+    </div>
+}
+
+<div id="suggestions" class="card" style="margin-top:12px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+        <h4 style="margin:0;">Pourquoi ces suggestions IA ?</h4>
+        <button class="button ghost" @onclick="NavigateHome">Retour à l'accueil</button>
+    </div>
+    <p class="text-muted">Chaque suggestion expose l'action envisagée, les raisons et les données utilisées.</p>
+    <div class="grid columns-1" style="gap:10px;">
+        @foreach (var suggestion in SuggestionExplanations)
+        {
+            <div class="card" style="background:#fafafa;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <div>
+                        <strong>@suggestion.Text</strong>
+                        <p class="text-muted" style="margin:0;">@suggestion.Action</p>
+                    </div>
+                    <button class="button secondary" @onclick="() => ToggleSuggestion(suggestion.Id)">
+                        @(ExpandedSuggestions.Contains(suggestion.Id) ? "Masquer pourquoi" : "Pourquoi ?")
+                    </button>
+                </div>
+                @if (ExpandedSuggestions.Contains(suggestion.Id))
+                {
+                    <div style="margin-top:8px;">
+                        <div><strong>Pourquoi :</strong> @suggestion.Why</div>
+                        <div style="margin-top:6px;">
+                            <strong>Données utilisées</strong>
+                            @if (suggestion.Data.Count == 0)
+                            {
+                                <p class="text-muted">Aucune donnée utilisateur.</p>
+                            }
+                            else
+                            {
+                                <ul style="margin:0; padding-left:18px;">
+                                    @foreach (var data in suggestion.Data)
+                                    {
+                                        <li>@data</li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                        <div style="margin-top:6px;">
+                            <strong>Règles appliquées</strong>
+                            <ul style="margin:0; padding-left:18px;">
+                                @foreach (var rule in suggestion.Rules)
+                                {
+                                    <li>@rule</li>
+                                }
+                            </ul>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<div id="summaries" class="card" style="margin-top:12px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+        <h4 style="margin:0;">Pourquoi ces résumés ?</h4>
+        <button class="button secondary" @onclick="ReloadInsights">Rafraîchir</button>
+    </div>
+    @if (Insights.Count == 0)
+    {
+        <p class="text-muted">Aucun résumé IA disponible pour le moment.</p>
+    }
+    else
+    {
+        <div class="grid columns-1" style="gap:10px;">
+            @foreach (var insight in Insights)
+            {
+                <div class="card" style="background:#fafafa;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <div>
+                            <strong>@insight.Summary</strong>
+                            <p class="text-muted" style="margin:0;">@insight.RecordCount enregistrement(s) · @insight.GeneratedAt.ToLocalTime().ToString("g")</p>
+                        </div>
+                        <button class="button secondary" @onclick="() => ToggleSummary(insight.Id)">
+                            @(ExpandedSummaries.Contains(insight.Id) ? "Masquer pourquoi" : "Pourquoi ?")
+                        </button>
+                    </div>
+                    @if (ExpandedSummaries.Contains(insight.Id))
+                    {
+                        <div style="margin-top:8px;">
+                            @RenderExplanation(insight.Explanation)
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<div id="links" class="card" style="margin-top:12px;">
+    <h4 style="margin:0;">Pourquoi ces liens proposés ?</h4>
+    @if (Insights.All(i => i.SuggestedLinks.Count == 0))
+    {
+        <p class="text-muted">Aucun lien proposé pour le moment.</p>
+    }
+    else
+    {
+        <div class="grid columns-1" style="gap:10px;">
+            @foreach (var insight in Insights)
+            {
+                foreach (var link in insight.SuggestedLinks)
+                {
+                    var linkKey = $"{insight.Id}:{link.FromId}:{link.ToId}";
+                    <div class="card" style="background:#fafafa;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <div>
+                                <strong>@link.Reason</strong>
+                                <p class="text-muted" style="margin:0;">@link.FromType → @link.ToType</p>
+                                <small class="text-muted">@link.FromId → @link.ToId</small>
+                            </div>
+                            <button class="button secondary" @onclick="() => ToggleLink(linkKey)">
+                                @(ExpandedLinks.Contains(linkKey) ? "Masquer pourquoi" : "Pourquoi ?")
+                            </button>
+                        </div>
+                        @if (ExpandedLinks.Contains(linkKey))
+                        {
+                            <div style="margin-top:8px;">
+                                @RenderExplanation(link.Explanation ?? insight.Explanation)
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record SuggestionExplanation(
+        string Id,
+        string Text,
+        string Action,
+        string Why,
+        IReadOnlyList<string> Data,
+        IReadOnlyList<string> Rules);
+
+    private List<MemoryInsight> Insights { get; } = new();
+    private string? ErrorMessage { get; set; }
+    private HashSet<string> ExpandedSuggestions { get; } = new();
+    private HashSet<Guid> ExpandedSummaries { get; } = new();
+    private HashSet<string> ExpandedLinks { get; } = new();
+
+    private static readonly IReadOnlyList<SuggestionExplanation> SuggestionExplanations =
+    [
+        new SuggestionExplanation(
+            "module",
+            "Créer un module Potager",
+            "Prépare un module structuré pour suivre vos plantations.",
+            "Vous utilisez des termes liés au jardinage et à la planification.",
+            new[] { "Dernières notes sur le potager", "Modules récemment consultés" },
+            new[] { "Prioriser les modules liés aux sujets fréquents.", "Proposer une action claire par suggestion." }),
+        new SuggestionExplanation(
+            "note",
+            "Ajoute une note pour mes tomates",
+            "Créer une note rapide liée au contexte Potager.",
+            "Vous avez demandé un ajout de note explicite.",
+            new[] { "Contexte de la conversation actuelle" },
+            new[] { "Utiliser la dernière intention exprimée." }),
+        new SuggestionExplanation(
+            "agenda",
+            "Quels rendez-vous cette semaine ?",
+            "Afficher le résumé d'agenda à 7 jours.",
+            "La question contient une période temporelle claire.",
+            new[] { "Événements d'agenda des 7 derniers jours" },
+            new[] { "Préférer une fenêtre temporelle courte si l'utilisateur mentionne 'cette semaine'." }),
+        new SuggestionExplanation(
+            "dashboard",
+            "Montre le dashboard Potager",
+            "Naviguer vers un tableau de bord thématique.",
+            "Vous avez un module Potager actif et des statistiques disponibles.",
+            new[] { "Module Potager", "Compteurs des enregistrements" },
+            new[] { "Suggérer un écran synthétique quand un module est actif." })
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInsights();
+    }
+
+    private void ToggleSuggestion(string id)
+    {
+        if (!ExpandedSuggestions.Add(id))
+        {
+            ExpandedSuggestions.Remove(id);
+        }
+    }
+
+    private void ToggleSummary(Guid id)
+    {
+        if (!ExpandedSummaries.Add(id))
+        {
+            ExpandedSummaries.Remove(id);
+        }
+    }
+
+    private void ToggleLink(string id)
+    {
+        if (!ExpandedLinks.Add(id))
+        {
+            ExpandedLinks.Remove(id);
+        }
+    }
+
+    private async Task ReloadInsights()
+    {
+        await LoadInsights();
+    }
+
+    private async Task LoadInsights()
+    {
+        try
+        {
+            ErrorMessage = null;
+            Insights.Clear();
+            var insights = await MemoryIntelligence.GetRecentAsync(10);
+            Insights.AddRange(insights);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Chargement des résumés IA: {ex.Message}";
+        }
+    }
+
+    private RenderFragment RenderExplanation(MemoryAnalysisExplanation explanation) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddContent(1, "Données utilisées");
+        builder.OpenElement(2, "ul");
+        builder.AddAttribute(3, "style", "margin:0; padding-left:18px;");
+
+        if (explanation.Sources.Count == 0)
+        {
+            builder.OpenElement(4, "li");
+            builder.AddContent(5, "Aucune source enregistrée.");
+            builder.CloseElement();
+        }
+        else
+        {
+            var seq = 6;
+            foreach (var source in explanation.Sources)
+            {
+                builder.OpenElement(seq++, "li");
+                builder.AddContent(seq++, $"{source.SourceType} · {source.Title} ({source.RecordId}) — {source.Snippet}");
+                builder.CloseElement();
+            }
+        }
+
+        builder.CloseElement();
+        builder.OpenElement(20, "div");
+        builder.AddAttribute(21, "style", "margin-top:6px;");
+        builder.AddContent(22, "Règles appliquées");
+        builder.OpenElement(23, "ul");
+        builder.AddAttribute(24, "style", "margin:0; padding-left:18px;");
+
+        if (explanation.Rules.Count == 0)
+        {
+            builder.OpenElement(25, "li");
+            builder.AddContent(26, "Aucune règle explicite.");
+            builder.CloseElement();
+        }
+        else
+        {
+            var seqRules = 27;
+            foreach (var rule in explanation.Rules)
+            {
+                builder.OpenElement(seqRules++, "li");
+                builder.AddContent(seqRules++, $"{rule.Code} — {rule.Description}");
+                builder.CloseElement();
+            }
+        }
+
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private void NavigateHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+}

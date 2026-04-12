@@ -1,0 +1,206 @@
+@page "/setup"
+@layout SetupLayout
+
+@using System.ComponentModel.DataAnnotations
+@using System.IO
+@using System.Security.Cryptography
+@using System.Text
+@using Microsoft.Data.Sqlite
+@using Microsoft.Extensions.Options
+@using Microsoft.Maui.Storage
+@inject FirstRunState FirstRunState
+@inject IOptions<AionDatabaseOptions> DatabaseOptions
+@inject IOptions<StorageOptions> StorageOptions
+@inject IAppInitializationService AppInitializationService
+@inject ITenancyService TenancyService
+@inject NavigationManager Navigation
+
+<div class="setup-card card">
+    <h1>Configurer AionMemory</h1>
+    <p class="text-muted">Cette configuration locale prepare la base chiffree, le stockage et votre premier profil.</p>
+
+    @if (FirstRunState.IsCompleted)
+    {
+        <div class="setup-complete">
+            <p>La configuration initiale est deja terminee.</p>
+            <button class="button" @onclick="NavigateHome">Acceder a l'application</button>
+        </div>
+    }
+    else
+    {
+        <EditForm Model="_model" OnValidSubmit="HandleValidSubmitAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="setup-section">
+                <h3>Base de donnees locale</h3>
+                <label class="text-muted">Chemin du fichier SQLite chiffre</label>
+                <input class="input" @bind="_model.DatabasePath" />
+                <div class="setup-actions">
+                    <button type="button" class="button secondary" @onclick="ResetDatabasePath">Utiliser l'emplacement par defaut</button>
+                </div>
+            </div>
+
+            <div class="setup-section">
+                <h3>Cle de chiffrement</h3>
+                <label class="text-muted">Cle (32 caracteres minimum)</label>
+                <div class="setup-key-row">
+                    <input class="input" type="@KeyInputType" @bind="_model.EncryptionKey" />
+                    <button type="button" class="button secondary" @onclick="ToggleKeyVisibility">@(_showKey ? "Masquer" : "Afficher")</button>
+                    <button type="button" class="button secondary" @onclick="GenerateKey">Generer</button>
+                </div>
+                <small class="text-muted">Conservez cette cle : elle protege la base locale et le stockage.</small>
+            </div>
+
+            <div class="setup-section">
+                <h3>Profil local</h3>
+                <label class="text-muted">Nom d'affichage</label>
+                <input class="input" @bind="_model.ProfileName" />
+            </div>
+
+            <div class="setup-footer">
+                <button class="button" type="submit" disabled="@_isSaving">Finaliser</button>
+                @if (!string.IsNullOrWhiteSpace(_errorMessage))
+                {
+                    <span class="text-muted">@_errorMessage</span>
+                }
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private readonly SetupModel _model = new();
+    private bool _showKey;
+    private bool _isSaving;
+    private string? _errorMessage;
+    private string _defaultDatabasePath = string.Empty;
+    private string KeyInputType => _showKey ? "text" : "password";
+
+    protected override void OnInitialized()
+    {
+        _defaultDatabasePath = Path.Combine(FileSystem.AppDataDirectory, "aion.db");
+        _model.DatabasePath = FirstRunState.GetDatabasePath(_defaultDatabasePath);
+        _model.ProfileName = FirstRunState.GetProfileName(TenancyDefaults.DefaultProfileName);
+        _model.EncryptionKey = GenerateRandomKey();
+    }
+
+    private void ResetDatabasePath()
+    {
+        _model.DatabasePath = _defaultDatabasePath;
+    }
+
+    private void ToggleKeyVisibility()
+    {
+        _showKey = !_showKey;
+    }
+
+    private void GenerateKey()
+    {
+        _model.EncryptionKey = GenerateRandomKey();
+    }
+
+    private void NavigateHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    private static string GenerateRandomKey()
+        => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
+    private async Task HandleValidSubmitAsync()
+    {
+        _errorMessage = null;
+        _isSaving = true;
+
+        try
+        {
+            var databasePath = _model.DatabasePath?.Trim() ?? string.Empty;
+            var encryptionKey = _model.EncryptionKey?.Trim() ?? string.Empty;
+            var profileName = _model.ProfileName?.Trim() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(databasePath))
+            {
+                _errorMessage = "Le chemin de la base est requis.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(encryptionKey) || encryptionKey.Length < 32)
+            {
+                _errorMessage = "La cle doit contenir au moins 32 caracteres.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(profileName))
+            {
+                _errorMessage = "Le profil doit avoir un nom.";
+                return;
+            }
+
+            var fullPath = Path.GetFullPath(databasePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+
+            var connectionBuilder = new SqliteConnectionStringBuilder
+            {
+                DataSource = fullPath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Cache = SqliteCacheMode.Private
+            };
+
+            DatabaseOptions.Value.ConnectionString = connectionBuilder.ToString();
+            DatabaseOptions.Value.EncryptionKey = encryptionKey;
+            StorageOptions.Value.EncryptionKey = encryptionKey;
+
+            await FirstRunState.SaveSetupAsync(fullPath, encryptionKey, profileName).ConfigureAwait(false);
+            await AppInitializationService.EnsureInitializedAsync().ConfigureAwait(false);
+
+            var initials = GenerateInitials(profileName);
+            await TenancyService.UpdateDefaultProfileAsync(profileName, initials).ConfigureAwait(false);
+
+            FirstRunState.MarkCompleted();
+            Navigation.NavigateTo("/");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Impossible de terminer la configuration : {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private static string GenerateInitials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            return "ME";
+        }
+
+        var builder = new StringBuilder();
+        foreach (var part in parts)
+        {
+            builder.Append(char.ToUpperInvariant(part[0]));
+            if (builder.Length >= 2)
+            {
+                break;
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private sealed class SetupModel
+    {
+        [Required]
+        public string DatabasePath { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(32)]
+        public string EncryptionKey { get; set; } = string.Empty;
+
+        [Required]
+        public string ProfileName { get; set; } = string.Empty;
+    }
+}

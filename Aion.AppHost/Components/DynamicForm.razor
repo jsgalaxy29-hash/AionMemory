@@ -1,0 +1,551 @@
+@using System.Text.Json
+@using System.Text.RegularExpressions
+@using Aion.Domain
+@using Aion.Domain.Logic
+@using Aion.AppHost.Services.Rendering
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Forms
+@inherits OwningComponentBase
+@implements IDisposable
+<EditForm Model="FieldValues" OnSubmit="HandleSubmit">
+    <div class="form-row">
+        @if (ResolvedTable is not null)
+        {
+            @foreach (var field in ResolveFormModel().Fields)
+            {
+                <div>
+                    <label>@field.Label @if (field.IsRequired) { <span class="text-muted">*</span> }</label>
+                    <DynamicComponent Type="@ResolveFieldComponent(field.ComponentKind)" Parameters="@BuildFieldComponentParameters(field)" />
+
+                    @if (TryGetErrors(field.FieldName, out var errors))
+                    {
+                        foreach (var error in errors)
+                        {
+                            <div class="validation-message">@error</div>
+                        }
+                    }
+                </div>
+            }
+        }
+    </div>
+    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button type="submit" class="button" disabled="@(IsSaving || !CanWrite)">@(IsSaving ? "Enregistrement..." : "Enregistrer")</button>
+        <button type="button" class="button secondary" @onclick="Reset">Annuler</button>
+        @if (ActiveRecordId.HasValue)
+        {
+            <button type="button" class="button danger" @onclick="Delete" disabled="@(!CanDelete)">Supprimer</button>
+        }
+    </div>
+    @if (!string.IsNullOrWhiteSpace(SubmissionError))
+    {
+        <div class="validation-message" style="margin-top:8px;">@SubmissionError</div>
+    }
+    @if (IsPending)
+    {
+        <div class="text-muted small" style="margin-top:8px;">
+            <span class="badge" style="background-color:#f39c12; color:#fff;">Pending</span>
+            Synchronisation en attente.
+        </div>
+    }
+</EditForm>
+
+@code {
+    [Inject] public IRecordQueryService? InjectedRecordService { get; set; }
+    [Inject] public IModuleViewService? InjectedViewService { get; set; }
+    [Inject] public IAuthorizationService? AuthorizationService { get; set; }
+    [Inject] public ICurrentUserService? CurrentUserService { get; set; }
+    [Inject] public IOfflineActionQueue? OfflineActionQueue { get; set; }
+    [Inject] public IDynamicFormRenderer? FormRenderer { get; set; }
+    [Inject] public IDynamicFieldComponentRegistry? FieldComponentRegistry { get; set; }
+
+    [Parameter] public STable? Table { get; set; }
+    [Parameter] public Guid? TableId { get; set; }
+    [Parameter] public string? TableName { get; set; }
+    [Parameter] public IRecordQueryService? RecordService { get; set; }
+    [Parameter] public IModuleViewService? ViewService { get; set; }
+    [Parameter] public Guid? RecordId { get; set; }
+    [Parameter] public F_Record? Record { get; set; }
+    [Parameter] public EventCallback<F_Record> OnSaved { get; set; }
+    [Parameter] public EventCallback<Guid> OnDeleted { get; set; }
+
+    private Dictionary<string, object?> FieldValues { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, List<string>> FieldErrors { get; } = new(StringComparer.OrdinalIgnoreCase);
+    private STable? LoadedTable { get; set; }
+    private Guid? ActiveRecordId => Record?.Id ?? RecordId;
+    private STable? ResolvedTable => Table ?? LoadedTable;
+    private CancellationTokenSource? _loadCts;
+    private Guid? _lastRecordId;
+    private Guid? _lastTableId;
+    private string? SubmissionError { get; set; }
+    private bool IsSaving { get; set; }
+    private IRecordQueryService? ActiveRecordService => RecordService ?? InjectedRecordService;
+    private IModuleViewService? ActiveViewService => ViewService ?? InjectedViewService;
+    private bool CanWrite { get; set; } = true;
+    private bool CanDelete { get; set; } = true;
+    private Dictionary<string, bool> FieldWriteAccess { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    private bool IsPending { get; set; }
+    private FormRenderModel? FormModel { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await EnsureTableMetadataAsync();
+
+        var tableChanged = _lastTableId != ResolvedTable?.Id;
+        var recordChanged = _lastRecordId != ActiveRecordId;
+        if (tableChanged || recordChanged)
+        {
+            FormModel = null;
+            FieldValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            ClearErrors();
+            await LoadExistingRecord();
+            InitializeDefaults();
+            _lastRecordId = ActiveRecordId;
+            _lastTableId = ResolvedTable?.Id;
+            await UpdatePermissionsAsync();
+            await UpdatePendingStatusAsync();
+        }
+    }
+
+    private object? GetValue(string key) => FieldValues.TryGetValue(key, out var value) ? value : null;
+
+    private Type ResolveFieldComponent(FormFieldComponentKind componentKind)
+    {
+        if (FieldComponentRegistry is null)
+        {
+            throw new InvalidOperationException($"{nameof(IDynamicFieldComponentRegistry)} must be registered in the DI container.");
+        }
+
+        return FieldComponentRegistry.Resolve(componentKind);
+    }
+
+    private IDictionary<string, object> BuildFieldComponentParameters(FormFieldRenderModel field)
+    {
+        return new Dictionary<string, object>
+        {
+            ["Field"] = field,
+            ["Value"] = GetValue(field.FieldName) ?? string.Empty,
+            ["Disabled"] = IsFieldDisabled(field.FieldName, field.IsReadOnly),
+            ["ValueChanged"] = EventCallback.Factory.Create<object?>(this, value => SetValue(field.FieldName, value))
+        };
+    }
+
+    private void SetValue(string fieldName, object? value)
+    {
+        FieldValues[fieldName] = value;
+        if (ResolvedTable?.Fields.FirstOrDefault(f => string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase)) is { } definition)
+        {
+            ValidateField(definition);
+        }
+    }
+
+    private async Task HandleSubmit(EditContext _)
+    {
+        SubmissionError = null;
+
+        if (ResolvedTable is null || ActiveRecordService is null)
+        {
+            SubmissionError = "Contexte de formulaire incomplet.";
+            return;
+        }
+
+        if (!CanWrite)
+        {
+            SubmissionError = "Vous n'êtes pas autorisé à modifier ces données.";
+            return;
+        }
+
+        if (!ValidateForm())
+        {
+            return;
+        }
+
+        IsSaving = true;
+        try
+        {
+            var payload = BuildPayload();
+            var record = await ActiveRecordService.SaveAsync(ResolvedTable.Id, ActiveRecordId, payload).ConfigureAwait(false);
+            Record = record;
+            RecordId = record.Id;
+            _lastRecordId = record.Id;
+            await OnSaved.InvokeAsync(record);
+            await LoadExistingRecord();
+            await UpdatePendingStatusAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            SubmissionError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            SubmissionError = $"Erreur lors de l'enregistrement : {ex.Message}";
+        }
+        finally
+        {
+            IsSaving = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task Reset()
+    {
+        FieldValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        ClearErrors();
+        await LoadExistingRecord();
+        InitializeDefaults();
+    }
+
+    private async Task Delete()
+    {
+        if (ActiveRecordService is null || ResolvedTable is null || !ActiveRecordId.HasValue || !CanDelete)
+        {
+            return;
+        }
+
+        await ActiveRecordService.DeleteAsync(ResolvedTable.Id, ActiveRecordId.Value);
+        await OnDeleted.InvokeAsync(ActiveRecordId.Value);
+        Record = null;
+        RecordId = null;
+        _lastRecordId = null;
+        await Reset();
+    }
+
+    private async Task LoadExistingRecord()
+    {
+        if (ActiveRecordService is null || ResolvedTable is null)
+        {
+            return;
+        }
+
+        if (Record is not null)
+        {
+            FieldValues = new Dictionary<string, object?>(DynamicListLogic.DeserializePayload(Record.DataJson), StringComparer.OrdinalIgnoreCase);
+            return;
+        }
+
+        if (ActiveRecordId is null)
+        {
+            return;
+        }
+
+        _loadCts?.Cancel();
+        _loadCts = new CancellationTokenSource();
+        var record = await ActiveRecordService.GetAsync(ResolvedTable.Id, ActiveRecordId.Value, _loadCts.Token);
+        if (record is null)
+        {
+            return;
+        }
+
+        FieldValues = new Dictionary<string, object?>(DynamicListLogic.DeserializePayload(record.DataJson), StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task UpdatePermissionsAsync()
+    {
+        if (AuthorizationService is null || CurrentUserService is null || ResolvedTable is null)
+        {
+            CanWrite = true;
+            CanDelete = true;
+            FieldWriteAccess = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            return;
+        }
+
+        var userId = CurrentUserService.GetCurrentUserId();
+        var tableScope = PermissionScope.ForTable(ResolvedTable.Id);
+        var writeResult = await AuthorizationService.AuthorizeAsync(userId, PermissionAction.Write, tableScope);
+        var fieldWriteAccess = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var field in ResolvedTable.Fields)
+        {
+            var fieldScope = ActiveRecordId.HasValue
+                ? PermissionScope.ForRecordField(ResolvedTable.Id, ActiveRecordId.Value, field.Name)
+                : PermissionScope.ForField(ResolvedTable.Id, field.Name);
+            var fieldResult = await AuthorizationService.AuthorizeAsync(userId, PermissionAction.Write, fieldScope);
+            fieldWriteAccess[field.Name] = fieldResult.IsAllowed;
+        }
+
+        FieldWriteAccess = fieldWriteAccess;
+        CanWrite = writeResult.IsAllowed || FieldWriteAccess.Values.Any(allowed => allowed);
+
+        var deleteScope = ActiveRecordId.HasValue
+            ? PermissionScope.ForRecord(ResolvedTable.Id, ActiveRecordId.Value)
+            : tableScope;
+
+        var deleteResult = await AuthorizationService.AuthorizeAsync(userId, PermissionAction.Delete, deleteScope);
+        CanDelete = deleteResult.IsAllowed;
+    }
+
+    private bool IsFieldDisabled(string fieldName, bool isReadOnly)
+    {
+        if (isReadOnly)
+        {
+            return true;
+        }
+
+        if (FieldWriteAccess.TryGetValue(fieldName, out var allowed))
+        {
+            return !allowed;
+        }
+
+        return !CanWrite;
+    }
+
+    private async Task UpdatePendingStatusAsync()
+    {
+        if (ResolvedTable is null || !ActiveRecordId.HasValue || OfflineActionQueue is null)
+        {
+            IsPending = false;
+            return;
+        }
+
+        IsPending = await OfflineActionQueue.HasPendingAsync(ResolvedTable.Id, ActiveRecordId.Value)
+            .ConfigureAwait(false);
+    }
+
+    private async Task EnsureTableMetadataAsync()
+    {
+        if (ResolvedTable is not null)
+        {
+            return;
+        }
+
+        var viewService = ActiveViewService;
+        if (viewService is null)
+        {
+            return;
+        }
+
+        if (TableId.HasValue)
+        {
+            LoadedTable = await viewService.GetTableAsync(TableId.Value).ConfigureAwait(false);
+        }
+        else if (!string.IsNullOrWhiteSpace(TableName))
+        {
+            LoadedTable = await viewService.GetTableByNameAsync(TableName).ConfigureAwait(false);
+        }
+    }
+
+    private void InitializeDefaults()
+    {
+        if (ResolvedTable is null)
+        {
+            return;
+        }
+
+        foreach (var field in ResolvedTable.Fields)
+        {
+            if (FieldValues.ContainsKey(field.Name) || string.IsNullOrWhiteSpace(field.DefaultValue))
+            {
+                continue;
+            }
+
+            FieldValues[field.Name] = field.DefaultValue;
+        }
+    }
+
+    private FormRenderModel ResolveFormModel()
+    {
+        if (ResolvedTable is null)
+        {
+            return new FormRenderModel(Guid.Empty, string.Empty, Array.Empty<FormFieldRenderModel>());
+        }
+
+        if (FormModel is not null)
+        {
+            return FormModel;
+        }
+
+        if (FormRenderer is null)
+        {
+            throw new InvalidOperationException($"{nameof(IDynamicFormRenderer)} must be registered in the DI container.");
+        }
+
+        FormModel = FormRenderer.Render(ResolvedTable);
+        return FormModel;
+    }
+
+    private bool ValidateForm()
+    {
+        if (ResolvedTable is null)
+        {
+            return false;
+        }
+
+        var isValid = true;
+        foreach (var field in ResolvedTable.Fields)
+        {
+            isValid &= ValidateField(field);
+        }
+
+        return isValid;
+    }
+
+    private bool ValidateField(SFieldDefinition field)
+    {
+        var errors = new List<string>();
+        FieldValues.TryGetValue(field.Name, out var value);
+        var normalized = NormalizeValue(value);
+
+        if (normalized is null || (normalized is string s && string.IsNullOrWhiteSpace(s)))
+        {
+            if (field.IsRequired)
+            {
+                errors.Add($"Le champ « {field.Label} » est requis.");
+            }
+
+            return UpdateFieldErrors(field.Name, errors);
+        }
+
+        switch (field.DataType)
+        {
+            case FieldDataType.Text or FieldDataType.Note or FieldDataType.Tags or FieldDataType.Json or FieldDataType.File:
+                if (normalized is not string)
+                {
+                    errors.Add("Valeur texte attendue.");
+                }
+                break;
+            case FieldDataType.Lookup:
+                if (normalized is not string && normalized is not Guid)
+                {
+                    errors.Add("Identifiant de lookup attendu.");
+                }
+                break;
+            case FieldDataType.Number:
+                if (normalized is not long and not int)
+                {
+                    errors.Add("Nombre entier attendu.");
+                }
+                break;
+            case FieldDataType.Decimal:
+                if (normalized is not double and not decimal and not float)
+                {
+                    errors.Add("Nombre décimal attendu.");
+                }
+                break;
+            case FieldDataType.Boolean:
+                if (normalized is not bool)
+                {
+                    errors.Add("Valeur booléenne attendue.");
+                }
+                break;
+            case FieldDataType.Date or FieldDataType.DateTime:
+                if (normalized is not DateTime && normalized is not string)
+                {
+                    errors.Add("Date au format ISO attendue.");
+                }
+                break;
+        }
+
+        if (normalized is string str)
+        {
+            if (field.MinLength.HasValue && str.Length < field.MinLength.Value)
+            {
+                errors.Add($"Longueur minimale : {field.MinLength}.");
+            }
+
+            if (field.MaxLength.HasValue && str.Length > field.MaxLength.Value)
+            {
+                errors.Add($"Longueur maximale : {field.MaxLength}.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(field.ValidationPattern) && !Regex.IsMatch(str, field.ValidationPattern))
+            {
+                errors.Add("Le format ne correspond pas au motif attendu.");
+            }
+        }
+
+        if ((field.DataType == FieldDataType.Number || field.DataType == FieldDataType.Decimal) && normalized is IConvertible convertible)
+        {
+            var numeric = Convert.ToDecimal(convertible);
+            if (field.MinValue.HasValue && numeric < field.MinValue.Value)
+            {
+                errors.Add($"Valeur minimale : {field.MinValue}.");
+            }
+
+            if (field.MaxValue.HasValue && numeric > field.MaxValue.Value)
+            {
+                errors.Add($"Valeur maximale : {field.MaxValue}.");
+            }
+        }
+
+        return UpdateFieldErrors(field.Name, errors);
+    }
+
+    private static object? NormalizeValue(object? value)
+    {
+        if (value is not JsonElement element)
+        {
+            return value;
+        }
+
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number when element.TryGetInt64(out var l) => l,
+            JsonValueKind.Number when element.TryGetDouble(out var d) => d,
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            _ => element.ToString()
+        };
+    }
+
+    private Dictionary<string, object?> BuildPayload()
+    {
+        var payload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in FieldValues)
+        {
+            payload[kvp.Key] = NormalizeForSubmit(kvp.Value);
+        }
+
+        return payload;
+    }
+
+    private static object? NormalizeForSubmit(object? value)
+    {
+        if (value is DateTime dateTime)
+        {
+            return dateTime.ToString("O");
+        }
+
+        if (value is DateTimeOffset dto)
+        {
+            return dto.ToString("O");
+        }
+
+        return value;
+    }
+
+    private bool TryGetErrors(string key, out IReadOnlyList<string> errors)
+    {
+        if (FieldErrors.TryGetValue(key, out var list))
+        {
+            errors = list;
+            return true;
+        }
+
+        errors = Array.Empty<string>();
+        return false;
+    }
+
+    private bool UpdateFieldErrors(string key, List<string> errors)
+    {
+        if (errors.Count == 0)
+        {
+            FieldErrors.Remove(key);
+            return true;
+        }
+
+        FieldErrors[key] = errors;
+        return false;
+    }
+
+    private void ClearErrors()
+    {
+        FieldErrors.Clear();
+        SubmissionError = null;
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+    }
+}

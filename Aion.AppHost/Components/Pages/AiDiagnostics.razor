@@ -1,0 +1,79 @@
+@page "/diagnostics/ai"
+@using Aion.Domain
+@inject IAiCallLogService AiCallLogService
+
+<h3>Diagnostics IA</h3>
+
+@if (IsLoading)
+{
+    <p class="text-muted">Chargement des métriques IA…</p>
+}
+else if (Diagnostics is null)
+{
+    <p class="text-muted">Aucune donnée disponible.</p>
+}
+else
+{
+    <div class="card" style="padding:16px; margin-bottom:16px;">
+        <h4>Résumé (@Diagnostics.From:dd/MM/yyyy → @Diagnostics.To:dd/MM/yyyy)</h4>
+        <ul>
+            <li>Appels: @Diagnostics.Totals.TotalCalls</li>
+            <li>Succès: @Diagnostics.Totals.SuccessCalls</li>
+            <li>Erreurs: @Diagnostics.Totals.ErrorCalls</li>
+            <li>Tokens: @Diagnostics.Totals.TotalTokens</li>
+            <li>Coût estimé: @Diagnostics.Totals.TotalCost.ToString("0.####")</li>
+            <li>Durée moyenne: @Diagnostics.Totals.AverageDurationMs.ToString("0.0") ms</li>
+        </ul>
+    </div>
+
+    <h4>Détails par provider</h4>
+    @if (Diagnostics.Providers.Count == 0)
+    {
+        <p class="text-muted">Aucun appel IA enregistré sur la période.</p>
+    }
+    else
+    {
+        <table class="table" style="width:100%;">
+            <thead>
+                <tr>
+                    <th>Provider</th>
+                    <th>Modèle</th>
+                    <th>Appels</th>
+                    <th>Tokens</th>
+                    <th>Coût</th>
+                    <th>Durée moyenne (ms)</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var stat in Diagnostics.Providers)
+                {
+                    <tr>
+                        <td>@stat.Provider</td>
+                        <td>@(stat.Model ?? "-")</td>
+                        <td>@stat.Calls</td>
+                        <td>@stat.Tokens</td>
+                        <td>@stat.Cost.ToString("0.####")</td>
+                        <td>@stat.AverageDurationMs.ToString("0.0")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private AiCallDiagnostics? Diagnostics { get; set; }
+    private bool IsLoading { get; set; } = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            Diagnostics = await AiCallLogService.GetDiagnosticsAsync(new AiCallDiagnosticsQuery()).ConfigureAwait(false);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+}

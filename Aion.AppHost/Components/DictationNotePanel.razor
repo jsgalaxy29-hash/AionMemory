@@ -1,0 +1,28 @@
+<div class="card">
+    <div class="card-header">Dictated note</div>
+    <div class="card-body">
+        <p>Upload an audio file to simulate dictation.</p>
+        <InputFile OnChange="HandleFile" />
+        <p class="mt-2">@Status</p>
+    </div>
+</div>
+
+@code {
+    [Parameter] public INoteService? NoteService { get; set; }
+
+    private string Status { get; set; } = "Ready";
+
+    private async Task HandleFile(InputFileChangeEventArgs args)
+    {
+        if (NoteService is null)
+        {
+            Status = "Note service not configured";
+            return;
+        }
+
+        var file = args.File;
+        await using var stream = file.OpenReadStream();
+        var note = await NoteService.CreateDictatedNoteAsync(file.Name, stream, file.Name);
+        Status = $"Stored dictation note with id {note.Id}";
+    }
+}

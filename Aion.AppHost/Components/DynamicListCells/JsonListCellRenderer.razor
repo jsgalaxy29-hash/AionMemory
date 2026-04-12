@@ -1,0 +1,8 @@
+@using Aion.AppHost.Services.Rendering
+
+<span data-list-cell-renderer="json">@ListCellValueFormatter.ToJsonSummary(Value)</span>
+
+@code {
+    [Parameter, EditorRequired] public ListColumnRenderModel Column { get; set; } = default!;
+    [Parameter] public object? Value { get; set; }
+}

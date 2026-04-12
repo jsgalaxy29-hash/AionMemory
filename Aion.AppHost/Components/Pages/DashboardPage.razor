@@ -1,0 +1,9 @@
+@page "/dashboard/{entity}"
+<h3>Dashboard - @Entity</h3>
+<Dashboard DashboardKey="@DashboardKey" />
+
+@code {
+    [Parameter] public string? Entity { get; set; }
+
+    private string DashboardKey => string.IsNullOrWhiteSpace(Entity) ? "global" : Entity;
+}

@@ -1,0 +1,246 @@
+@page "/chat"
+@inject IIntentDetector IntentDetector
+@inject IIntentRouter IntentRouter
+@inject ISearchService SearchService
+@inject AiProviderSelector AiSelector
+@inject NavigationManager Navigation
+
+<div class="grid columns-2">
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <div>
+                <h3>Chat IA</h3>
+                <p class="text-muted">Orchestration d'intentions, modules et rapports</p>
+            </div>
+            <div style="text-align:right;">
+                <p class="text-muted" style="margin:0;">@StatusMessage</p>
+                @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+                {
+                    <p style="color:crimson; margin:0;">@ErrorMessage</p>
+                }
+                @if (IsOfflineProvider)
+                {
+                    <div class="badge" style="background-color:#f39c12; color:#fff; margin-top:4px;">Offline</div>
+                }
+                @if (!_aiStatus.IsConfigured)
+                {
+                    <p class="text-muted" style="margin:0;">IA inactive : @_aiStatus.Reason</p>
+                }
+            </div>
+        </div>
+
+        <div class="chat-window">
+            @foreach (var message in Messages)
+            {
+                <div class="@($"chat-bubble {(message.IsUser ? "me" : "bot")}")">
+                    <strong>@message.Author</strong>
+                    <div style="white-space:pre-wrap;">@message.Content</div>
+                    <small class="text-muted">@message.Timestamp.ToLocalTime().ToString("t")</small>
+                </div>
+            }
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:12px;">
+            <input class="input" placeholder="Demandez à AION d'orchestrer une action" @bind="CurrentInput" @bind:event="oninput" @onkeydown="HandleEnter" disabled="@(!_aiStatus.IsConfigured || IsProcessing)" />
+            <button class="button" @onclick="SendMessageAsync" disabled="@(!_aiStatus.IsConfigured || IsProcessing)">Envoyer</button>
+        </div>
+
+        <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+            @foreach (var suggestion in Suggestions)
+            {
+                <button class="button secondary" @onclick="() => UseSuggestion(suggestion)" disabled="@IsProcessing">@suggestion</button>
+            }
+        </div>
+        <div style="margin-top:6px;">
+            <button class="button ghost" @onclick="NavigateToTrustSuggestions" disabled="@IsProcessing">Pourquoi ces suggestions ?</button>
+        </div>
+    </div>
+
+    <div class="grid columns-1" style="gap:12px;">
+        <div class="card">
+            <h4>Intention détectée</h4>
+            <p>@IntentSummary</p>
+            <p class="text-muted" style="margin-top:-8px;">Raw: @LastRawIntent</p>
+        </div>
+
+        <div class="card">
+            <h4>Contextes trouvés</h4>
+            @if (ContextHits.Count == 0)
+            {
+                <p class="text-muted">Aucun résultat pour cette requête.</p>
+            }
+            else
+            {
+                <ul style="margin:0; padding-left:18px;">
+                    @foreach (var hit in ContextHits.Take(5))
+                    {
+                        <li><strong>@hit.TargetType</strong> — @hit.Title <span class="text-muted">(@hit.Snippet)</span></li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="card">
+            <h4>Orchestrations disponibles</h4>
+            <ul style="margin:0; padding-left:18px;">
+                <li>Intent → CRUD/Agenda/Note/Rapport</li>
+                <li>Design module IA (ModuleDesigner)</li>
+                <li>Réponse libre via LLM provider</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+@code {
+    private record ChatMessage(string Author, string Content, bool IsUser)
+    {
+        public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.Now;
+    }
+
+    private readonly List<ChatMessage> Messages =
+    [
+        new("AION", "Je suis prêt à détecter tes intentions et orchestrer les services IA.", false)
+    ];
+
+    private readonly S_Module DemoModule = CreateDemoModule();
+
+    private string CurrentInput { get; set; } = string.Empty;
+    private string IntentSummary { get; set; } = "Aucune intention détectée.";
+    private string LastRawIntent { get; set; } = "—";
+    private string StatusMessage { get; set; } = "Prêt";
+    private string? ErrorMessage { get; set; }
+    private bool IsProcessing { get; set; }
+    private List<SearchHit> ContextHits { get; set; } = new();
+    private CancellationTokenSource? _cts;
+    private AiConfigurationStatus _aiStatus = AiConfigurationStatus.Inactive();
+    private bool IsOfflineProvider => _aiStatus.IsConfigured
+        && string.Equals(_aiStatus.ActiveProvider, AiProviderNames.Offline, StringComparison.OrdinalIgnoreCase);
+
+    private static readonly string[] Suggestions =
+    [
+        "Crée un module pour suivre mes plantations",
+        "Planifie un rendez-vous demain à 9h pour appeler le client",
+        "Améliore cette note : Acheter des graines de tomates",
+        "Génère un rapport sur mon module Potager"
+    ];
+
+    protected override void OnInitialized()
+    {
+        _aiStatus = AiSelector.GetStatus();
+    }
+
+    private async Task SendMessageAsync()
+    {
+        if (!_aiStatus.IsConfigured)
+        {
+            ErrorMessage = _aiStatus.Reason ?? "IA inactive.";
+            Messages.Add(new ChatMessage("Système", ErrorMessage, false));
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(CurrentInput))
+        {
+            return;
+        }
+
+        var input = CurrentInput.Trim();
+        CurrentInput = string.Empty;
+        ErrorMessage = null;
+        StatusMessage = "Détection de l'intention…";
+        Messages.Add(new ChatMessage("Moi", input, true));
+        IsProcessing = true;
+
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var cancellationToken = _cts.Token;
+
+        try
+        {
+            var intent = await IntentDetector.DetectAsync(new IntentDetectionRequest { Input = input }, cancellationToken);
+            IntentSummary = $"{intent.Intent} ({intent.Confidence:P0})";
+            LastRawIntent = intent.RawResponse;
+
+            StatusMessage = "Recherche contextuelle…";
+            ContextHits = (await SearchService.SearchAsync(input, cancellationToken)).ToList();
+
+            StatusMessage = "Appel orchestrateur…";
+            var routing = await IntentRouter.RouteAsync(new IntentRouteRequest
+            {
+                Input = input,
+                Intent = intent,
+                ModuleContext = DemoModule,
+                ModuleId = DemoModule.Id,
+                IsOffline = IsOfflineProvider
+            }, cancellationToken);
+            var orchestratedReply = routing.Response;
+
+            if (ContextHits.Count > 0)
+            {
+                var contextLines = string.Join("\n", ContextHits.Take(3)
+                    .Select(hit => $"- [{hit.TargetType}] {hit.Title}: {hit.Snippet}"));
+                orchestratedReply += $"\n\nContexte:\n{contextLines}";
+            }
+
+            Messages.Add(new ChatMessage("AION", orchestratedReply, false));
+            StatusMessage = "Réponse générée.";
+        }
+        catch (OperationCanceledException)
+        {
+            ErrorMessage = "La requête a été annulée.";
+            Messages.Add(new ChatMessage("Système", ErrorMessage, false));
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Erreur lors de l'orchestration : {ex.Message}";
+            Messages.Add(new ChatMessage("Erreur", ErrorMessage, false));
+        }
+        finally
+        {
+            IsProcessing = false;
+        }
+    }
+
+    private void UseSuggestion(string suggestion)
+    {
+        CurrentInput = suggestion;
+    }
+
+    private void NavigateToTrustSuggestions()
+    {
+        Navigation.NavigateTo("/trust-ux#suggestions");
+    }
+
+    private async Task HandleEnter(KeyboardEventArgs args)
+    {
+        if (args.Key is "Enter" or "NumpadEnter")
+        {
+            await SendMessageAsync();
+        }
+    }
+
+    private static S_Module CreateDemoModule()
+    {
+        var module = new S_Module
+        {
+            Name = "Journal IA",
+            Description = "Module de démonstration pour les orchestrateurs",
+        };
+
+        var noteType = new S_EntityType
+        {
+            ModuleId = module.Id,
+            Name = "Note",
+            PluralName = "Notes",
+        };
+
+        noteType.Fields = new List<S_Field>
+        {
+            new() { EntityTypeId = noteType.Id, Name = "Titre", Label = "Titre", DataType = FieldDataType.Text, IsRequired = true },
+            new() { EntityTypeId = noteType.Id, Name = "Contenu", Label = "Contenu", DataType = FieldDataType.Text }
+        };
+
+        module.EntityTypes = new List<S_EntityType> { noteType };
+        return module;
+    }
+}

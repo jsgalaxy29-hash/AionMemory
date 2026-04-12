@@ -1,0 +1,255 @@
+@page "/Record/{tableId:guid}/{recordId:guid}"
+@page "/records/{entity}/{recordId}"
+@inject IAgendaService AgendaService
+@inject INoteService NoteService
+@inject IMetadataService Metadata
+@inject Aion.AppHost.Services.ITableDefinitionService Tables
+@inject IRecordQueryService RecordQueries
+@inject IModuleViewService ModuleViews
+@implements IDisposable
+
+<h3>Enregistrement</h3>
+<div class="grid columns-2">
+    <div class="card">
+        <p><strong>Entité :</strong> @ContextEntityName</p>
+        <p><strong>Identifiant :</strong> @RecordId</p>
+        @if (!string.IsNullOrWhiteSpace(LoadError))
+        {
+            <p class="text-muted">@LoadError</p>
+        }
+        else if (ResolvedRecord is null)
+        {
+            <p class="text-muted">Chargement…</p>
+        }
+        else
+        {
+            <p class="text-muted">Données dynamiques affichées depuis la mémoire AION.</p>
+            <table class="table">
+                <thead>
+                    <tr><th>Champ</th><th>Valeur</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var field in ResolvedRecord.Data)
+                    {
+                        <tr>
+                            <td>@field.Key</td>
+                            <td>@field.Value</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        <DynamicTimeline NoteService="@NoteService"
+                        TargetType="@ContextEntityName"
+                        TargetId="@ParsedRecordId"
+                        @ref="Timeline" />
+        <div style="margin-top:16px;">
+            <RecordAttachments TargetType="@ContextEntityName" TargetId="@ParsedRecordId" />
+        </div>
+    </div>
+    <div class="card">
+        <h4>Agenda associé</h4>
+        <p>Créez vos rappels ou actions planifiées.</p>
+        <button class="button" @onclick="Schedule">Planifier un rappel</button>
+        <ul>
+            @foreach (var evt in PagedEvents)
+            {
+                <li>@evt.Start.ToLocalTime().ToString("g") - @evt.Title</li>
+            }
+        </ul>
+        <div class="list-pagination">
+            <button class="button secondary" @onclick="PreviousEventPage" disabled="@(!CanGoPreviousEvents)">◀</button>
+            <span class="text-muted">Page @(EventPageIndex + 1) / @TotalEventPages</span>
+            <button class="button secondary" @onclick="NextEventPage" disabled="@(!CanGoNextEvents)">▶</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Entity { get; set; }
+    [Parameter] public string? RecordId { get; set; }
+    [Parameter] public string? TableId { get; set; }
+
+    private const int EventPageSize = 6;
+    private IList<S_Event> Events { get; set; } = new List<S_Event>();
+    private S_EntityType? EntityType { get; set; }
+    private STable? Table { get; set; }
+    private ResolvedRecord? ResolvedRecord { get; set; }
+    private string? LoadError { get; set; }
+    private DynamicTimeline? Timeline { get; set; }
+    private Guid? ParsedRecordId => Guid.TryParse(RecordId, out var guid) ? guid : null;
+    private Guid? ParsedTableId => Guid.TryParse(TableId, out var guid) ? guid : null;
+    private string? ContextEntityName => EntityType?.Name ?? Entity;
+    private CancellationTokenSource? _loadCts;
+    private int EventPageIndex { get; set; }
+
+    private int TotalEventPages => Math.Max(1, (int)Math.Ceiling((double)Math.Max(Events.Count, 1) / EventPageSize));
+    private bool CanGoPreviousEvents => EventPageIndex > 0;
+    private bool CanGoNextEvents => EventPageIndex < TotalEventPages - 1;
+    private IEnumerable<S_Event> PagedEvents
+        => Events.Skip(EventPageIndex * EventPageSize).Take(EventPageSize);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRecord();
+        await LoadAgenda();
+    }
+
+    private async Task Schedule()
+    {
+        var evt = await AgendaService.AddEventAsync(new S_Event
+        {
+            Title = $"Suivi {ContextEntityName}",
+            Description = "Action à réaliser",
+            Start = DateTimeOffset.Now.AddHours(4),
+            Links = BuildLinks().ToList()
+        });
+        if (MatchesContext(evt))
+        {
+            Events.Add(evt);
+        }
+
+        if (Timeline is not null)
+        {
+            await NoteService.CreateTextNoteAsync(evt.Title, evt.Description ?? evt.Title, BuildNoteLinks());
+            await Timeline.RefreshInternal();
+        }
+    }
+
+    private async Task LoadRecord()
+    {
+        _loadCts?.Cancel();
+        _loadCts = new CancellationTokenSource();
+
+        if (ParsedRecordId is null)
+        {
+            LoadError = "Contexte incomplet pour charger l'enregistrement.";
+            return;
+        }
+
+        await ResolveEntityAndTable(_loadCts.Token);
+        if (Table is null)
+        {
+            LoadError = "Table introuvable pour cet enregistrement.";
+            return;
+        }
+
+        ResolvedRecord = await RecordQueries.GetResolvedAsync(Table.Id, ParsedRecordId.Value, _loadCts.Token);
+        if (ResolvedRecord is null)
+        {
+            LoadError = "Enregistrement non trouvé.";
+        }
+    }
+
+    private async Task ResolveEntityAndTable(CancellationToken cancellationToken)
+    {
+        if (ParsedTableId.HasValue)
+        {
+            Table = await ModuleViews.GetTableAsync(ParsedTableId.Value, cancellationToken);
+            var modules = await Metadata.GetModulesAsync(cancellationToken);
+            EntityType = modules.SelectMany(m => m.EntityTypes).FirstOrDefault(e => e.Id == ParsedTableId.Value);
+            if (Table is null && EntityType is not null)
+            {
+                Table = await Tables.EnsureTableAsync(EntityType, cancellationToken);
+            }
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(Entity))
+        {
+            return;
+        }
+
+        var modulesByName = await Metadata.GetModulesAsync(cancellationToken);
+        EntityType = modulesByName.SelectMany(m => m.EntityTypes)
+            .FirstOrDefault(e => string.Equals(e.Name, Entity, StringComparison.OrdinalIgnoreCase));
+        if (EntityType is null)
+        {
+            LoadError = $"Entité {Entity} introuvable.";
+            return;
+        }
+
+        Table = await Tables.EnsureTableAsync(EntityType, cancellationToken);
+    }
+
+    private async Task LoadAgenda()
+    {
+        _loadCts ??= new CancellationTokenSource();
+        var now = DateTimeOffset.Now;
+        var events = await AgendaService.GetOccurrencesAsync(now.AddDays(-2), now.AddDays(10), _loadCts.Token);
+        Events = events.Where(MatchesContext).ToList();
+        EventPageIndex = Math.Min(EventPageIndex, TotalEventPages - 1);
+    }
+
+    private IEnumerable<J_Event_Link> BuildLinks()
+    {
+        if (ParsedRecordId is null || string.IsNullOrWhiteSpace(ContextEntityName))
+        {
+            return Array.Empty<J_Event_Link>();
+        }
+
+        return new[]
+        {
+            new J_Event_Link
+            {
+                TargetType = ContextEntityName!,
+                TargetId = ParsedRecordId.Value
+            }
+        };
+    }
+
+    private IEnumerable<J_Note_Link> BuildNoteLinks()
+    {
+        if (ParsedRecordId is null || string.IsNullOrWhiteSpace(ContextEntityName))
+        {
+            return Array.Empty<J_Note_Link>();
+        }
+
+        return new[]
+        {
+            new J_Note_Link
+            {
+                TargetType = ContextEntityName!,
+                TargetId = ParsedRecordId.Value
+            }
+        };
+    }
+
+    private bool MatchesContext(S_Event evt)
+    {
+        if (ParsedRecordId is null || string.IsNullOrWhiteSpace(ContextEntityName))
+        {
+            return true;
+        }
+
+        return evt.Links.Any(l =>
+            string.Equals(l.TargetType, ContextEntityName, StringComparison.OrdinalIgnoreCase) &&
+            l.TargetId == ParsedRecordId.Value);
+    }
+
+    private Task PreviousEventPage()
+    {
+        if (CanGoPreviousEvents)
+        {
+            EventPageIndex--;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task NextEventPage()
+    {
+        if (CanGoNextEvents)
+        {
+            EventPageIndex++;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+    }
+}

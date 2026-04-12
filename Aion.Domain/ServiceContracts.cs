@@ -1,0 +1,225 @@
+namespace Aion.Domain;
+
+// Interfaces principales orientées AION. Elles regroupent les services métiers
+// afin de clarifier les responsabilités tout en restant faciles à remplacer
+// par des implémentations spécifiques (cloud, on-premise, etc.).
+public interface IAionDataEngine : IDataEngine;
+public interface IAionNoteService : INoteService;
+public interface IAionAgendaService : IAgendaService;
+public interface IAionAutomationService : IAutomationService;
+public interface IAionLifeLogService : ILifeService;
+public interface IAionTemplateMarketplaceService : ITemplateService;
+public interface IAionPredictionService : IPredictService;
+public interface IAionPersonaEngine : IPersonaEngine;
+
+public interface IAuthorizationService
+{
+    Task<AuthorizationResult> AuthorizeAsync(Guid userId, PermissionAction action, PermissionScope scope, CancellationToken cancellationToken = default);
+}
+
+public interface ICurrentUserService
+{
+    Guid GetCurrentUserId();
+}
+
+public interface IAccessGrantService
+{
+    Task<Permission> GrantTableAsync(Guid targetUserId, PermissionAction action, Guid tableId, CancellationToken cancellationToken = default);
+    Task<Permission> GrantRecordAsync(Guid targetUserId, PermissionAction action, Guid tableId, Guid recordId, CancellationToken cancellationToken = default);
+    Task<Permission> GrantFieldAsync(Guid targetUserId, PermissionAction action, Guid tableId, string fieldName, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Permission>> GrantModuleAsync(Guid targetUserId, PermissionAction action, Guid moduleId, CancellationToken cancellationToken = default);
+}
+
+public interface IMetadataService
+{
+    Task<IEnumerable<S_Module>> GetModulesAsync(CancellationToken cancellationToken = default);
+    Task<S_Module> CreateModuleAsync(S_Module moduleDefinition, CancellationToken cancellationToken = default);
+    Task<S_EntityType> AddEntityTypeAsync(Guid moduleId, S_EntityType entityType, CancellationToken cancellationToken = default);
+}
+
+public interface IDataEngine
+{
+    Task<STable> CreateTableAsync(STable table, CancellationToken cancellationToken = default);
+    Task<STable?> GetTableAsync(Guid tableId, CancellationToken cancellationToken = default);
+    Task<IEnumerable<STable>> GetTablesAsync(CancellationToken cancellationToken = default);
+    Task<IEnumerable<SViewDefinition>> GenerateSimpleViewsAsync(Guid tableId, CancellationToken cancellationToken = default);
+    Task<F_Record> InsertAsync(Guid tableId, string dataJson, CancellationToken cancellationToken = default);
+    Task<F_Record> InsertAsync(Guid tableId, IDictionary<string, object?> data, CancellationToken cancellationToken = default);
+    Task<F_Record?> GetAsync(Guid tableId, Guid id, CancellationToken cancellationToken = default);
+    Task<ResolvedRecord?> GetResolvedAsync(Guid tableId, Guid id, CancellationToken cancellationToken = default);
+    Task<F_Record> UpdateAsync(Guid tableId, Guid id, string dataJson, CancellationToken cancellationToken = default);
+    Task<F_Record> UpdateAsync(Guid tableId, Guid id, IDictionary<string, object?> data, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid tableId, Guid id, CancellationToken cancellationToken = default);
+    Task<IEnumerable<ChangeSet>> GetHistoryAsync(Guid tableId, Guid recordId, CancellationToken cancellationToken = default);
+    Task<int> CountAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default);
+    Task<IEnumerable<F_Record>> QueryAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default);
+    Task<IEnumerable<ResolvedRecord>> QueryResolvedAsync(Guid tableId, QuerySpec? spec = null, CancellationToken cancellationToken = default);
+    Task<IEnumerable<RecordSearchHit>> SearchAsync(Guid tableId, string query, SearchOptions? options = null, CancellationToken cancellationToken = default);
+    Task<IEnumerable<RecordSearchHit>> SearchSmartAsync(Guid tableId, string query, SearchOptions? options = null, CancellationToken cancellationToken = default);
+    Task<KnowledgeEdge> LinkRecordsAsync(
+        Guid fromTableId,
+        Guid fromRecordId,
+        Guid toTableId,
+        Guid toRecordId,
+        KnowledgeRelationType relationType,
+        CancellationToken cancellationToken = default);
+    Task<KnowledgeGraphSlice> GetKnowledgeGraphAsync(
+        Guid tableId,
+        Guid recordId,
+        int depth = 1,
+        CancellationToken cancellationToken = default);
+}
+
+public interface INoteService
+{
+    Task<S_Note> CreateTextNoteAsync(string title, string content, IEnumerable<J_Note_Link>? links = null, CancellationToken cancellationToken = default);
+    Task<S_Note> CreateDictatedNoteAsync(string title, Stream audioStream, string fileName, IEnumerable<J_Note_Link>? links = null, CancellationToken cancellationToken = default);
+    Task<IEnumerable<S_Note>> GetChronologicalAsync(int take = 50, CancellationToken cancellationToken = default);
+}
+
+public interface INoteTaggingService
+{
+    Task<IReadOnlyCollection<string>> SuggestTagsAsync(string title, string content, CancellationToken cancellationToken = default);
+}
+
+public interface IAgendaService
+{
+    Task<S_Event> AddEventAsync(S_Event evt, CancellationToken cancellationToken = default);
+    Task<S_Event> UpdateEventAsync(S_Event evt, CancellationToken cancellationToken = default);
+    Task DeleteEventAsync(Guid eventId, CancellationToken cancellationToken = default);
+    Task<IEnumerable<S_Event>> GetEventsAsync(DateTimeOffset from, DateTimeOffset tot, CancellationToken cancellationToken = default);
+    Task<IEnumerable<S_Event>> GetOccurrencesAsync(DateTimeOffset from, DateTimeOffset tot, CancellationToken cancellationToken = default);
+    Task<IEnumerable<S_Event>> GetPendingRemindersAsync(DateTimeOffset asOf, CancellationToken cancellationToken = default);
+}
+
+public readonly record struct NotificationRequest(Guid Id, string Title, string Body, DateTimeOffset ScheduledAt);
+
+public interface INotificationService
+{
+    Task ScheduleAsync(NotificationRequest request, CancellationToken cancellationToken = default);
+    Task CancelAsync(Guid notificationId, CancellationToken cancellationToken = default);
+}
+
+public interface IFileStorageService
+{
+    Task<F_File> SaveAsync(string fileName, Stream content, string mimeType, CancellationToken cancellationToken = default);
+    Task<Stream> OpenAsync(Guid fileId, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid fileId, CancellationToken cancellationToken = default);
+    Task<F_FileLink> LinkAsync(Guid fileId, string targetType, Guid targetId, string? relation = null, CancellationToken cancellationToken = default);
+    Task<IEnumerable<F_File>> GetForAsync(string targetType, Guid targetId, CancellationToken cancellationToken = default);
+}
+
+public interface ICloudBackupService
+{
+    Task<CloudBackupEntry> CreateBackupAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CloudBackupEntry>> ListBackupsAsync(CancellationToken cancellationToken = default);
+    Task<CloudRestorePreview> RestoreLatestAsync(string destinationPath, bool dryRun = false, CancellationToken cancellationToken = default);
+    Task<CloudRestorePreview> RestoreAsync(string backupId, string destinationPath, bool dryRun = false, CancellationToken cancellationToken = default);
+}
+
+public interface IBackupService
+{
+    Task<BackupManifest> CreateBackupAsync(bool encrypt = false, CancellationToken cancellationToken = default);
+}
+
+public interface IRestoreService
+{
+    Task RestoreLatestAsync(string? destinationPath = null, CancellationToken cancellationToken = default);
+}
+
+public interface IKeyRotationService
+{
+    Task<KeyRotationResult> RotateAsync(string newKey, CancellationToken cancellationToken = default);
+}
+
+public interface ILogService
+{
+    void LogInformation(string message, IDictionary<string, object?>? properties = null);
+    void LogWarning(string message, IDictionary<string, object?>? properties = null);
+    void LogError(Exception exception, string message, IDictionary<string, object?>? properties = null);
+}
+
+public readonly record struct SearchHit(string TargetType, Guid TargetId, string Title, string Snippet, double Score);
+
+public interface ISearchService
+{
+    Task<IEnumerable<SearchHit>> SearchAsync(string query, CancellationToken cancellationToken = default);
+    Task IndexNoteAsync(S_Note note, CancellationToken cancellationToken = default);
+    Task IndexRecordAsync(F_Record record, CancellationToken cancellationToken = default);
+    Task IndexFileAsync(F_File file, CancellationToken cancellationToken = default);
+    Task RemoveAsync(string targetType, Guid targetId, CancellationToken cancellationToken = default);
+}
+
+public interface IAutomationService
+{
+    Task<S_AutomationRule> AddRuleAsync(S_AutomationRule rule, CancellationToken cancellationToken = default);
+    Task<IEnumerable<S_AutomationRule>> GetRulesAsync(CancellationToken cancellationToken = default);
+    Task<S_AutomationRule> SetRuleEnabledAsync(Guid ruleId, bool isEnabled, CancellationToken cancellationToken = default);
+}
+
+public interface IAutomationOrchestrator
+{
+    Task<IEnumerable<AutomationExecution>> TriggerAsync(string eventName, object payload, CancellationToken cancellationToken = default);
+    Task<IEnumerable<AutomationExecution>> GetRecentExecutionsAsync(int take = 50, CancellationToken cancellationToken = default);
+}
+
+public interface IAutomationRuleEngine
+{
+    Task<IReadOnlyCollection<AutomationExecution>> ExecuteAsync(AutomationEvent automationEvent, CancellationToken cancellationToken = default);
+}
+
+public interface IDashboardService
+{
+    Task<IEnumerable<DashboardWidget>> GetWidgetsAsync(CancellationToken cancellationToken = default);
+    Task<DashboardWidget> SaveWidgetAsync(DashboardWidget widget, CancellationToken cancellationToken = default);
+    Task<DashboardLayout?> GetLayoutAsync(string dashboardKey, CancellationToken cancellationToken = default);
+    Task<DashboardLayout> SaveLayoutAsync(DashboardLayout layout, CancellationToken cancellationToken = default);
+}
+
+public interface ITemplateService
+{
+    Task<TemplatePackage> ExportModuleAsync(Guid moduleId, CancellationToken cancellationToken = default);
+    Task<S_Module> ImportModuleAsync(TemplatePackage package, CancellationToken cancellationToken = default);
+    Task<IEnumerable<MarketplaceItem>> GetMarketplaceAsync(CancellationToken cancellationToken = default);
+}
+
+public interface ILifeService
+{
+    Task<S_HistoryEvent> AddHistoryAsync(S_HistoryEvent evt, CancellationToken cancellationToken = default);
+    Task<TimelinePage> GetTimelinePageAsync(TimelineQuery query, CancellationToken cancellationToken = default);
+    Task<IEnumerable<S_HistoryEvent>> GetTimelineAsync(DateTimeOffset? from = null, DateTimeOffset? tot = null, CancellationToken cancellationToken = default);
+}
+
+public interface IPredictService
+{
+    Task<IEnumerable<PredictionInsight>> GenerateAsync(CancellationToken cancellationToken = default);
+}
+
+public interface IPersonaEngine
+{
+    Task<UserPersona> GetPersonaAsync(CancellationToken cancellationToken = default);
+    Task<UserPersona> SavePersonaAsync(UserPersona persona, CancellationToken cancellationToken = default);
+}
+
+public interface IMemoryIntelligenceService
+{
+    Task<MemoryInsight> AnalyzeAsync(MemoryAnalysisRequest request, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<MemoryInsight>> GetRecentAsync(int take = 20, CancellationToken cancellationToken = default);
+}
+
+public interface ISyncBackend
+{
+    Task<IReadOnlyCollection<SyncItem>> ListAsync(CancellationToken cancellationToken = default);
+    Task<SyncItem?> GetAsync(string path, CancellationToken cancellationToken = default);
+    Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken = default);
+    Task WriteAsync(SyncItem item, Stream content, CancellationToken cancellationToken = default);
+    Task DeleteAsync(string path, CancellationToken cancellationToken = default);
+    Task<bool> HasAppliedAsync(Guid operationId, CancellationToken cancellationToken = default);
+    Task MarkAppliedAsync(Guid operationId, CancellationToken cancellationToken = default);
+}
+
+public interface ISyncEngine
+{
+    Task<IReadOnlyCollection<SyncState>> PlanAsync(ISyncBackend local, ISyncBackend remote, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<SyncState>> ApplyAsync(ISyncBackend local, ISyncBackend remote, IReadOnlyCollection<SyncOperation> operations, CancellationToken cancellationToken = default);
+}

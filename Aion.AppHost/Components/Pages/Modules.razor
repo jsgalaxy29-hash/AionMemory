@@ -1,0 +1,243 @@
+@page "/modules"
+@inject IMetadataService Metadata
+@inject IModuleDesignerService ModuleDesigner
+@inject IModuleApplier ModuleApplier
+@inject NavigationManager Navigation
+@inject IRecordQueryService RecordQueries
+@inject Aion.AppHost.Services.ITableDefinitionService Tables
+@inject AiProviderSelector AiSelector
+@implements IDisposable
+
+<h3>Modules</h3>
+<div class="card" style="margin-bottom:12px;">
+    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+        <input class="input" style="flex:1;" placeholder="Rechercher un module" @bind="Search" @bind:event="oninput" />
+        <select class="select" @bind="Filter">
+            <option value="recent">Récents</option>
+            <option value="favorite">Favoris</option>
+            <option value="all">Tous</option>
+        </select>
+        <button class="button" @onclick="GenerateModule" disabled="@(!_aiStatus.IsConfigured)">Créer Module par IA</button>
+        <button class="button secondary" @onclick="NavigateToBuilder">Ouvrir Module Builder</button>
+    </div>
+    @if (!_aiStatus.IsConfigured)
+    {
+        <p class="text-muted" style="margin:0;">IA inactive : @_aiStatus.Reason</p>
+    }
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+        <input class="input" style="flex:1;" placeholder="Slug du module pour schéma" @bind="SchemaModuleSlug" @bind:event="oninput" />
+        <button class="button secondary" @onclick="LoadSchemaVersionAsync" disabled="@IsSchemaBusy">Charger</button>
+        <button class="button" @onclick="PublishLatestAsync" disabled="@IsPublishDisabled">Publier dernière</button>
+        <button class="button secondary" @onclick="RollbackSchemaAsync" disabled="@IsRollbackDisabled">Annuler publication</button>
+    </div>
+    <div class="text-muted" style="margin-top:8px;">
+        Version active : @FormatVersion(ActiveSchemaVersion)
+    </div>
+    <div class="text-muted">
+        Dernière version : @FormatVersion(LatestSchemaVersion)
+    </div>
+    @if (!string.IsNullOrWhiteSpace(SchemaStatus))
+    {
+        <p class="text-muted" style="margin:0;">@SchemaStatus</p>
+    }
+</div>
+
+<div class="grid columns-3">
+    @if (ModuleList is null)
+    {
+        <p>Chargement…</p>
+    }
+    else
+    {
+        @foreach (var module in FilteredModules)
+        {
+            <div class="card module-card">
+                <div class="module-header">
+                    <div>
+                        <strong>@module.Name</strong>
+                        <p class="text-muted">@module.Description</p>
+                    </div>
+                    <span class="badge">@module.EntityTypes.Count entités</span>
+                </div>
+                <div class="grid columns-2">
+                    @foreach (var entity in module.EntityTypes)
+                    {
+                        <div class="stat-box">
+                            <div style="font-weight:600">@entity.Name</div>
+                            <small class="text-muted">@entity.Fields.Count champ(s) · @GetCount(entity.Id) enregistrement(s)</small>
+                        </div>
+                    }
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button class="button secondary" @onclick="() => OpenModule(module.Id)">Ouvrir</button>
+                    <button class="button secondary" @onclick="() => OpenDashboard(module)">Dashboard</button>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private IEnumerable<S_Module>? ModuleList;
+    private readonly Dictionary<Guid, int> RecordCounts = new();
+    private string Search { get; set; } = string.Empty;
+    private string Filter { get; set; } = "recent";
+    private AiConfigurationStatus _aiStatus = AiConfigurationStatus.Inactive();
+    private string SchemaModuleSlug { get; set; } = string.Empty;
+    private ModuleSchemaVersion? ActiveSchemaVersion { get; set; }
+    private ModuleSchemaVersion? LatestSchemaVersion { get; set; }
+    private string? SchemaStatus { get; set; }
+    private bool IsSchemaBusy { get; set; }
+
+    private IEnumerable<S_Module> FilteredModules =>
+        string.IsNullOrWhiteSpace(Search)
+            ? ModuleList ?? Array.Empty<S_Module>()
+            : ModuleList?.Where(m => m.Name.Contains(Search, StringComparison.OrdinalIgnoreCase)) ?? Array.Empty<S_Module>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _aiStatus = AiSelector.GetStatus();
+        ModuleList = await Metadata.GetModulesAsync();
+        await LoadRecordCounts();
+    }
+
+    private void OpenModule(Guid id) => Navigation.NavigateTo(UiRoutes.Module(id));
+
+    private void OpenDashboard(S_Module module)
+    {
+        Navigation.NavigateTo($"/dashboard/{module.Name.ToLowerInvariant()}");
+    }
+
+    private async Task GenerateModule()
+    {
+        if (!_aiStatus.IsConfigured)
+        {
+            return;
+        }
+
+        var module = await ModuleDesigner.CreateModuleFromPromptAsync("Assistant quotidien");
+        ModuleList = (ModuleList ?? Array.Empty<S_Module>()).Append(module).ToArray();
+        await LoadRecordCounts();
+    }
+
+    private void NavigateToBuilder() => Navigation.NavigateTo("/module-builder");
+
+    private async Task LoadRecordCounts()
+    {
+        if (ModuleList is null)
+        {
+            return;
+        }
+
+        using var cts = new CancellationTokenSource();
+        foreach (var entity in ModuleList.SelectMany(m => m.EntityTypes))
+        {
+            await Tables.EnsureTableAsync(entity, cts.Token);
+            var total = await RecordQueries.CountAsync(entity.Id, new QuerySpec { Projection = QueryProjection.List }, cts.Token);
+            RecordCounts[entity.Id] = total;
+        }
+    }
+
+    private int GetCount(Guid entityId) => RecordCounts.TryGetValue(entityId, out var count) ? count : 0;
+
+    private bool IsPublishDisabled
+        => IsSchemaBusy
+           || string.IsNullOrWhiteSpace(SchemaModuleSlug)
+           || LatestSchemaVersion is null
+           || LatestSchemaVersion.State == ModuleSchemaState.Published;
+
+    private bool IsRollbackDisabled
+        => IsSchemaBusy
+           || string.IsNullOrWhiteSpace(SchemaModuleSlug)
+           || ActiveSchemaVersion is null;
+
+    private async Task LoadSchemaVersionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SchemaModuleSlug))
+        {
+            SchemaStatus = "Renseignez le slug du module.";
+            return;
+        }
+
+        IsSchemaBusy = true;
+        SchemaStatus = null;
+        try
+        {
+            ActiveSchemaVersion = await ModuleApplier.GetActiveVersionAsync(SchemaModuleSlug);
+            LatestSchemaVersion = await ModuleApplier.GetLatestVersionAsync(SchemaModuleSlug);
+            if (LatestSchemaVersion is null)
+            {
+                SchemaStatus = "Aucune version enregistrée pour ce module.";
+            }
+        }
+        catch (Exception ex)
+        {
+            SchemaStatus = $"Erreur: {ex.Message}";
+        }
+        finally
+        {
+            IsSchemaBusy = false;
+        }
+    }
+
+    private async Task PublishLatestAsync()
+    {
+        if (LatestSchemaVersion is null)
+        {
+            SchemaStatus = "Aucune version à publier.";
+            return;
+        }
+
+        IsSchemaBusy = true;
+        SchemaStatus = null;
+        try
+        {
+            await ModuleApplier.PublishAsync(SchemaModuleSlug, LatestSchemaVersion.Version);
+            await LoadSchemaVersionAsync();
+        }
+        catch (Exception ex)
+        {
+            SchemaStatus = $"Erreur: {ex.Message}";
+        }
+        finally
+        {
+            IsSchemaBusy = false;
+        }
+    }
+
+    private async Task RollbackSchemaAsync()
+    {
+        if (ActiveSchemaVersion is null)
+        {
+            SchemaStatus = "Aucune version active à annuler.";
+            return;
+        }
+
+        IsSchemaBusy = true;
+        SchemaStatus = null;
+        try
+        {
+            await ModuleApplier.RollbackPublicationAsync(SchemaModuleSlug);
+            await LoadSchemaVersionAsync();
+        }
+        catch (Exception ex)
+        {
+            SchemaStatus = $"Erreur: {ex.Message}";
+        }
+        finally
+        {
+            IsSchemaBusy = false;
+        }
+    }
+
+    private static string FormatVersion(ModuleSchemaVersion? version)
+        => version is null ? "—" : $"v{version.Version} ({version.State})";
+
+    public void Dispose()
+    {
+        RecordCounts.Clear();
+    }
+}
